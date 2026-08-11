@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
 
+    # NATS
+    nats_url: str = ""
+
+    # Alert
+    alert_webhook_url: str = ""
+    alert_email: str = ""
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
