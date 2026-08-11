@@ -18,6 +18,7 @@ from src.api.user import router as user_router
 from src.api.llm import router as llm_router
 from src.api.agent import router as agent_router
 from src.api.export import router as export_router
+from src.api.cortex import router as cortex_router
 
 
 @asynccontextmanager
@@ -71,6 +72,7 @@ app.include_router(user_router, prefix="/api/user", tags=["user"])
 app.include_router(llm_router, prefix="/api/llm", tags=["llm"])
 app.include_router(agent_router, prefix="/api/agent", tags=["agent"])
 app.include_router(export_router, prefix="/api/export", tags=["export"])
+app.include_router(cortex_router, prefix="/api/cortex", tags=["cortex"])
 
 
 if __name__ == "__main__":
