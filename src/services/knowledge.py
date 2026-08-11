@@ -7,8 +7,7 @@ from src.database.qdrant import qdrant_client
 from src.database.meilisearch import meili_client
 from src.models.knowledge import KnowledgeCreate, KnowledgeUpdate
 from src.services.chunking import chunk_text
-from src.services.embedding import get_embedding, get_embeddings_batch
-from src.services.extraction import extract_entities_and_relations
+from src.services.embedding import get_embeddings_batch
 
 
 async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
@@ -56,7 +55,7 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
             )
         qdrant_client.upsert_points(points)
 
-        # Index first chunk in Meilisearch
+        # Index in Meilisearch
         meili_client.add_documents([{
             "id": str(knowledge_id),
             "title": data.title,
@@ -70,7 +69,8 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
 
 async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
     row = await pg_pool.fetchrow(
-        "SELECT k.*, array_agg(t.name) as tags FROM knowledge k "
+        "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
+        "FROM knowledge k "
         "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
         "LEFT JOIN tags t ON kt.tag_id = t.id "
         "WHERE k.id = $1 AND k.user_id = $2 GROUP BY k.id",
@@ -80,17 +80,55 @@ async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
     return dict(row) if row else None
 
 
-async def list_knowledge(user_id: UUID, offset: int = 0, limit: int = 20) -> list[dict]:
-    rows = await pg_pool.fetch(
-        "SELECT k.*, array_agg(t.name) as tags FROM knowledge k "
-        "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
-        "LEFT JOIN tags t ON kt.tag_id = t.id "
-        "WHERE k.user_id = $1 GROUP BY k.id "
-        "ORDER BY k.created_at DESC OFFSET $2 LIMIT $3",
-        user_id,
-        offset,
-        limit,
-    )
+async def list_knowledge(
+    user_id: UUID,
+    offset: int = 0,
+    limit: int = 20,
+    content_type: str | None = None,
+    domain: str | None = None,
+    tag: str | None = None,
+) -> list[dict]:
+    conditions = ["k.user_id = $1"]
+    values: list = [user_id]
+    idx = 2
+
+    if content_type:
+        conditions.append(f"k.content_type = ${idx}")
+        values.append(content_type)
+        idx += 1
+
+    if domain:
+        conditions.append(f"k.metadata->>'domain' = ${idx}")
+        values.append(domain)
+        idx += 1
+
+    where_clause = " AND ".join(conditions)
+
+    if tag:
+        # Filter by tag via join
+        query = (
+            "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
+            "FROM knowledge k "
+            "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
+            "LEFT JOIN tags t ON kt.tag_id = t.id "
+            "WHERE " + where_clause + " AND EXISTS ("
+            "SELECT 1 FROM knowledge_tags kt2 JOIN tags t2 ON kt2.tag_id = t2.id "
+            "WHERE kt2.knowledge_id = k.id AND t2.name = $" + str(idx) + ") "
+            "GROUP BY k.id ORDER BY k.created_at DESC OFFSET $" + str(idx + 1) + " LIMIT $" + str(idx + 2)
+        )
+        values.extend([tag, offset, limit])
+    else:
+        query = (
+            "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
+            "FROM knowledge k "
+            "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
+            "LEFT JOIN tags t ON kt.tag_id = t.id "
+            "WHERE " + where_clause + " "
+            "GROUP BY k.id ORDER BY k.created_at DESC OFFSET $" + str(idx) + " LIMIT $" + str(idx + 1)
+        )
+        values.extend([offset, limit])
+
+    rows = await pg_pool.fetch(query, *values)
     return [dict(r) for r in rows]
 
 
@@ -135,3 +173,27 @@ async def delete_knowledge(knowledge_id: UUID, user_id: UUID) -> bool:
         "DELETE FROM knowledge WHERE id = $1 AND user_id = $2", knowledge_id, user_id
     )
     return "DELETE 1" in result
+
+
+async def toggle_star(knowledge_id: UUID, user_id: UUID) -> dict | None:
+    """Toggle star status on a knowledge item."""
+    row = await pg_pool.fetchrow(
+        "UPDATE knowledge SET starred = NOT COALESCE(starred, FALSE), updated_at = NOW() "
+        "WHERE id = $1 AND user_id = $2 RETURNING starred",
+        knowledge_id, user_id,
+    )
+    if not row:
+        return None
+    return {"starred": row["starred"]}
+
+
+async def toggle_pin(knowledge_id: UUID, user_id: UUID) -> dict | None:
+    """Toggle pin status on a knowledge item."""
+    row = await pg_pool.fetchrow(
+        "UPDATE knowledge SET pinned = NOT COALESCE(pinned, FALSE), updated_at = NOW() "
+        "WHERE id = $1 AND user_id = $2 RETURNING pinned",
+        knowledge_id, user_id,
+    )
+    if not row:
+        return None
+    return {"pinned": row["pinned"]}
