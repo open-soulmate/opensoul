@@ -1,25 +1,29 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: opensoul
-      POSTGRES_PASSWORD: opensoul
-      POSTGRES_DB: opensoul
+      POSTGRES_USER: ${POSTGRES_USER:-opensoul}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opensoul}
+      POSTGRES_DB: ${POSTGRES_DB:-opensoul}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opensoul"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opensoul}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - opensoul-net
 
   qdrant:
     image: qdrant/qdrant:v1.12.1
+    restart: unless-stopped
     ports:
-      - "6333:6333"
+      - "${QDRANT_PORT:-6333}:6333"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -27,13 +31,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - opensoul-net
 
   meilisearch:
     image: getmeili/meilisearch:v1.11
+    restart: unless-stopped
     environment:
-      MEILI_MASTER_KEY: opensoul_master_key
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-opensoul_master_key}
     ports:
-      - "7700:7700"
+      - "${MEILI_PORT:-7700}:7700"
     volumes:
       - meili_data:/meili_data
     healthcheck:
@@ -41,11 +48,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - opensoul-net
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -53,17 +63,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - opensoul-net
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://opensoul:opensoul@postgres:5432/opensoul
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-opensoul}:${POSTGRES_PASSWORD:-opensoul}@postgres:5432/${POSTGRES_DB:-opensoul}
       QDRANT_URL: http://qdrant:6333
       MEILI_URL: http://meilisearch:7700
+      MEILI_KEY: ${MEILI_MASTER_KEY:-opensoul_master_key}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
@@ -74,10 +90,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./src:/app/src
-    command: >
-      sh -c "python -m src.main"
+    networks:
+      - opensoul-net
+
+networks:
+  opensoul-net:
+    driver: bridge
 
 volumes:
   pgdata:
