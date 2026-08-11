@@ -6,7 +6,8 @@ from src.database.postgres import pg_pool
 from src.database.qdrant import qdrant_client
 from src.database.meilisearch import meili_client
 from src.models.knowledge import KnowledgeCreate, KnowledgeUpdate
-from src.services.chunking import chunk_text
+from src.services.chunking import smart_chunk
+from src.services.extraction import extract_text_from_file
 from src.services.embedding import get_embeddings_batch
 
 
@@ -41,28 +42,39 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
             )
 
     # Chunk and embed
-    chunks = chunk_text(data.content)
+    chunks = smart_chunk(data.content, content_type=data.content_type)
     if chunks:
-        embeddings = await get_embeddings_batch(chunks)
+        chunk_texts = [c.content for c in chunks]
+        embeddings = await get_embeddings_batch(chunk_texts)
         points = []
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            point_id = f"{knowledge_id}_{i}"
-            points.append(PointStruct(id=point_id, vector=embedding, payload={"knowledge_id": str(knowledge_id), "chunk_index": i, "content": chunk}))
+        for chunk, embedding in zip(chunks, embeddings):
+            point_id = f"{knowledge_id}_{chunk.index}"
+            points.append(PointStruct(
+                id=point_id,
+                vector=embedding,
+                payload={
+                    "knowledge_id": str(knowledge_id),
+                    "chunk_index": chunk.index,
+                    "content": chunk.content,
+                    "user_id": str(user_id),
+                },
+            ))
             await pg_pool.execute(
                 "INSERT INTO knowledge_chunks (knowledge_id, chunk_index, content, embedding_id, token_count) "
                 "VALUES ($1, $2, $3, $4, $5)",
-                knowledge_id, i, chunk, point_id, len(chunk.split()),
+                knowledge_id, chunk.index, chunk.content, point_id, len(chunk.content.split()),
             )
         qdrant_client.upsert_points(points)
 
-        # Index in Meilisearch
-        meili_client.add_documents([{
-            "id": str(knowledge_id),
-            "title": data.title,
-            "content": data.content[:5000],
-            "tags": data.tags,
-            "user_id": str(user_id),
-        }])
+    # Index in Meilisearch (always, even if no chunks)
+    meili_client.add_documents([{
+        "id": str(knowledge_id),
+        "title": data.title,
+        "content": data.content[:5000],
+        "tags": data.tags,
+        "user_id": str(user_id),
+        "content_type": data.content_type,
+    }])
 
     return dict(row)
 

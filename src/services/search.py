@@ -8,7 +8,7 @@ from src.services.embedding import get_embedding
 async def semantic_search(query: str, user_id: UUID, limit: int = 10) -> list[dict]:
     """Search using vector similarity."""
     query_vector = await get_embedding(query)
-    results = qdrant_client.search(query_vector, limit=limit)
+    results = qdrant_client.search(query_vector, limit=limit, user_id=user_id)
     return [
         {
             "id": hit.payload.get("knowledge_id"),
