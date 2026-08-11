@@ -3,10 +3,19 @@ from uuid import UUID
 from src.database.postgres import pg_pool
 from src.models.entity import EntityCreate, EntityUpdate
 
+# DB column mapping: the entities table uses "type" (not "entity_type").
+# We rename on read so the API contract stays `entity_type`.
+
+
+def _row_to_entity(row) -> dict:
+    d = dict(row)
+    d["entity_type"] = d.pop("type", "")
+    return d
+
 
 async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
     row = await pg_pool.fetchrow(
-        "INSERT INTO entities (name, entity_type, description, properties, user_id) "
+        "INSERT INTO entities (name, type, description, properties, user_id) "
         "VALUES ($1, $2, $3, $4, $5) RETURNING *",
         data.name,
         data.entity_type,
@@ -14,20 +23,37 @@ async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
         data.properties,
         user_id,
     )
-    return dict(row)
+    return _row_to_entity(row)
 
 
 async def get_entity(entity_id: UUID, user_id: UUID) -> dict | None:
     row = await pg_pool.fetchrow(
         "SELECT * FROM entities WHERE id = $1 AND user_id = $2", entity_id, user_id
     )
-    return dict(row) if row else None
+    return _row_to_entity(row) if row else None
+
+
+async def get_entity_with_relations(entity_id: UUID, user_id: UUID) -> dict | None:
+    entity = await get_entity(entity_id, user_id)
+    if not entity:
+        return None
+    relations = await pg_pool.fetch(
+        "SELECT r.*, se.name AS source_name, te.name AS target_name "
+        "FROM relations r "
+        "JOIN entities se ON r.source_id = se.id "
+        "JOIN entities te ON r.target_id = te.id "
+        "WHERE r.source_id = $1 OR r.target_id = $1 "
+        "ORDER BY r.created_at",
+        entity_id,
+    )
+    entity["relations"] = [dict(r) for r in relations]
+    return entity
 
 
 async def list_entities(user_id: UUID, entity_type: str | None = None, offset: int = 0, limit: int = 50) -> list[dict]:
     if entity_type:
         rows = await pg_pool.fetch(
-            "SELECT * FROM entities WHERE user_id = $1 AND entity_type = $2 "
+            "SELECT * FROM entities WHERE user_id = $1 AND type = $2 "
             "ORDER BY name OFFSET $3 LIMIT $4",
             user_id, entity_type, offset, limit,
         )
@@ -36,7 +62,7 @@ async def list_entities(user_id: UUID, entity_type: str | None = None, offset: i
             "SELECT * FROM entities WHERE user_id = $1 ORDER BY name OFFSET $2 LIMIT $3",
             user_id, offset, limit,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_entity(r) for r in rows]
 
 
 async def update_entity(entity_id: UUID, data: EntityUpdate, user_id: UUID) -> dict | None:
@@ -44,11 +70,13 @@ async def update_entity(entity_id: UUID, data: EntityUpdate, user_id: UUID) -> d
     if not fields:
         return await get_entity(entity_id, user_id)
 
+    # Map API field `entity_type` back to DB column `type`
     set_clauses = []
     values = []
     idx = 1
     for field, value in fields.items():
-        set_clauses.append(f"{field} = ${idx}")
+        col = "type" if field == "entity_type" else field
+        set_clauses.append(f"{col} = ${idx}")
         values.append(value)
         idx += 1
 

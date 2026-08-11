@@ -34,19 +34,27 @@ def decode_token(token: str) -> UUID | None:
 
 async def authenticate_user(username: str, password: str) -> dict | None:
     row = await pg_pool.fetchrow(
-        "SELECT id, username, email, hashed_password FROM users WHERE username = $1",
+        "SELECT id, username, email, password_hash FROM users WHERE username = $1",
         username,
     )
-    if not row or not verify_password(password, row["hashed_password"]):
+    if not row or not verify_password(password, row["password_hash"]):
         return None
     return {"id": row["id"], "username": row["username"], "email": row["email"]}
+
+
+async def get_user_by_id(user_id: UUID) -> dict | None:
+    row = await pg_pool.fetchrow(
+        "SELECT id, username, email, is_active, created_at, updated_at FROM users WHERE id = $1",
+        user_id,
+    )
+    return dict(row) if row else None
 
 
 async def register_user(username: str, email: str, password: str) -> dict:
     hashed = hash_password(password)
     row = await pg_pool.fetchrow(
-        "INSERT INTO users (username, email, hashed_password) VALUES ($1, $2, $3) "
-        "RETURNING id, username, email, created_at",
+        "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) "
+        "RETURNING id, username, email, is_active, created_at, updated_at",
         username,
         email,
         hashed,
