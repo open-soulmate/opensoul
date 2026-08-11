@@ -19,6 +19,12 @@ from src.api.llm import router as llm_router
 from src.api.agent import router as agent_router
 from src.api.export import router as export_router
 from src.api.cortex import router as cortex_router
+from src.api.gland import router as gland_router
+from src.api.gland import gateway as gland_gateway
+from src.api.vital import router as vital_router
+from src.vital.collector import MetricsCollector
+from src.vital.health import HealthChecker
+from src.vital.alert import AlertManager
 
 
 @asynccontextmanager
@@ -27,8 +33,24 @@ async def lifespan(app: FastAPI):
     await pg_pool.connect()
     qdrant_client.ensure_collection()
     meili_client.ensure_index()
+    await gland_gateway.startup()
+
+    # Vital services
+    collector = MetricsCollector()
+    checker = HealthChecker()
+    alert_mgr = AlertManager(collector)
+    app.state.vital_collector = collector
+    app.state.vital_checker = checker
+    app.state.vital_alert_mgr = alert_mgr
+    await collector.start()
+    await alert_mgr.start()
+
     yield
+
     # Shutdown
+    await alert_mgr.stop()
+    await collector.stop()
+    await gland_gateway.shutdown()
     await pg_pool.disconnect()
 
 
@@ -73,6 +95,8 @@ app.include_router(llm_router, prefix="/api/llm", tags=["llm"])
 app.include_router(agent_router, prefix="/api/agent", tags=["agent"])
 app.include_router(export_router, prefix="/api/export", tags=["export"])
 app.include_router(cortex_router, prefix="/api/cortex", tags=["cortex"])
+app.include_router(gland_router, prefix="/api/gland", tags=["gland"])
+app.include_router(vital_router, prefix="/api/vital", tags=["vital"])
 
 
 if __name__ == "__main__":
