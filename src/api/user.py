@@ -1,9 +1,21 @@
-from fastapi import APIRouter, HTTPException
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from src.models.user import UserCreate, UserResponse, Token
-from src.services.auth import authenticate_user, register_user, create_access_token
+from src.services.auth import authenticate_user, register_user, create_access_token, decode_token, get_user_by_id
 
 router = APIRouter()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> UUID:
+    user_id = decode_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user_id
 
 
 @router.post("/register", response_model=UserResponse)
@@ -16,9 +28,17 @@ async def register(data: UserCreate):
 
 
 @router.post("/login", response_model=Token)
-async def login(username: str, password: str):
-    user = await authenticate_user(username, password)
+async def login(form: OAuth2PasswordRequestForm = Depends()):
+    user = await authenticate_user(form.username, form.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(user["id"])
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=UserResponse)
+async def me(user_id: UUID = Depends(get_current_user)):
+    user = await get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
