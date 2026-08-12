@@ -47,7 +47,7 @@ class ACPProcess:
 
         # Send initialize
         resp = await self._send_rpc("initialize", {
-            "protocolVersion": "0.2.0",
+            "protocolVersion": 1,
             "clientInfo": {"name": "OpenMate", "version": "1.0.0"},
         })
         logger.info(f"ACP initialized: {resp}")
