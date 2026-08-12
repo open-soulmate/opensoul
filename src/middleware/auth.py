@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.services.auth import decode_token, role_at_least
 
 security = HTTPBearer(auto_error=False)
@@ -18,7 +18,7 @@ async def get_current_user(
     payload = decode_token(credentials.credentials)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    user = await pg_pool.fetchrow(
+    user = await db_pool.fetchrow(
         "SELECT id, username, email, role, is_active FROM users WHERE id = $1",
         payload["user_id"],
     )
@@ -44,7 +44,7 @@ async def get_agent_from_header(request: Request) -> dict | None:
     token = request.headers.get("X-Agent-Token")
     if not token:
         return None
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT id, name, agent_type, status FROM agents WHERE token = $1",
         token,
     )

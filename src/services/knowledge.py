@@ -1,10 +1,13 @@
 from uuid import UUID
 
-from qdrant_client.models import PointStruct
-
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
 from src.database.meilisearch import meili_client
+
+try:
+    from qdrant_client.models import PointStruct
+except ImportError:
+    PointStruct = None
 from src.models.knowledge import KnowledgeCreate, KnowledgeUpdate
 from src.services.chunking import smart_chunk
 from src.services.extraction import extract_text_from_file
@@ -12,7 +15,7 @@ from src.services.embedding import get_embeddings_batch
 
 
 async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "INSERT INTO knowledge (title, content, source, content_type, metadata, user_id) "
         "VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
         data.title,
@@ -26,16 +29,16 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
 
     # Add tags
     for tag_name in data.tags:
-        await pg_pool.execute(
+        await db_pool.execute(
             "INSERT INTO tags (name, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
             tag_name,
             user_id,
         )
-        tag = await pg_pool.fetchrow(
+        tag = await db_pool.fetchrow(
             "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, user_id
         )
         if tag:
-            await pg_pool.execute(
+            await db_pool.execute(
                 "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 knowledge_id,
                 tag["id"],
@@ -49,38 +52,41 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
         points = []
         for chunk, embedding in zip(chunks, embeddings):
             point_id = f"{knowledge_id}_{chunk.index}"
-            points.append(PointStruct(
-                id=point_id,
-                vector=embedding,
-                payload={
-                    "knowledge_id": str(knowledge_id),
-                    "chunk_index": chunk.index,
-                    "content": chunk.content,
-                    "user_id": str(user_id),
-                },
-            ))
-            await pg_pool.execute(
+            if PointStruct is not None:
+                points.append(PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload={
+                        "knowledge_id": str(knowledge_id),
+                        "chunk_index": chunk.index,
+                        "content": chunk.content,
+                        "user_id": str(user_id),
+                    },
+                ))
+            await db_pool.execute(
                 "INSERT INTO knowledge_chunks (knowledge_id, chunk_index, content, embedding_id, token_count) "
                 "VALUES ($1, $2, $3, $4, $5)",
                 knowledge_id, chunk.index, chunk.content, point_id, len(chunk.content.split()),
             )
-        qdrant_client.upsert_points(points)
+        if points:
+            qdrant_client.upsert_points(points)
 
     # Index in Meilisearch (always, even if no chunks)
-    meili_client.add_documents([{
-        "id": str(knowledge_id),
-        "title": data.title,
-        "content": data.content[:5000],
-        "tags": data.tags,
-        "user_id": str(user_id),
-        "content_type": data.content_type,
-    }])
+    if meili_client.AVAILABLE:
+        meili_client.add_documents([{
+            "id": str(knowledge_id),
+            "title": data.title,
+            "content": data.content[:5000],
+            "tags": data.tags,
+            "user_id": str(user_id),
+            "content_type": data.content_type,
+        }])
 
     return dict(row)
 
 
 async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
         "FROM knowledge k "
         "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
@@ -140,7 +146,7 @@ async def list_knowledge(
         )
         values.extend([offset, limit])
 
-    rows = await pg_pool.fetch(query, *values)
+    rows = await db_pool.fetch(query, *values)
     return [dict(r) for r in rows]
 
 
@@ -159,7 +165,7 @@ async def update_knowledge(knowledge_id: UUID, data: KnowledgeUpdate, user_id: U
             idx += 1
 
     values.extend([knowledge_id, user_id])
-    await pg_pool.execute(
+    await db_pool.execute(
         f"UPDATE knowledge SET {', '.join(set_clauses)}, updated_at = NOW() "
         f"WHERE id = ${idx} AND user_id = ${idx + 1}",
         *values,
@@ -170,18 +176,19 @@ async def update_knowledge(knowledge_id: UUID, data: KnowledgeUpdate, user_id: U
 
 async def delete_knowledge(knowledge_id: UUID, user_id: UUID) -> bool:
     # Delete chunks from qdrant
-    chunks = await pg_pool.fetch(
+    chunks = await db_pool.fetch(
         "SELECT embedding_id FROM knowledge_chunks WHERE knowledge_id = $1", knowledge_id
     )
     embedding_ids = [c["embedding_id"] for c in chunks if c["embedding_id"]]
-    if embedding_ids:
+    if embedding_ids and qdrant_client.AVAILABLE:
         qdrant_client.delete_points(embedding_ids)
 
     # Delete from meilisearch
-    meili_client.delete_document(str(knowledge_id))
+    if meili_client.AVAILABLE:
+        meili_client.delete_document(str(knowledge_id))
 
     # Delete from postgres
-    result = await pg_pool.execute(
+    result = await db_pool.execute(
         "DELETE FROM knowledge WHERE id = $1 AND user_id = $2", knowledge_id, user_id
     )
     return "DELETE 1" in result
@@ -189,7 +196,7 @@ async def delete_knowledge(knowledge_id: UUID, user_id: UUID) -> bool:
 
 async def toggle_star(knowledge_id: UUID, user_id: UUID) -> dict | None:
     """Toggle star status on a knowledge item."""
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "UPDATE knowledge SET starred = NOT COALESCE(starred, FALSE), updated_at = NOW() "
         "WHERE id = $1 AND user_id = $2 RETURNING starred",
         knowledge_id, user_id,
@@ -201,7 +208,7 @@ async def toggle_star(knowledge_id: UUID, user_id: UUID) -> dict | None:
 
 async def toggle_pin(knowledge_id: UUID, user_id: UUID) -> dict | None:
     """Toggle pin status on a knowledge item."""
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "UPDATE knowledge SET pinned = NOT COALESCE(pinned, FALSE), updated_at = NOW() "
         "WHERE id = $1 AND user_id = $2 RETURNING pinned",
         knowledge_id, user_id,

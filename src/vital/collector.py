@@ -135,9 +135,9 @@ class MetricsCollector:
     async def _collect_biz(self) -> BizMetrics:
         biz = BizMetrics()
         try:
-            from src.database.postgres import pg_pool
+            from src.database.postgres import db_pool
 
-            biz.knowledge_entries = await pg_pool.fetchval("SELECT count(*) FROM knowledge")
+            biz.knowledge_entries = await db_pool.fetchval("SELECT count(*) FROM knowledge")
         except Exception:
             pass
 

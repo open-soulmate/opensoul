@@ -59,10 +59,10 @@ class HealthChecker:
 
     async def _check_postgres(self) -> ComponentHealth:
         try:
-            from src.database.postgres import pg_pool
+            from src.database.postgres import db_pool
 
             t0 = time.monotonic()
-            await pg_pool.fetchval("SELECT 1")
+            await db_pool.fetchval("SELECT 1")
             latency = (time.monotonic() - t0) * 1000
             return ComponentHealth("postgres", Status.UP, latency_ms=latency)
         except Exception as e:

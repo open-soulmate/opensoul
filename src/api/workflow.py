@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.middleware.auth import get_current_user, require_role
 
 router = APIRouter()
@@ -42,14 +42,14 @@ async def list_tasks(
 ):
     """List workflow tasks, optionally filtered by status."""
     if status:
-        rows = await pg_pool.fetch(
+        rows = await db_pool.fetch(
             "SELECT id, name, description, task_type, config, schedule, status, "
             "last_run_at, next_run_at, created_at "
             "FROM workflow_tasks WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC",
             current_user["id"], status,
         )
     else:
-        rows = await pg_pool.fetch(
+        rows = await db_pool.fetch(
             "SELECT id, name, description, task_type, config, schedule, status, "
             "last_run_at, next_run_at, created_at "
             "FROM workflow_tasks WHERE user_id = $1 ORDER BY created_at DESC",
@@ -65,7 +65,7 @@ async def create_task(
 ):
     """Create a new workflow task."""
     task_id = uuid4()
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "INSERT INTO workflow_tasks (id, user_id, name, description, task_type, config, schedule, status) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, 'idle') "
         "RETURNING id, name, description, task_type, config, schedule, status, "
@@ -84,7 +84,7 @@ async def run_task(
     current_user: dict = Depends(get_current_user),
 ):
     """Manually trigger a workflow task."""
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT id, status FROM workflow_tasks WHERE id = $1 AND user_id = $2",
         task_id, current_user["id"],
     )
@@ -92,7 +92,7 @@ async def run_task(
         raise HTTPException(status_code=404, detail="Task not found")
     if row["status"] == "running":
         raise HTTPException(status_code=409, detail="Task is already running")
-    await pg_pool.execute(
+    await db_pool.execute(
         "UPDATE workflow_tasks SET status = 'running', last_run_at = NOW() WHERE id = $1",
         task_id,
     )
@@ -105,7 +105,7 @@ async def pause_task(
     current_user: dict = Depends(get_current_user),
 ):
     """Pause a running or idle task."""
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT id, status FROM workflow_tasks WHERE id = $1 AND user_id = $2",
         task_id, current_user["id"],
     )
@@ -113,7 +113,7 @@ async def pause_task(
         raise HTTPException(status_code=404, detail="Task not found")
     if row["status"] not in ("running", "idle"):
         raise HTTPException(status_code=409, detail=f"Cannot pause task in '{row['status']}' state")
-    await pg_pool.execute(
+    await db_pool.execute(
         "UPDATE workflow_tasks SET status = 'paused' WHERE id = $1",
         task_id,
     )
@@ -126,7 +126,7 @@ async def resume_task(
     current_user: dict = Depends(get_current_user),
 ):
     """Resume a paused task."""
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT id, status FROM workflow_tasks WHERE id = $1 AND user_id = $2",
         task_id, current_user["id"],
     )
@@ -134,7 +134,7 @@ async def resume_task(
         raise HTTPException(status_code=404, detail="Task not found")
     if row["status"] != "paused":
         raise HTTPException(status_code=409, detail=f"Cannot resume task in '{row['status']}' state")
-    await pg_pool.execute(
+    await db_pool.execute(
         "UPDATE workflow_tasks SET status = 'idle' WHERE id = $1",
         task_id,
     )
@@ -147,7 +147,7 @@ async def delete_task(
     current_user: dict = Depends(get_current_user),
 ):
     """Delete a workflow task."""
-    result = await pg_pool.execute(
+    result = await db_pool.execute(
         "DELETE FROM workflow_tasks WHERE id = $1 AND user_id = $2",
         task_id, current_user["id"],
     )

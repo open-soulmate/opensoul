@@ -1,22 +1,37 @@
+import logging
 from uuid import UUID
-
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
 
 from src.config import settings
 
+logger = logging.getLogger(__name__)
+
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
+except ImportError:
+    QdrantClient = None
+    Distance = FieldCondition = Filter = MatchValue = PointStruct = VectorParams = None
+    logger.warning("qdrant_client not installed — vector search disabled")
+
 
 class QdrantStore:
+    AVAILABLE = QdrantClient is not None
+
     def __init__(self):
-        self._client: QdrantClient | None = None
+        self._client = None
 
     @property
-    def client(self) -> QdrantClient:
+    def client(self):
+        if not self.AVAILABLE:
+            return None
         if not self._client:
             self._client = QdrantClient(url=settings.qdrant_url)
         return self._client
 
     def ensure_collection(self):
+        if not self.AVAILABLE:
+            logger.debug("Qdrant unavailable, skipping ensure_collection")
+            return
         collections = [c.name for c in self.client.get_collections().collections]
         if settings.qdrant_collection not in collections:
             self.client.create_collection(
@@ -27,7 +42,10 @@ class QdrantStore:
                 ),
             )
 
-    def upsert_points(self, points: list[PointStruct]):
+    def upsert_points(self, points):
+        if not self.AVAILABLE:
+            logger.debug("Qdrant unavailable, skipping upsert_points")
+            return
         self.client.upsert(
             collection_name=settings.qdrant_collection,
             points=points,
@@ -41,6 +59,9 @@ class QdrantStore:
         knowledge_id: UUID | None = None,
         score_threshold: float | None = None,
     ) -> list:
+        if not self.AVAILABLE:
+            logger.debug("Qdrant unavailable, skipping search")
+            return []
         query_filter = None
         conditions = []
 
@@ -65,6 +86,9 @@ class QdrantStore:
         )
 
     def delete_points(self, ids: list[str]):
+        if not self.AVAILABLE:
+            logger.debug("Qdrant unavailable, skipping delete_points")
+            return
         self.client.delete(
             collection_name=settings.qdrant_collection,
             points_selector=ids,
@@ -72,6 +96,9 @@ class QdrantStore:
 
     def delete_by_knowledge_id(self, knowledge_id: UUID):
         """Delete all points belonging to a knowledge item."""
+        if not self.AVAILABLE:
+            logger.debug("Qdrant unavailable, skipping delete_by_knowledge_id")
+            return
         self.client.delete(
             collection_name=settings.qdrant_collection,
             points_selector=Filter(
