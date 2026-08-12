@@ -13,10 +13,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> UUID:
-    user_id = decode_token(token)
-    if not user_id:
+    token_data = decode_token(token)
+    if not token_data:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return user_id
+    return token_data["user_id"]
 
 
 @router.post("/register", response_model=UserResponse)
