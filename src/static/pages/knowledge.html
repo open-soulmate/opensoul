@@ -8,6 +8,22 @@
     </div>
 </div>
 
+<!-- 筛选栏 -->
+<div class="card" style="margin-bottom:16px">
+    <div class="card-body" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+        <div style="display:flex; gap:8px; align-items:center; flex:1; min-width:200px">
+            <label style="font-size:12px; color:var(--text-muted); white-space:nowrap">领域</label>
+            <input class="form-input" id="filter-domain" placeholder="筛选领域..." style="flex:1">
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex:1; min-width:200px">
+            <label style="font-size:12px; color:var(--text-muted); white-space:nowrap">标签</label>
+            <input class="form-input" id="filter-tag" placeholder="筛选标签..." style="flex:1">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="applyFilters()">筛选</button>
+        <button class="btn btn-sm" onclick="resetFilters()">重置</button>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header">
         <span class="card-title">知识库条目</span>
@@ -35,6 +51,15 @@
                 </tbody>
             </table>
         </div>
+        <!-- 分页控件 -->
+        <div id="pagination-controls" style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--border)">
+            <div style="font-size:12px; color:var(--text-muted)" id="pagination-info">显示 0 条</div>
+            <div style="display:flex; gap:8px">
+                <button class="btn btn-sm" id="btn-prev" onclick="prevPage()" disabled>上一页</button>
+                <span style="font-size:13px; color:var(--text-secondary); padding:5px 10px" id="page-num">1</span>
+                <button class="btn btn-sm" id="btn-next" onclick="nextPage()" disabled>下一页</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -43,9 +68,56 @@
     <div class="card" style="width:700px; max-width:90vw; max-height:85vh; overflow-y:auto;">
         <div class="card-header">
             <span class="card-title" id="detail-title">知识详情</span>
-            <button class="btn btn-sm" onclick="closeKnowledgeDetail()">✕</button>
+            <div style="display:flex; gap:8px">
+                <button class="btn btn-primary btn-sm" onclick="editCurrentKnowledge()">编辑</button>
+                <button class="btn btn-sm" onclick="closeKnowledgeDetail()">✕</button>
+            </div>
         </div>
         <div class="card-body" id="detail-body">
+        </div>
+    </div>
+</div>
+
+<!-- 编辑知识对话框 -->
+<div id="edit-knowledge-modal" style="display:none; position:fixed; inset:0; z-index:210; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div class="card" style="width:600px; max-width:90vw; max-height:85vh; overflow-y:auto;">
+        <div class="card-header">
+            <span class="card-title">编辑知识条目</span>
+            <button class="btn btn-sm" onclick="closeEditKnowledge()">✕</button>
+        </div>
+        <div class="card-body">
+            <input type="hidden" id="edit-kb-id">
+            <div class="form-group">
+                <label class="form-label">标题</label>
+                <input class="form-input" id="edit-kb-title" placeholder="知识标题">
+            </div>
+            <div class="form-group">
+                <label class="form-label">内容</label>
+                <textarea class="form-textarea" id="edit-kb-content" placeholder="知识内容..." style="min-height:200px"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">类型</label>
+                    <select class="form-select" id="edit-kb-type">
+                        <option value="text">文本</option>
+                        <option value="code">代码</option>
+                        <option value="note">笔记</option>
+                        <option value="reference">参考</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">领域</label>
+                    <input class="form-input" id="edit-kb-domain" placeholder="如: 技术/产品/运营">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">标签 (逗号分隔)</label>
+                <input class="form-input" id="edit-kb-tags" placeholder="如: python, fastapi, 教程">
+            </div>
+            <div style="text-align:right; margin-top:16px;">
+                <button class="btn" onclick="closeEditKnowledge()" style="margin-right:8px">取消</button>
+                <button class="btn btn-primary" onclick="submitEditKnowledge()">保存修改</button>
+            </div>
         </div>
     </div>
 </div>
@@ -107,16 +179,69 @@
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-chip { display: inline-block; background: var(--accent-dim); color: var(--accent); padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
 .entity-chip { display: inline-block; background: rgba(59, 130, 246, 0.15); color: var(--info); padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { margin-top: 16px; margin-bottom: 8px; font-weight: 600; }
+.markdown-body h1 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.1em; }
+.markdown-body p { margin-bottom: 12px; }
+.markdown-body code { background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; font-family: 'Monaco', 'Menlo', monospace; }
+.markdown-body pre { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px; overflow-x: auto; }
+.markdown-body pre code { background: none; padding: 0; }
+.markdown-body ul, .markdown-body ol { margin-left: 24px; margin-bottom: 12px; }
+.markdown-body li { margin-bottom: 4px; }
+.markdown-body blockquote { border-left: 3px solid var(--accent); padding-left: 12px; margin: 12px 0; color: var(--text-secondary); }
+.markdown-body a { color: var(--info); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body em { font-style: italic; }
+.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.markdown-body th { background: var(--bg-secondary); font-weight: 600; }
 </style>
 
 <script>
 let _kbUserId = null;
+let _currentPage = 0;
+const _pageSize = 20;
+let _currentFilter = { domain: null, tag: null };
+let _currentDetailId = null;
 
 async function init_knowledge() {
     try {
         const userRes = await API.get('/user/me').catch(() => null);
         if (userRes) _kbUserId = userRes.id;
     } catch (e) {}
+    loadKnowledgeList();
+}
+
+function applyFilters() {
+    const domain = document.getElementById('filter-domain').value.trim();
+    const tag = document.getElementById('filter-tag').value.trim();
+    _currentFilter.domain = domain || null;
+    _currentFilter.tag = tag || null;
+    _currentPage = 0;
+    loadKnowledgeList();
+}
+
+function resetFilters() {
+    document.getElementById('filter-domain').value = '';
+    document.getElementById('filter-tag').value = '';
+    _currentFilter.domain = null;
+    _currentFilter.tag = null;
+    _currentPage = 0;
+    loadKnowledgeList();
+}
+
+function prevPage() {
+    if (_currentPage > 0) {
+        _currentPage--;
+        loadKnowledgeList();
+    }
+}
+
+function nextPage() {
+    _currentPage++;
     loadKnowledgeList();
 }
 
@@ -132,12 +257,31 @@ async function loadKnowledgeList() {
             _kbUserId = userRes.id;
         }
 
-        const items = await API.get(`/knowledge/?user_id=${_kbUserId}&limit=100`);
-        document.getElementById('kb-total').textContent = items.length;
+        const offset = _currentPage * _pageSize;
+        let url = `/knowledge/?user_id=${_kbUserId}&offset=${offset}&limit=${_pageSize}`;
+        if (_currentFilter.domain) url += `&domain=${encodeURIComponent(_currentFilter.domain)}`;
+        if (_currentFilter.tag) url += `&tag=${encodeURIComponent(_currentFilter.tag)}`;
 
-        if (items.length === 0) {
+        const items = await API.get(url);
+        document.getElementById('kb-total').textContent = items.length + offset;
+
+        // 更新分页控件
+        const hasMore = items.length >= _pageSize;
+        document.getElementById('btn-prev').disabled = _currentPage === 0;
+        document.getElementById('btn-next').disabled = !hasMore;
+        document.getElementById('page-num').textContent = _currentPage + 1;
+        document.getElementById('pagination-info').textContent =
+            `显示 ${offset + 1}-${offset + items.length} 条`;
+
+        if (items.length === 0 && _currentPage === 0) {
             document.getElementById('knowledge-table-body').innerHTML =
                 '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">暂无数据</td></tr>';
+            return;
+        }
+
+        if (items.length === 0) {
+            _currentPage--;
+            loadKnowledgeList();
             return;
         }
 
@@ -150,6 +294,7 @@ async function loadKnowledgeList() {
                 <td><div class="tag-list">${tags || '<span style="color:var(--text-muted)">-</span>'}</div></td>
                 <td>${item.created_at ? new Date(item.created_at).toLocaleString() : '-'}</td>
                 <td onclick="event.stopPropagation()">
+                    <button class="btn btn-sm" onclick="showKnowledgeDetail('${item.id}')">详情</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteKnowledge('${item.id}')">删除</button>
                 </td>
             </tr>`;
@@ -160,11 +305,47 @@ async function loadKnowledgeList() {
     }
 }
 
+function renderMarkdown(text) {
+    if (!text) return '<p style="color:var(--text-muted)">(无内容)</p>';
+
+    let html = escapeHtml(text);
+
+    // Code blocks
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    // Bold
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    // Blockquotes
+    html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+    // Unordered lists
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+    // Ordered lists
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+    // Horizontal rules
+    html = html.replace(/^---$/gm, '<hr>');
+    // Links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    // Line breaks
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+
+    return `<div class="markdown-body"><p>${html}</p></div>`;
+}
+
 async function showKnowledgeDetail(id) {
     const modal = document.getElementById('knowledge-detail-modal');
     const body = document.getElementById('detail-body');
     const title = document.getElementById('detail-title');
 
+    _currentDetailId = id;
     body.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
     modal.style.display = 'flex';
 
@@ -176,6 +357,15 @@ async function showKnowledgeDetail(id) {
         const meta = item.metadata || {};
         const entities = meta.entities || [];
         const entityChips = entities.map(e => `<span class="entity-chip">${escapeHtml(typeof e === 'string' ? e : e.name || JSON.stringify(e))}</span>`).join('');
+
+        // 检查关联关系
+        const relations = meta.relations || [];
+        const relationHtml = relations.length > 0 ? `
+            <div class="detail-section">
+                <div class="detail-label">关联关系</div>
+                <div class="tag-list">${relations.map(r => `<span class="entity-chip">${escapeHtml(typeof r === 'string' ? r : JSON.stringify(r))}</span>`).join('')}</div>
+            </div>
+        ` : '';
 
         body.innerHTML = `
             <div class="detail-meta">
@@ -211,9 +401,11 @@ async function showKnowledgeDetail(id) {
                 <div class="tag-list">${entityChips}</div>
             </div>` : ''}
 
+            ${relationHtml}
+
             <div class="detail-section">
                 <div class="detail-label">完整内容</div>
-                <div class="detail-content">${escapeHtml(item.content || '(无内容)')}</div>
+                <div class="detail-content">${renderMarkdown(item.content)}</div>
             </div>
 
             ${item.embedding_id ? `<div class="detail-section">
@@ -228,6 +420,64 @@ async function showKnowledgeDetail(id) {
 
 function closeKnowledgeDetail() {
     document.getElementById('knowledge-detail-modal').style.display = 'none';
+    _currentDetailId = null;
+}
+
+function editCurrentKnowledge() {
+    if (!_currentDetailId) return;
+    closeKnowledgeDetail();
+    showEditKnowledge(_currentDetailId);
+}
+
+async function showEditKnowledge(id) {
+    const modal = document.getElementById('edit-knowledge-modal');
+    modal.style.display = 'flex';
+
+    try {
+        const item = await API.get(`/knowledge/${id}?user_id=${_kbUserId}`);
+        document.getElementById('edit-kb-id').value = id;
+        document.getElementById('edit-kb-title').value = item.title || '';
+        document.getElementById('edit-kb-content').value = item.content || '';
+        document.getElementById('edit-kb-type').value = item.content_type || 'text';
+        document.getElementById('edit-kb-domain').value = item.domain || '';
+        document.getElementById('edit-kb-tags').value = (item.tags || []).join(', ');
+    } catch (e) {
+        Toast.show(`加载失败: ${e.message}`, 'error');
+        closeEditKnowledge();
+    }
+}
+
+function closeEditKnowledge() {
+    document.getElementById('edit-knowledge-modal').style.display = 'none';
+}
+
+async function submitEditKnowledge() {
+    const id = document.getElementById('edit-kb-id').value;
+    const title = document.getElementById('edit-kb-title').value.trim();
+    const content = document.getElementById('edit-kb-content').value.trim();
+    const contentType = document.getElementById('edit-kb-type').value;
+    const domain = document.getElementById('edit-kb-domain').value.trim();
+    const tagsRaw = document.getElementById('edit-kb-tags').value.trim();
+
+    if (!title || !content) {
+        Toast.show('标题和内容不能为空', 'error');
+        return;
+    }
+
+    try {
+        await API.put(`/knowledge/${id}?user_id=${_kbUserId}`, {
+            title,
+            content,
+            content_type: contentType,
+            domain: domain || null,
+            tags: tagsRaw ? tagsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+        });
+        Toast.show('修改成功');
+        closeEditKnowledge();
+        loadKnowledgeList();
+    } catch (e) {
+        Toast.show(`修改失败: ${e.message}`, 'error');
+    }
 }
 
 function showAddKnowledge() {
@@ -257,8 +507,7 @@ async function submitKnowledge() {
             _kbUserId = userRes.id;
         }
 
-        await API.post('/knowledge/', {
-            user_id: _kbUserId,
+        await API.post(`/knowledge/?user_id=${_kbUserId}`, {
             title,
             content,
             content_type: contentType,
