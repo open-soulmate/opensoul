@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 from src.database.postgres import db_pool
@@ -20,7 +21,7 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
     await db_pool.execute(
         "INSERT INTO knowledge (id, title, content, source, content_type, metadata, user_id) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        knowledge_id, data.title, data.content, data.source, data.content_type, data.metadata, str(user_id),
+        knowledge_id, data.title, data.content, data.source, data.content_type, json.dumps(data.metadata or {}), str(user_id),
     )
     row = await db_pool.fetchrow("SELECT * FROM knowledge WHERE id = $1", knowledge_id)
 
