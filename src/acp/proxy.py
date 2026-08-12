@@ -71,40 +71,31 @@ class ACPProcess:
         if not self.is_running:
             await self.start()
 
-        params = {
-            "message": {
-                "role": "user",
-                "parts": [{"type": "text", "text": text}],
-            }
+        # ACP PromptRequest format: {prompt: [ContentBlock], sessionId: str}
+        params: dict[str, Any] = {
+            "prompt": [{"type": "text", "text": text}],
+            "sessionId": session_id or "default",
         }
-        if session_id:
-            params["sessionId"] = session_id
 
         resp = await self._send_rpc("session/prompt", params)
         return resp
 
-    async def send_message_with_image(self, text: str, image_data: str, mime_type: str = "image/png") -> dict[str, Any]:
+    async def send_message_with_image(self, text: str, image_data: str, mime_type: str = "image/png", session_id: str | None = None) -> dict[str, Any]:
         """Send a message with an image attachment."""
         if not self.is_running:
             await self.start()
 
-        params = {
-            "message": {
-                "role": "user",
-                "parts": [
-                    {"type": "text", "text": text} if text else None,
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "mediaType": mime_type,
-                            "data": image_data.split(",")[-1] if "," in image_data else image_data,
-                        }
-                    },
-                ],
-            }
+        parts: list[dict] = []
+        if text:
+            parts.append({"type": "text", "text": text})
+        # ACP ImageContentBlock format
+        b64 = image_data.split(",")[-1] if "," in image_data else image_data
+        parts.append({"type": "image", "source": {"type": "base64", "mediaType": mime_type, "data": b64}})
+
+        params: dict[str, Any] = {
+            "prompt": parts,
+            "sessionId": session_id or "default",
         }
-        params["message"]["parts"] = [p for p in params["message"]["parts"] if p]
 
         resp = await self._send_rpc("session/prompt", params)
         return resp
