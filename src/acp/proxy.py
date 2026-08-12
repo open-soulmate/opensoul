@@ -71,13 +71,23 @@ class ACPProcess:
         if not self.is_running:
             await self.start()
 
+        # Drain any stale events
+        while not self._event_queue.empty():
+            try: self._event_queue.get_nowait()
+            except: break
+
         # ACP PromptRequest format: {prompt: [ContentBlock], sessionId: str}
         params: dict[str, Any] = {
             "prompt": [{"type": "text", "text": text}],
             "sessionId": session_id or "default",
         }
 
+        # Send the prompt (returns immediately with stopReason/usage)
         resp = await self._send_rpc("session/prompt", params)
+
+        # Collect streamed response from events
+        collected_text = await self._collect_agent_response(timeout=90)
+        resp["response_text"] = collected_text
         return resp
 
     async def send_message_with_image(self, text: str, image_data: str, mime_type: str = "image/png", session_id: str | None = None) -> dict[str, Any]:
@@ -85,10 +95,14 @@ class ACPProcess:
         if not self.is_running:
             await self.start()
 
+        # Drain stale events
+        while not self._event_queue.empty():
+            try: self._event_queue.get_nowait()
+            except: break
+
         parts: list[dict] = []
         if text:
             parts.append({"type": "text", "text": text})
-        # ACP ImageContentBlock format
         b64 = image_data.split(",")[-1] if "," in image_data else image_data
         parts.append({"type": "image", "source": {"type": "base64", "mediaType": mime_type, "data": b64}})
 
@@ -98,7 +112,44 @@ class ACPProcess:
         }
 
         resp = await self._send_rpc("session/prompt", params)
+        collected_text = await self._collect_agent_response(timeout=90)
+        resp["response_text"] = collected_text
         return resp
+
+    async def _collect_agent_response(self, timeout: float = 90) -> str:
+        """Wait for and collect agent response text from ACP events."""
+        import time
+        collected = []
+        start = time.time()
+        last_chunk_time = start
+
+        while time.time() - start < timeout:
+            try:
+                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
+                last_chunk_time = time.time()
+
+                # Handle agent_message_chunk with text parts
+                update = event.get("params", {}).get("update", {})
+                su = update.get("sessionUpdate") or update.get("session_update", "")
+
+                if su == "agent_message_chunk":
+                    parts = update.get("parts", [])
+                    for p in parts:
+                        if p.get("type") == "text":
+                            collected.append(p.get("text", ""))
+
+                # Check for stop signals
+                if su == "usage_update" and collected:
+                    # Usage update after message = response complete
+                    break
+
+            except asyncio.TimeoutError:
+                # If we have content and no new chunks for 2s, we're done
+                if collected and time.time() - last_chunk_time > 2.0:
+                    break
+                continue
+
+        return "".join(collected)
 
     async def list_sessions(self) -> list[dict]:
         """List available sessions."""
