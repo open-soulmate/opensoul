@@ -66,7 +66,7 @@ async def authenticate_user(username: str, password: str) -> dict | None:
 async def get_user_by_id(user_id: UUID) -> dict | None:
     row = await db_pool.fetchrow(
         "SELECT id, username, email, role, is_active, created_at, updated_at FROM users WHERE id = $1",
-        user_id,
+        str(user_id),
     )
     return dict(row) if row else None
 
@@ -81,7 +81,7 @@ async def register_user(username: str, email: str, password: str, role: str = "u
     )
     row = await db_pool.fetchrow(
         "SELECT id, username, email, role, is_active, created_at, updated_at FROM users WHERE id = $1",
-        user_id,
+        str(user_id),
     )
     return dict(row)
 
