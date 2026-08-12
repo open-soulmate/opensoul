@@ -12,6 +12,9 @@ from src.database.qdrant import qdrant_client
 from src.database.meilisearch import meili_client
 
 from src.api.knowledge import router as knowledge_router
+from src.api.knowledge_requests import router as knowledge_requests_router
+from src.api.kb_sharing import router as kb_sharing_router
+from src.api.dedup import router as dedup_router
 from src.api.search import router as search_router
 from src.api.chat import router as chat_router
 from src.api.graph import router as graph_router
@@ -98,6 +101,9 @@ async def version():
 
 # Register all API routers
 app.include_router(knowledge_router, prefix="/api/knowledge", tags=["knowledge"])
+app.include_router(knowledge_requests_router, prefix="/api/knowledge-requests", tags=["knowledge-requests"])
+app.include_router(kb_sharing_router, prefix="/api/kb-sharing", tags=["kb-sharing"])
+app.include_router(dedup_router, prefix="/api/dedup", tags=["dedup"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
