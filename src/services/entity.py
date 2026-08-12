@@ -54,12 +54,12 @@ async def list_entities(user_id: UUID, entity_type: str | None = None, offset: i
         rows = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 AND type = $2 "
             "ORDER BY name OFFSET $3 LIMIT $4",
-            user_id, entity_type, offset, limit,
+            str(user_id), entity_type, offset, limit,
         )
     else:
         rows = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 ORDER BY name OFFSET $2 LIMIT $3",
-            user_id, offset, limit,
+            str(user_id), offset, limit,
         )
     return [_row_to_entity(r) for r in rows]
 
