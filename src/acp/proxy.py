@@ -80,7 +80,7 @@ class ACPProcess:
         if session_id:
             params["sessionId"] = session_id
 
-        resp = await self._send_rpc("prompt", params)
+        resp = await self._send_rpc("session/prompt", params)
         return resp
 
     async def send_message_with_image(self, text: str, image_data: str, mime_type: str = "image/png") -> dict[str, Any]:
@@ -106,21 +106,21 @@ class ACPProcess:
         }
         params["message"]["parts"] = [p for p in params["message"]["parts"] if p]
 
-        resp = await self._send_rpc("prompt", params)
+        resp = await self._send_rpc("session/prompt", params)
         return resp
 
     async def list_sessions(self) -> list[dict]:
         """List available sessions."""
         if not self.is_running:
             await self.start()
-        resp = await self._send_rpc("listSessions", {})
+        resp = await self._send_rpc("session/list", {})
         return resp.get("sessions", [])
 
     async def new_session(self) -> dict:
         """Create a new session."""
         if not self.is_running:
             await self.start()
-        resp = await self._send_rpc("newSession", {})
+        resp = await self._send_rpc("session/new", {})
         return resp
 
     async def _send_rpc(self, method: str, params: dict) -> dict[str, Any]:
