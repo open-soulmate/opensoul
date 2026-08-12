@@ -1,10 +1,13 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from src.config import settings
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
 from src.database.meilisearch import meili_client
 
@@ -30,7 +33,7 @@ from src.vital.alert import AlertManager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await pg_pool.connect()
+    await db_pool.connect()
     qdrant_client.ensure_collection()
     meili_client.ensure_index()
     await gland_gateway.startup()
@@ -51,7 +54,7 @@ async def lifespan(app: FastAPI):
     await alert_mgr.stop()
     await collector.stop()
     await gland_gateway.shutdown()
-    await pg_pool.disconnect()
+    await db_pool.disconnect()
 
 
 app = FastAPI(
@@ -69,6 +72,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static files
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
+
+# Root route — serve admin dashboard
+@app.get("/")
+async def index():
+    return FileResponse(os.path.join(_static_dir, "index.html"))
 
 
 # Health check endpoint

@@ -1,0 +1,302 @@
+<div class="stats-grid" style="margin-bottom:24px">
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-card-title">总条目数</span>
+            <span class="stat-card-icon">◈</span>
+        </div>
+        <div class="stat-card-value" id="kb-total">-</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">知识库条目</span>
+        <button class="btn btn-primary btn-sm" onclick="showAddKnowledge()">+ 新增</button>
+    </div>
+    <div class="card-body">
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>标题</th>
+                        <th>类型</th>
+                        <th>领域</th>
+                        <th>标签</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="knowledge-table-body">
+                    <tr>
+                        <td colspan="6" style="text-align:center; color:var(--text-muted);">
+                            <div class="loading"><div class="spinner"></div>加载中...</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 知识详情对话框 -->
+<div id="knowledge-detail-modal" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div class="card" style="width:700px; max-width:90vw; max-height:85vh; overflow-y:auto;">
+        <div class="card-header">
+            <span class="card-title" id="detail-title">知识详情</span>
+            <button class="btn btn-sm" onclick="closeKnowledgeDetail()">✕</button>
+        </div>
+        <div class="card-body" id="detail-body">
+        </div>
+    </div>
+</div>
+
+<!-- 新增知识对话框 -->
+<div id="add-knowledge-modal" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div class="card" style="width:500px; max-width:90vw; max-height:80vh; overflow-y:auto;">
+        <div class="card-header">
+            <span class="card-title">新增知识条目</span>
+            <button class="btn btn-sm" onclick="closeAddKnowledge()">✕</button>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label">标题</label>
+                <input class="form-input" id="kb-title" placeholder="知识标题">
+            </div>
+            <div class="form-group">
+                <label class="form-label">内容</label>
+                <textarea class="form-textarea" id="kb-content" placeholder="知识内容..." style="min-height:150px"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">类型</label>
+                    <select class="form-select" id="kb-type">
+                        <option value="text">文本</option>
+                        <option value="code">代码</option>
+                        <option value="note">笔记</option>
+                        <option value="reference">参考</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">领域</label>
+                    <input class="form-input" id="kb-domain" placeholder="如: 技术/产品/运营">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">标签 (逗号分隔)</label>
+                <input class="form-input" id="kb-tags" placeholder="如: python, fastapi, 教程">
+            </div>
+            <div style="text-align:right; margin-top:16px;">
+                <button class="btn" onclick="closeAddKnowledge()" style="margin-right:8px">取消</button>
+                <button class="btn btn-primary" onclick="submitKnowledge()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.kb-row { cursor: pointer; }
+.kb-row:hover td { background: var(--bg-hover); }
+.detail-section { margin-bottom: 20px; }
+.detail-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 500; }
+.detail-value { font-size: 14px; color: var(--text-primary); line-height: 1.6; }
+.detail-content { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; font-size: 14px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; }
+.detail-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.detail-meta-item { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; }
+.detail-meta-label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+.detail-meta-value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip { display: inline-block; background: var(--accent-dim); color: var(--accent); padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.entity-chip { display: inline-block; background: rgba(59, 130, 246, 0.15); color: var(--info); padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+</style>
+
+<script>
+let _kbUserId = null;
+
+async function init_knowledge() {
+    try {
+        const userRes = await API.get('/user/me').catch(() => null);
+        if (userRes) _kbUserId = userRes.id;
+    } catch (e) {}
+    loadKnowledgeList();
+}
+
+async function loadKnowledgeList() {
+    try {
+        if (!_kbUserId) {
+            const userRes = await API.get('/user/me').catch(() => null);
+            if (!userRes) {
+                document.getElementById('knowledge-table-body').innerHTML =
+                    '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">请先登录</td></tr>';
+                return;
+            }
+            _kbUserId = userRes.id;
+        }
+
+        const items = await API.get(`/knowledge/?user_id=${_kbUserId}&limit=100`);
+        document.getElementById('kb-total').textContent = items.length;
+
+        if (items.length === 0) {
+            document.getElementById('knowledge-table-body').innerHTML =
+                '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">暂无数据</td></tr>';
+            return;
+        }
+
+        document.getElementById('knowledge-table-body').innerHTML = items.map(item => {
+            const tags = (item.tags || []).map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('');
+            return `<tr class="kb-row" onclick="showKnowledgeDetail('${item.id}')">
+                <td>${escapeHtml(item.title || '(无标题)')}</td>
+                <td><span class="badge badge-info">${item.content_type || '-'}</span></td>
+                <td>${escapeHtml(item.domain || '-')}</td>
+                <td><div class="tag-list">${tags || '<span style="color:var(--text-muted)">-</span>'}</div></td>
+                <td>${item.created_at ? new Date(item.created_at).toLocaleString() : '-'}</td>
+                <td onclick="event.stopPropagation()">
+                    <button class="btn btn-sm btn-danger" onclick="deleteKnowledge('${item.id}')">删除</button>
+                </td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        document.getElementById('knowledge-table-body').innerHTML =
+            `<tr><td colspan="6" style="text-align:center;color:var(--danger)">加载失败: ${e.message}</td></tr>`;
+    }
+}
+
+async function showKnowledgeDetail(id) {
+    const modal = document.getElementById('knowledge-detail-modal');
+    const body = document.getElementById('detail-body');
+    const title = document.getElementById('detail-title');
+
+    body.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
+    modal.style.display = 'flex';
+
+    try {
+        const item = await API.get(`/knowledge/${id}?user_id=${_kbUserId}`);
+        title.textContent = item.title || '知识详情';
+
+        const tags = (item.tags || []).map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('');
+        const meta = item.metadata || {};
+        const entities = meta.entities || [];
+        const entityChips = entities.map(e => `<span class="entity-chip">${escapeHtml(typeof e === 'string' ? e : e.name || JSON.stringify(e))}</span>`).join('');
+
+        body.innerHTML = `
+            <div class="detail-meta">
+                <div class="detail-meta-item">
+                    <div class="detail-meta-label">类型</div>
+                    <div class="detail-meta-value"><span class="badge badge-info">${item.content_type || 'text'}</span></div>
+                </div>
+                <div class="detail-meta-item">
+                    <div class="detail-meta-label">领域</div>
+                    <div class="detail-meta-value">${escapeHtml(item.domain || '-')}</div>
+                </div>
+                <div class="detail-meta-item">
+                    <div class="detail-meta-label">来源</div>
+                    <div class="detail-meta-value">${escapeHtml(item.source || '-')}</div>
+                </div>
+                <div class="detail-meta-item">
+                    <div class="detail-meta-label">创建时间</div>
+                    <div class="detail-meta-value">${item.created_at ? new Date(item.created_at).toLocaleString() : '-'}</div>
+                </div>
+                <div class="detail-meta-item">
+                    <div class="detail-meta-label">更新时间</div>
+                    <div class="detail-meta-value">${item.updated_at ? new Date(item.updated_at).toLocaleString() : '-'}</div>
+                </div>
+            </div>
+
+            <div class="detail-section">
+                <div class="detail-label">标签</div>
+                <div class="tag-list">${tags || '<span style="color:var(--text-muted)">无标签</span>'}</div>
+            </div>
+
+            ${entityChips ? `<div class="detail-section">
+                <div class="detail-label">关联实体</div>
+                <div class="tag-list">${entityChips}</div>
+            </div>` : ''}
+
+            <div class="detail-section">
+                <div class="detail-label">完整内容</div>
+                <div class="detail-content">${escapeHtml(item.content || '(无内容)')}</div>
+            </div>
+
+            ${item.embedding_id ? `<div class="detail-section">
+                <div class="detail-label">向量 ID</div>
+                <div class="detail-value" style="font-size:12px;color:var(--text-muted);font-family:monospace">${item.embedding_id}</div>
+            </div>` : ''}
+        `;
+    } catch (e) {
+        body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠</div><div class="empty-state-text">加载失败: ${e.message}</div></div>`;
+    }
+}
+
+function closeKnowledgeDetail() {
+    document.getElementById('knowledge-detail-modal').style.display = 'none';
+}
+
+function showAddKnowledge() {
+    document.getElementById('add-knowledge-modal').style.display = 'flex';
+}
+
+function closeAddKnowledge() {
+    document.getElementById('add-knowledge-modal').style.display = 'none';
+}
+
+async function submitKnowledge() {
+    const title = document.getElementById('kb-title').value.trim();
+    const content = document.getElementById('kb-content').value.trim();
+    const contentType = document.getElementById('kb-type').value;
+    const domain = document.getElementById('kb-domain').value.trim();
+    const tagsRaw = document.getElementById('kb-tags').value.trim();
+
+    if (!title || !content) {
+        Toast.show('标题和内容不能为空', 'error');
+        return;
+    }
+
+    try {
+        if (!_kbUserId) {
+            const userRes = await API.get('/user/me').catch(() => null);
+            if (!userRes) { Toast.show('请先登录', 'error'); return; }
+            _kbUserId = userRes.id;
+        }
+
+        await API.post('/knowledge/', {
+            user_id: _kbUserId,
+            title,
+            content,
+            content_type: contentType,
+            domain: domain || null,
+            tags: tagsRaw ? tagsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+        });
+        Toast.show('添加成功');
+        closeAddKnowledge();
+        // Clear form
+        document.getElementById('kb-title').value = '';
+        document.getElementById('kb-content').value = '';
+        document.getElementById('kb-domain').value = '';
+        document.getElementById('kb-tags').value = '';
+        loadKnowledgeList();
+    } catch (e) {
+        Toast.show(`添加失败: ${e.message}`, 'error');
+    }
+}
+
+async function deleteKnowledge(id) {
+    if (!confirm('确定删除此条目?')) return;
+    try {
+        if (!_kbUserId) {
+            const userRes = await API.get('/user/me').catch(() => null);
+            if (!userRes) return;
+            _kbUserId = userRes.id;
+        }
+        await API.del(`/knowledge/${id}?user_id=${_kbUserId}`);
+        Toast.show('已删除');
+        loadKnowledgeList();
+    } catch (e) {
+        Toast.show(`删除失败: ${e.message}`, 'error');
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>

@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 
 router = APIRouter()
 
@@ -11,13 +11,13 @@ router = APIRouter()
 @router.get("/json")
 async def export_json(user_id: UUID):
     """Export all user data as JSON."""
-    knowledge = await pg_pool.fetch(
+    knowledge = await db_pool.fetch(
         "SELECT * FROM knowledge WHERE user_id = $1 ORDER BY created_at", user_id
     )
-    entities = await pg_pool.fetch(
+    entities = await db_pool.fetch(
         "SELECT * FROM entities WHERE user_id = $1 ORDER BY name", user_id
     )
-    tags = await pg_pool.fetch(
+    tags = await db_pool.fetch(
         "SELECT * FROM tags WHERE user_id = $1 ORDER BY name", user_id
     )
 
@@ -31,7 +31,7 @@ async def export_json(user_id: UUID):
 @router.get("/markdown")
 async def export_markdown(user_id: UUID):
     """Export all knowledge as JSON with markdown-formatted content."""
-    knowledge = await pg_pool.fetch(
+    knowledge = await db_pool.fetch(
         "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
         "FROM knowledge k "
         "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
@@ -39,10 +39,10 @@ async def export_markdown(user_id: UUID):
         "WHERE k.user_id = $1 GROUP BY k.id ORDER BY k.created_at",
         user_id,
     )
-    entities = await pg_pool.fetch(
+    entities = await db_pool.fetch(
         "SELECT * FROM entities WHERE user_id = $1 ORDER BY name", user_id
     )
-    tags = await pg_pool.fetch(
+    tags = await db_pool.fetch(
         "SELECT * FROM tags WHERE user_id = $1 ORDER BY name", user_id
     )
 

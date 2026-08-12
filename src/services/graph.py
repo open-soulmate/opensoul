@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.models.entity import GraphData, GraphNode, GraphEdge, RelationCreate
 from src.services.extraction import extract_entities_and_relations
 
@@ -13,7 +13,7 @@ def _row_to_relation(row) -> dict:
 
 
 async def create_relation(data: RelationCreate) -> dict:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "INSERT INTO relations (source_id, target_id, relation_type, properties) "
         "VALUES ($1, $2, $3, $4) RETURNING *",
         data.source_entity_id,
@@ -25,7 +25,7 @@ async def create_relation(data: RelationCreate) -> dict:
 
 
 async def list_relations(user_id: UUID, offset: int = 0, limit: int = 100) -> list[dict]:
-    rows = await pg_pool.fetch(
+    rows = await db_pool.fetch(
         "SELECT r.* FROM relations r "
         "JOIN entities e ON r.source_id = e.id "
         "WHERE e.user_id = $1 "
@@ -49,7 +49,7 @@ async def get_graph(user_id: UUID, depth: int = 2, entity_id: UUID | None = None
                 continue
             visited_entities.add(current_id)
 
-            entity = await pg_pool.fetchrow(
+            entity = await db_pool.fetchrow(
                 "SELECT * FROM entities WHERE id = $1 AND user_id = $2", current_id, user_id
             )
             if entity:
@@ -59,7 +59,7 @@ async def get_graph(user_id: UUID, depth: int = 2, entity_id: UUID | None = None
                     node_type=entity["type"],
                     properties=entity["properties"],
                 ))
-                relations = await pg_pool.fetch(
+                relations = await db_pool.fetch(
                     "SELECT * FROM relations WHERE source_id = $1 OR target_id = $1",
                     current_id,
                 )
@@ -77,14 +77,14 @@ async def get_graph(user_id: UUID, depth: int = 2, entity_id: UUID | None = None
                         if current_depth + 1 <= depth:
                             queue.append((target, current_depth + 1))
     else:
-        entities = await pg_pool.fetch(
+        entities = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 ORDER BY name LIMIT 200", user_id
         )
         entity_ids = {e["id"] for e in entities}
         nodes = [GraphNode(id=e["id"], label=e["name"], node_type=e["type"], properties=e["properties"]) for e in entities]
 
         if entity_ids:
-            relations = await pg_pool.fetch(
+            relations = await db_pool.fetch(
                 "SELECT * FROM relations WHERE source_id = ANY($1) AND target_id = ANY($1)",
                 list(entity_ids),
             )
@@ -110,7 +110,7 @@ async def build_graph_from_text(text: str, user_id: UUID) -> GraphData:
         if not name:
             continue
 
-        existing = await pg_pool.fetchrow(
+        existing = await db_pool.fetchrow(
             "SELECT id FROM entities WHERE user_id = $1 AND name = $2",
             user_id, name,
         )
@@ -118,7 +118,7 @@ async def build_graph_from_text(text: str, user_id: UUID) -> GraphData:
             entity_name_to_id[name] = existing["id"]
         else:
             entity_id = uuid4()
-            await pg_pool.execute(
+            await db_pool.execute(
                 "INSERT INTO entities (id, user_id, name, type, description, properties) "
                 "VALUES ($1, $2, $3, $4, $5, $6)",
                 entity_id,
@@ -141,12 +141,12 @@ async def build_graph_from_text(text: str, user_id: UUID) -> GraphData:
             continue
 
         # Skip duplicate relations
-        exists = await pg_pool.fetchrow(
+        exists = await db_pool.fetchrow(
             "SELECT id FROM relations WHERE source_id = $1 AND target_id = $2 AND relation_type = $3",
             source_id, target_id, rel.get("relation_type", "related"),
         )
         if not exists:
-            await pg_pool.execute(
+            await db_pool.execute(
                 "INSERT INTO relations (id, source_id, target_id, relation_type, properties) "
                 "VALUES ($1, $2, $3, $4, $5)",
                 uuid4(),
@@ -165,20 +165,20 @@ async def build_graph_from_text(text: str, user_id: UUID) -> GraphData:
 
 async def get_entity_neighbors(user_id: UUID, entity_id: UUID) -> dict:
     """Get all directly connected entities and their relation types."""
-    entity = await pg_pool.fetchrow(
+    entity = await db_pool.fetchrow(
         "SELECT * FROM entities WHERE id = $1 AND user_id = $2", entity_id, user_id
     )
     if not entity:
         return {"entity": None, "neighbors": []}
 
-    relations = await pg_pool.fetch(
+    relations = await db_pool.fetch(
         "SELECT * FROM relations WHERE source_id = $1 OR target_id = $1", entity_id
     )
     neighbors = []
     for rel in relations:
         neighbor_id = rel["target_id"] if rel["source_id"] == entity_id else rel["source_id"]
         direction = "outgoing" if rel["source_id"] == entity_id else "incoming"
-        neighbor = await pg_pool.fetchrow(
+        neighbor = await db_pool.fetchrow(
             "SELECT id, name, type FROM entities WHERE id = $1", neighbor_id
         )
         if neighbor:
@@ -213,13 +213,13 @@ async def find_path(user_id: UUID, source_id: UUID, target_id: UUID, max_depth: 
 
         visited_in_path = {step["entity_id"] for step in path}
 
-        relations = await pg_pool.fetch(
+        relations = await db_pool.fetch(
             "SELECT * FROM relations WHERE source_id = $1 OR target_id = $1", current_id
         )
         for rel in relations:
             neighbor_id = rel["target_id"] if rel["source_id"] == current_id else rel["source_id"]
             if neighbor_id not in visited_in_path:
-                neighbor = await pg_pool.fetchrow(
+                neighbor = await db_pool.fetchrow(
                     "SELECT id, name, type FROM entities WHERE id = $1", neighbor_id
                 )
                 if neighbor:

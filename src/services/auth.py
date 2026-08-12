@@ -6,7 +6,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from src.config import settings
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -54,7 +54,7 @@ def decode_token(token: str) -> dict | None:
 # ── User operations ────────────────────────────────────────────────────
 
 async def authenticate_user(username: str, password: str) -> dict | None:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT id, username, email, role, password_hash FROM users WHERE username = $1",
         username,
     )
@@ -64,7 +64,7 @@ async def authenticate_user(username: str, password: str) -> dict | None:
 
 
 async def get_user_by_id(user_id: UUID) -> dict | None:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT id, username, email, role, is_active, created_at, updated_at FROM users WHERE id = $1",
         user_id,
     )
@@ -73,7 +73,7 @@ async def get_user_by_id(user_id: UUID) -> dict | None:
 
 async def register_user(username: str, email: str, password: str, role: str = "user") -> dict:
     hashed = hash_password(password)
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) "
         "RETURNING id, username, email, role, is_active, created_at, updated_at",
         username,

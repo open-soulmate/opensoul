@@ -4,9 +4,16 @@ import asyncio
 import logging
 from typing import Any, Callable, Awaitable
 
-import nats
-from nats.aio.client import Client as NATSClient
-from nats.aio.msg import Msg
+try:
+    import nats
+    from nats.aio.client import Client as NATSClient
+    from nats.aio.msg import Msg
+    NATS_AVAILABLE = True
+except ImportError:
+    nats = None
+    NATSClient = None
+    Msg = None
+    NATS_AVAILABLE = False
 
 from .events import EventBase, deserialize_event
 
@@ -25,13 +32,15 @@ class NerveClient:
         reconnect_time_wait: float = 2.0,
         max_reconnect_attempts: int = -1,
     ) -> None:
+        if not NATS_AVAILABLE:
+            logger.warning("nats not installed — NerveClient will be non-functional")
         if isinstance(servers, str):
             servers = [servers]
         self._servers = servers
         self._name = name
         self._reconnect_time_wait = reconnect_time_wait
         self._max_reconnect_attempts = max_reconnect_attempts
-        self._nc: NATSClient | None = None
+        self._nc = None
         self._subscriptions: list[tuple[str, Any]] = []
 
     @property
@@ -40,6 +49,8 @@ class NerveClient:
 
     async def connect(self) -> None:
         """Connect to NATS server(s) with auto-reconnect."""
+        if not NATS_AVAILABLE:
+            raise RuntimeError("nats package not installed")
         self._nc = await nats.connect(
             servers=self._servers,
             name=self._name,

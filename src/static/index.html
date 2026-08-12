@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenSoul 管理后台</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">◉</span>
+                <span class="logo-text">OpenSoul</span>
+            </div>
+            <span class="version" id="sidebar-version">v0.1.0</span>
+        </div>
+
+        <nav class="nav-menu">
+            <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                <span class="nav-icon">⊞</span>
+                <span>仪表盘</span>
+            </a>
+            <a href="#knowledge" class="nav-item" data-page="knowledge">
+                <span class="nav-icon">◈</span>
+                <span>知识库</span>
+            </a>
+            <a href="#graph" class="nav-item" data-page="graph">
+                <span class="nav-icon">◇</span>
+                <span>图谱</span>
+            </a>
+            <a href="#search" class="nav-item" data-page="search">
+                <span class="nav-icon">⌕</span>
+                <span>搜索</span>
+            </a>
+            <a href="#agents" class="nav-item" data-page="agents">
+                <span class="nav-icon">◎</span>
+                <span>Agent节点</span>
+            </a>
+            <a href="#settings" class="nav-item" data-page="settings">
+                <span class="nav-icon">⚙</span>
+                <span>系统设置</span>
+            </a>
+            <a href="#llm" class="nav-item" data-page="llm">
+                <span class="nav-icon">✦</span>
+                <span>LLM配置</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="soul-status">
+                <span class="status-dot" id="soul-status-dot"></span>
+                <span id="soul-status-text">Soul 状态</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+        <!-- 顶部状态栏 -->
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <button class="menu-toggle" id="menu-toggle">☰</button>
+                <h1 class="page-title" id="page-title">仪表盘</h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="status-badge">
+                    <span class="status-label">版本</span>
+                    <span class="status-value" id="header-version">-</span>
+                </div>
+                <div class="status-badge">
+                    <span class="status-label">运行时间</span>
+                    <span class="status-value" id="uptime">-</span>
+                </div>
+                <div class="status-badge">
+                    <span class="status-label">状态</span>
+                    <span class="status-value status-ok" id="header-status">-</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 页面内容区 -->
+        <div class="page-content" id="page-content">
+            <!-- 动态加载 -->
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

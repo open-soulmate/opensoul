@@ -7,6 +7,8 @@ from src.services.embedding import get_embedding
 
 async def semantic_search(query: str, user_id: UUID, limit: int = 10) -> list[dict]:
     """Search using vector similarity."""
+    if not qdrant_client.AVAILABLE:
+        return []
     query_vector = await get_embedding(query)
     results = qdrant_client.search(query_vector, limit=limit, user_id=user_id)
     return [
@@ -21,6 +23,8 @@ async def semantic_search(query: str, user_id: UUID, limit: int = 10) -> list[di
 
 async def fulltext_search(query: str, user_id: UUID, limit: int = 10) -> list[dict]:
     """Search using Meilisearch full-text search."""
+    if not meili_client.AVAILABLE:
+        return []
     result = meili_client.search(query, limit=limit, filters=f'user_id = "{user_id}"')
     return result.get("hits", [])
 

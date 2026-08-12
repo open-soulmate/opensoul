@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.middleware.auth import get_current_user, require_agent, require_role
 from src.services.rag import rag_query
 from src.services import knowledge as knowledge_service
@@ -51,7 +51,7 @@ async def register_agent(
     agent_id = uuid4()
     token = uuid4().hex
 
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "INSERT INTO agents (id, name, agent_type, capabilities, metadata, token, status) "
         "VALUES ($1, $2, $3, $4, $5, $6, 'active') "
         "RETURNING id, name, token, created_at as registered_at",
@@ -68,7 +68,7 @@ async def agent_heartbeat(
     agent: dict = Depends(require_agent),
 ):
     """Update agent heartbeat — requires valid X-Agent-Token header."""
-    result = await pg_pool.execute(
+    result = await db_pool.execute(
         "UPDATE agents SET status = $1, last_heartbeat = NOW() WHERE id = $2",
         req.status, req.agent_id,
     )
@@ -87,7 +87,7 @@ async def agent_report(
     agent: dict = Depends(require_agent),
 ):
     """Agent reports Soma-collected data — stored and queued for processing."""
-    await pg_pool.execute(
+    await db_pool.execute(
         "INSERT INTO agent_reports (agent_id, report_type, data) VALUES ($1, $2, $3)",
         req.agent_id, req.report_type, req.data,
     )
@@ -101,13 +101,13 @@ async def list_agent_nodes(
 ):
     """List all registered agent nodes with online/offline status."""
     if status:
-        rows = await pg_pool.fetch(
+        rows = await db_pool.fetch(
             "SELECT id, name, agent_type, capabilities, status, last_heartbeat, created_at "
             "FROM agents WHERE status = $1 ORDER BY created_at DESC",
             status,
         )
     else:
-        rows = await pg_pool.fetch(
+        rows = await db_pool.fetch(
             "SELECT id, name, agent_type, capabilities, status, last_heartbeat, created_at "
             "FROM agents ORDER BY created_at DESC"
         )
@@ -130,7 +130,7 @@ async def delete_agent_node(
     current_user: dict = Depends(require_role("admin")),
 ):
     """Delete an agent node — admin only."""
-    result = await pg_pool.execute("DELETE FROM agents WHERE id = $1", node_id)
+    result = await db_pool.execute("DELETE FROM agents WHERE id = $1", node_id)
     if "DELETE 0" in result:
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"status": "deleted", "agent_id": str(node_id)}

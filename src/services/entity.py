@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from src.database.postgres import pg_pool
+from src.database.postgres import db_pool
 from src.models.entity import EntityCreate, EntityUpdate
 
 # DB column mapping: the entities table uses "type" (not "entity_type").
@@ -14,7 +14,7 @@ def _row_to_entity(row) -> dict:
 
 
 async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "INSERT INTO entities (name, type, description, properties, user_id) "
         "VALUES ($1, $2, $3, $4, $5) RETURNING *",
         data.name,
@@ -27,7 +27,7 @@ async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
 
 
 async def get_entity(entity_id: UUID, user_id: UUID) -> dict | None:
-    row = await pg_pool.fetchrow(
+    row = await db_pool.fetchrow(
         "SELECT * FROM entities WHERE id = $1 AND user_id = $2", entity_id, user_id
     )
     return _row_to_entity(row) if row else None
@@ -37,7 +37,7 @@ async def get_entity_with_relations(entity_id: UUID, user_id: UUID) -> dict | No
     entity = await get_entity(entity_id, user_id)
     if not entity:
         return None
-    relations = await pg_pool.fetch(
+    relations = await db_pool.fetch(
         "SELECT r.*, se.name AS source_name, te.name AS target_name "
         "FROM relations r "
         "JOIN entities se ON r.source_id = se.id "
@@ -52,13 +52,13 @@ async def get_entity_with_relations(entity_id: UUID, user_id: UUID) -> dict | No
 
 async def list_entities(user_id: UUID, entity_type: str | None = None, offset: int = 0, limit: int = 50) -> list[dict]:
     if entity_type:
-        rows = await pg_pool.fetch(
+        rows = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 AND type = $2 "
             "ORDER BY name OFFSET $3 LIMIT $4",
             user_id, entity_type, offset, limit,
         )
     else:
-        rows = await pg_pool.fetch(
+        rows = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 ORDER BY name OFFSET $2 LIMIT $3",
             user_id, offset, limit,
         )
@@ -81,7 +81,7 @@ async def update_entity(entity_id: UUID, data: EntityUpdate, user_id: UUID) -> d
         idx += 1
 
     values.extend([entity_id, user_id])
-    await pg_pool.execute(
+    await db_pool.execute(
         f"UPDATE entities SET {', '.join(set_clauses)}, updated_at = NOW() "
         f"WHERE id = ${idx} AND user_id = ${idx + 1}",
         *values,
@@ -90,7 +90,7 @@ async def update_entity(entity_id: UUID, data: EntityUpdate, user_id: UUID) -> d
 
 
 async def delete_entity(entity_id: UUID, user_id: UUID) -> bool:
-    result = await pg_pool.execute(
+    result = await db_pool.execute(
         "DELETE FROM entities WHERE id = $1 AND user_id = $2", entity_id, user_id
     )
     return "DELETE 1" in result
