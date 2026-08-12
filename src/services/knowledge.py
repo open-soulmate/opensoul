@@ -32,7 +32,7 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
             tag_id, tag_name, str(user_id),
         )
         tag = await db_pool.fetchrow(
-            "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, user_id
+            "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, str(user_id)
         )
         if tag:
             await db_pool.execute(
@@ -85,13 +85,13 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
 
 async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
     row = await db_pool.fetchrow(
-        "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
+        "SELECT k.*, GROUP_CONCAT(t.name) as tags "
         "FROM knowledge k "
         "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
         "LEFT JOIN tags t ON kt.tag_id = t.id "
         "WHERE k.id = $1 AND k.user_id = $2 GROUP BY k.id",
         knowledge_id,
-        user_id,
+        str(user_id),
     )
     return dict(row) if row else None
 
@@ -104,17 +104,17 @@ async def list_knowledge(
     domain: str | None = None,
     tag: str | None = None,
 ) -> list[dict]:
-    conditions = ["k.user_id = $1"]
-    values: list = [user_id]
+    conditions = ["k.user_id = ?"]
+    values: list = [str(user_id)]
     idx = 2
 
     if content_type:
-        conditions.append(f"k.content_type = ${idx}")
+        conditions.append(f"k.content_type = ?")
         values.append(content_type)
         idx += 1
 
     if domain:
-        conditions.append(f"k.metadata->>'domain' = ${idx}")
+        conditions.append(f"k.metadata IS NOT NULL")
         values.append(domain)
         idx += 1
 
@@ -123,26 +123,20 @@ async def list_knowledge(
     if tag:
         # Filter by tag via join
         query = (
-            "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
-            "FROM knowledge k "
-            "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
-            "LEFT JOIN tags t ON kt.tag_id = t.id "
+            "SELECT k.* FROM knowledge k "
             "WHERE " + where_clause + " AND EXISTS ("
             "SELECT 1 FROM knowledge_tags kt2 JOIN tags t2 ON kt2.tag_id = t2.id "
-            "WHERE kt2.knowledge_id = k.id AND t2.name = $" + str(idx) + ") "
-            "GROUP BY k.id ORDER BY k.created_at DESC OFFSET $" + str(idx + 1) + " LIMIT $" + str(idx + 2)
+            "WHERE kt2.knowledge_id = k.id AND t2.name = ?) "
+            "ORDER BY k.created_at DESC LIMIT ? OFFSET ?"
         )
-        values.extend([tag, offset, limit])
+        values.extend([tag, limit, offset])
     else:
         query = (
-            "SELECT k.*, COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags "
-            "FROM knowledge k "
-            "LEFT JOIN knowledge_tags kt ON k.id = kt.knowledge_id "
-            "LEFT JOIN tags t ON kt.tag_id = t.id "
+            "SELECT k.* FROM knowledge k "
             "WHERE " + where_clause + " "
-            "GROUP BY k.id ORDER BY k.created_at DESC OFFSET $" + str(idx) + " LIMIT $" + str(idx + 1)
+            "ORDER BY k.created_at DESC LIMIT ? OFFSET ?"
         )
-        values.extend([offset, limit])
+        values.extend([limit, offset])
 
     rows = await db_pool.fetch(query, *values)
     return [dict(r) for r in rows]
@@ -151,25 +145,25 @@ async def list_knowledge(
 async def update_knowledge(knowledge_id: UUID, data: KnowledgeUpdate, user_id: UUID) -> dict | None:
     fields = data.model_dump(exclude_unset=True)
     if not fields:
-        return await get_knowledge(knowledge_id, user_id)
+        return await get_knowledge(knowledge_id, str(user_id))
 
     set_clauses = []
     values = []
     idx = 1
     for field, value in fields.items():
         if field != "tags":
-            set_clauses.append(f"{field} = ${idx}")
+            set_clauses.append(f"{field} = ?")
             values.append(value)
             idx += 1
 
-    values.extend([knowledge_id, user_id])
+    values.extend([knowledge_id, str(user_id)])
     await db_pool.execute(
         f"UPDATE knowledge SET {', '.join(set_clauses)}, updated_at = NOW() "
-        f"WHERE id = ${idx} AND user_id = ${idx + 1}",
+        f"WHERE id = ? AND user_id = ?",
         *values,
     )
 
-    return await get_knowledge(knowledge_id, user_id)
+    return await get_knowledge(knowledge_id, str(user_id))
 
 
 async def delete_knowledge(knowledge_id: UUID, user_id: UUID) -> bool:
@@ -196,8 +190,8 @@ async def toggle_star(knowledge_id: UUID, user_id: UUID) -> dict | None:
     """Toggle star status on a knowledge item."""
     row = await db_pool.fetchrow(
         "UPDATE knowledge SET starred = NOT COALESCE(starred, FALSE), updated_at = NOW() "
-        "WHERE id = $1 AND user_id = $2 RETURNING starred",
-        knowledge_id, user_id,
+        "WHERE id = $1 AND user_id = $2 ",
+        knowledge_id, str(user_id),
     )
     if not row:
         return None
@@ -208,8 +202,8 @@ async def toggle_pin(knowledge_id: UUID, user_id: UUID) -> dict | None:
     """Toggle pin status on a knowledge item."""
     row = await db_pool.fetchrow(
         "UPDATE knowledge SET pinned = NOT COALESCE(pinned, FALSE), updated_at = NOW() "
-        "WHERE id = $1 AND user_id = $2 RETURNING pinned",
-        knowledge_id, user_id,
+        "WHERE id = $1 AND user_id = $2 ",
+        knowledge_id, str(user_id),
     )
     if not row:
         return None
