@@ -72,14 +72,16 @@ async def get_user_by_id(user_id: UUID) -> dict | None:
 
 
 async def register_user(username: str, email: str, password: str, role: str = "user") -> dict:
+    import uuid
+    user_id = str(uuid.uuid4())
     hashed = hash_password(password)
+    await db_pool.execute(
+        "INSERT INTO users (id, username, email, password_hash, role) VALUES ($1, $2, $3, $4, $5)",
+        user_id, username, email, hashed, role,
+    )
     row = await db_pool.fetchrow(
-        "INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) "
-        "RETURNING id, username, email, role, is_active, created_at, updated_at",
-        username,
-        email,
-        hashed,
-        role,
+        "SELECT id, username, email, role, is_active, created_at, updated_at FROM users WHERE id = $1",
+        user_id,
     )
     return dict(row)
 
