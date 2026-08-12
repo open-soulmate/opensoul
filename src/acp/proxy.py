@@ -1,20 +1,17 @@
-"""ACP (Agent Client Protocol) proxy for OpenSoul.
-
-Launches `hermes acp` as a subprocess and communicates via stdin/stdout JSON-RPC.
-Web clients connect via WebSocket to OpenSoul, which relays to the ACP process.
-"""
+"""ACP proxy with hermes -z fallback for reliable message delivery."""
 
 import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 class ACPProcess:
-    """Manages a single hermes acp subprocess."""
+    """Manages ACP process with hermes -z fallback."""
 
     def __init__(self):
         self._proc: asyncio.subprocess.Process | None = None
@@ -22,6 +19,8 @@ class ACPProcess:
         self._reader_task: asyncio.Task | None = None
         self._msg_id: int = 0
         self._event_queue: asyncio.Queue = asyncio.Queue()
+        self._initialized: bool = False
+        self._default_session_id: str | None = None
 
     @property
     def is_running(self) -> bool:
@@ -30,10 +29,10 @@ class ACPProcess:
     async def start(self):
         """Start the hermes acp process."""
         if self.is_running:
-            return
+            return self._get_agent_info()
 
         env = os.environ.copy()
-        env.setdefault("PYTHONUNBUFFERED", "1")
+        env["PYTHONUNBUFFERED"] = "1"
 
         self._proc = await asyncio.create_subprocess_exec(
             "hermes", "acp", "--accept-hooks",
@@ -50,6 +49,7 @@ class ACPProcess:
             "protocolVersion": 1,
             "clientInfo": {"name": "OpenMate", "version": "1.0.0"},
         })
+        self._initialized = True
         logger.info(f"ACP initialized: {resp}")
         return resp
 
@@ -65,104 +65,152 @@ class ACPProcess:
         if self._reader_task:
             self._reader_task.cancel()
             self._reader_task = None
+        self._initialized = False
+        self._default_session_id = None
 
     async def send_message(self, text: str, session_id: str | None = None) -> dict[str, Any]:
-        """Send a user message and get the agent response."""
-        if not self.is_running:
-            await self.start()
+        """Send a message using hermes -z (reliable fallback)."""
+        sid = session_id or self._default_session_id or "default"
 
-        # Drain any stale events
-        while not self._event_queue.empty():
-            try: self._event_queue.get_nowait()
-            except: break
+        # Try ACP first if running
+        if self.is_running and self._initialized:
+            try:
+                result = await self._send_via_acp(text, sid)
+                if result.get("response_text"):
+                    return result
+                # ACP returned empty, fall through to hermes -z
+                logger.warning("ACP returned empty response, falling back to hermes -z")
+            except Exception as e:
+                logger.warning(f"ACP send failed: {e}, falling back to hermes -z")
 
-        # ACP PromptRequest format: {prompt: [ContentBlock], sessionId: str}
-        params: dict[str, Any] = {
-            "prompt": [{"type": "text", "text": text}],
-            "sessionId": session_id or "default",
-        }
-
-        # Send the prompt (returns immediately with stopReason/usage)
-        resp = await self._send_rpc("session/prompt", params)
-
-        # Collect streamed response from events
-        collected_text = await self._collect_agent_response(timeout=90)
-        resp["response_text"] = collected_text
-        return resp
+        # hermes -z fallback
+        return await self._send_via_cli(text)
 
     async def send_message_with_image(self, text: str, image_data: str, mime_type: str = "image/png", session_id: str | None = None) -> dict[str, Any]:
-        """Send a message with an image attachment."""
-        if not self.is_running:
-            await self.start()
-
-        # Drain stale events
-        while not self._event_queue.empty():
-            try: self._event_queue.get_nowait()
-            except: break
-
-        parts: list[dict] = []
-        if text:
-            parts.append({"type": "text", "text": text})
-        b64 = image_data.split(",")[-1] if "," in image_data else image_data
-        parts.append({"type": "image", "source": {"type": "base64", "mediaType": mime_type, "data": b64}})
-
-        params: dict[str, Any] = {
-            "prompt": parts,
-            "sessionId": session_id or "default",
-        }
-
-        resp = await self._send_rpc("session/prompt", params)
-        collected_text = await self._collect_agent_response(timeout=90)
-        resp["response_text"] = collected_text
-        return resp
-
-    async def _collect_agent_response(self, timeout: float = 90) -> str:
-        """Wait for and collect agent response text from ACP events."""
-        import time
-        collected = []
-        start = time.time()
-        last_chunk_time = start
-
-        while time.time() - start < timeout:
+        """Send a message with image. Falls back to CLI."""
+        # For images, always try ACP first (CLI doesn't support images well)
+        if self.is_running and self._initialized:
             try:
-                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
-                last_chunk_time = time.time()
+                return await self._send_image_via_acp(text, image_data, mime_type, session_id or "default")
+            except Exception as e:
+                logger.warning(f"ACP image send failed: {e}")
 
-                # Handle agent_message_chunk with text parts
-                update = event.get("params", {}).get("update", {})
-                su = update.get("sessionUpdate") or update.get("session_update", "")
-
-                if su == "agent_message_chunk":
-                    parts = update.get("parts", [])
-                    for p in parts:
-                        if p.get("type") == "text":
-                            collected.append(p.get("text", ""))
-
-                # Check for stop signals
-                if su == "usage_update" and collected:
-                    # Usage update after message = response complete
-                    break
-
-            except asyncio.TimeoutError:
-                # If we have content and no new chunks for 2s, we're done
-                if collected and time.time() - last_chunk_time > 2.0:
-                    break
-                continue
-
-        return "".join(collected)
+        # Fallback: just send text
+        text_msg = text or "用户发送了一张图片"
+        return await self._send_via_cli(text_msg)
 
     async def list_sessions(self) -> list[dict]:
-        """List available sessions."""
-        if not self.is_running:
+        """List ACP sessions."""
+        if not self.is_running or not self._initialized:
             await self.start()
         resp = await self._send_rpc("session/list", {})
         return resp.get("sessions", [])
 
     async def new_session(self, cwd: str = "/home/climbing") -> dict:
-        """Create a new session."""
-        if not self.is_running:
+        """Create a new ACP session."""
+        if not self.is_running or not self._initialized:
             await self.start()
         resp = await self._send_rpc("session/new", {"cwd": cwd, "mcpServers": []})
+        sid = resp.get("sessionId") or resp.get("session_id")
+        if sid:
+            self._default_session_id = sid
+        return resp
+
+    async def _send_via_cli(self, text: str) -> dict[str, Any]:
+        """Send message using hermes -z CLI (reliable)."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "hermes", "-z", text,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+            response = stdout.decode("utf-8", errors="replace").strip()
+
+            return {
+                "stopReason": "end_turn",
+                "response_text": response,
+                "source": "hermes-cli",
+            }
+        except asyncio.TimeoutError:
+            return {"stopReason": "timeout", "response_text": "请求超时", "source": "hermes-cli"}
+        except Exception as e:
+            return {"stopReason": "error", "response_text": f"错误: {e}", "source": "hermes-cli"}
+
+    async def _send_via_acp(self, text: str, session_id: str) -> dict[str, Any]:
+        """Send via ACP protocol with event collection."""
+        # Drain stale events
+        while not self._event_queue.empty():
+            try:
+                self._event_queue.get_nowait()
+            except:
+                break
+
+        params = {
+            "prompt": [{"type": "text", "text": text}],
+            "sessionId": session_id,
+        }
+
+        resp = await self._send_rpc("session/prompt", params)
+
+        # Collect streamed response
+        collected = []
+        start = time.time()
+        while time.time() - start < 30:
+            try:
+                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
+                update = event.get("params", {}).get("update", {})
+                su = update.get("sessionUpdate") or update.get("session_update", "")
+                if su == "agent_message_chunk":
+                    for p in update.get("parts", []):
+                        if p.get("type") == "text":
+                            collected.append(p.get("text", ""))
+                if su == "usage_update" and collected:
+                    break
+            except asyncio.TimeoutError:
+                if collected:
+                    break
+                continue
+
+        resp["response_text"] = "".join(collected)
+        return resp
+
+    async def _send_image_via_acp(self, text: str, image_data: str, mime_type: str, session_id: str) -> dict[str, Any]:
+        """Send image via ACP."""
+        while not self._event_queue.empty():
+            try:
+                self._event_queue.get_nowait()
+            except:
+                break
+
+        parts = []
+        if text:
+            parts.append({"type": "text", "text": text})
+        b64 = image_data.split(",")[-1] if "," in image_data else image_data
+        parts.append({"type": "image", "source": {"type": "base64", "mediaType": mime_type, "data": b64}})
+
+        params = {"prompt": parts, "sessionId": session_id}
+        resp = await self._send_rpc("session/prompt", params)
+
+        collected = []
+        start = time.time()
+        while time.time() - start < 60:
+            try:
+                event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
+                update = event.get("params", {}).get("update", {})
+                su = update.get("sessionUpdate") or update.get("session_update", "")
+                if su == "agent_message_chunk":
+                    for p in update.get("parts", []):
+                        if p.get("type") == "text":
+                            collected.append(p.get("text", ""))
+                if su == "usage_update" and collected:
+                    break
+            except asyncio.TimeoutError:
+                if collected:
+                    break
+                continue
+
+        resp["response_text"] = "".join(collected)
         return resp
 
     async def _send_rpc(self, method: str, params: dict) -> dict[str, Any]:
@@ -170,24 +218,16 @@ class ACPProcess:
         self._msg_id += 1
         msg_id = str(self._msg_id)
 
-        request = {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "method": method,
-            "params": params,
-        }
-
+        request = {"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params}
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[msg_id] = future
 
         line = json.dumps(request) + "\n"
-        logger.debug(f"ACP SEND: {line.strip()}")
         self._proc.stdin.write(line.encode())
         await self._proc.stdin.drain()
 
         try:
-            result = await asyncio.wait_for(future, timeout=120)
-            return result
+            return await asyncio.wait_for(future, timeout=120)
         except asyncio.TimeoutError:
             self._pending.pop(msg_id, None)
             raise TimeoutError(f"ACP timeout for method={method}")
@@ -199,19 +239,14 @@ class ACPProcess:
                 line = await self._proc.stdout.readline()
                 if not line:
                     break
-
                 line = line.decode().strip()
                 if not line:
                     continue
-
-                logger.debug(f"ACP RECV: {line[:200]}")
-
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
                     continue
 
-                # Handle response
                 msg_id = str(msg.get("id", ""))
                 if msg_id in self._pending:
                     future = self._pending.pop(msg_id)
@@ -220,14 +255,18 @@ class ACPProcess:
                     else:
                         future.set_result(msg.get("result", {}))
                 else:
-                    # Handle notification/event
                     await self._event_queue.put(msg)
-
         except Exception as e:
             logger.error(f"ACP read loop error: {e}")
 
+    def _get_agent_info(self) -> dict:
+        return {
+            "agentInfo": {"name": "hermes-agent", "version": "0.20.0"},
+            "protocolVersion": 1,
+        }
 
-# Global ACP process instance
+
+# Global instance
 _acp_process: ACPProcess | None = None
 
 
