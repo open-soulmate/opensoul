@@ -52,7 +52,7 @@ async def send_message(data: ACPMessage, user_id: UUID = Depends(get_current_use
         result = await acp.send_message(data.text, sid)
 
         # Extract text from PromptResponse
-        content = _extract_response_text(result)
+        content = result.get("response_text", "") or _extract_response_text(result)
         return {"ok": True, "content": content, "session_id": sid, "raw": result}
     except TimeoutError:
         raise HTTPException(status_code=408, detail="ACP timeout")
@@ -68,7 +68,7 @@ async def send_image(data: ACPImageMessage, user_id: UUID = Depends(get_current_
     try:
         sid = await _get_session_id(data.session_id)
         result = await acp.send_message_with_image(data.text, data.image_data, data.mime_type, sid)
-        content = _extract_response_text(result)
+        content = result.get("response_text", "") or _extract_response_text(result)
         return {"ok": True, "content": content, "session_id": sid, "raw": result}
     except TimeoutError:
         raise HTTPException(status_code=408, detail="ACP timeout")
