@@ -1,0 +1,17 @@
+p, admin, knowledge, *
+p, admin, user, *
+p, admin, kb_request, *
+p, admin, kb_sharing, *
+p, admin, dedup, *
+
+p, user, knowledge, read
+p, user, knowledge, create
+p, user, knowledge, update_own
+p, user, knowledge, delete_own
+p, user, kb_request, create
+p, user, kb_request, read_own
+p, user, kb_sharing, create
+p, user, kb_sharing, read_own
+p, user, dedup, read
+
+g, admin, admin
