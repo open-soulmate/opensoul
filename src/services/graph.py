@@ -13,14 +13,14 @@ def _row_to_relation(row) -> dict:
 
 
 async def create_relation(data: RelationCreate) -> dict:
-    row = await db_pool.fetchrow(
-        "INSERT INTO relations (source_id, target_id, relation_type, properties) "
-        "VALUES ($1, $2, $3, $4) RETURNING *",
-        data.source_entity_id,
-        data.target_entity_id,
-        data.relation_type,
-        data.properties,
+    import uuid as _uuid
+    rel_id = str(_uuid.uuid4())
+    await db_pool.execute(
+        "INSERT INTO relations (id, source_id, target_id, relation_type, properties) "
+        "VALUES ($1, $2, $3, $4, $5)",
+        rel_id, str(data.source_entity_id), str(data.target_entity_id), data.relation_type, data.properties,
     )
+    row = await db_pool.fetchrow("SELECT * FROM relations WHERE id = $1", rel_id)
     return _row_to_relation(row)
 
 

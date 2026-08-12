@@ -15,24 +15,21 @@ from src.services.embedding import get_embeddings_batch
 
 
 async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
-    row = await db_pool.fetchrow(
-        "INSERT INTO knowledge (title, content, source, content_type, metadata, user_id) "
-        "VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-        data.title,
-        data.content,
-        data.source,
-        data.content_type,
-        data.metadata,
-        user_id,
+    import uuid as _uuid
+    knowledge_id = str(_uuid.uuid4())
+    await db_pool.execute(
+        "INSERT INTO knowledge (id, title, content, source, content_type, metadata, user_id) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        knowledge_id, data.title, data.content, data.source, data.content_type, data.metadata, str(user_id),
     )
-    knowledge_id = row["id"]
+    row = await db_pool.fetchrow("SELECT * FROM knowledge WHERE id = $1", knowledge_id)
 
     # Add tags
     for tag_name in data.tags:
+        tag_id = str(_uuid.uuid4())
         await db_pool.execute(
-            "INSERT INTO tags (name, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            tag_name,
-            user_id,
+            "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            tag_id, tag_name, str(user_id),
         )
         tag = await db_pool.fetchrow(
             "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, user_id
@@ -63,10 +60,11 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
                         "user_id": str(user_id),
                     },
                 ))
+            chunk_id = str(_uuid.uuid4())
             await db_pool.execute(
-                "INSERT INTO knowledge_chunks (knowledge_id, chunk_index, content, embedding_id, token_count) "
-                "VALUES ($1, $2, $3, $4, $5)",
-                knowledge_id, chunk.index, chunk.content, point_id, len(chunk.content.split()),
+                "INSERT INTO knowledge_chunks (id, knowledge_id, chunk_index, content, embedding_id, token_count) "
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                chunk_id, knowledge_id, chunk.index, chunk.content, point_id, len(chunk.content.split()),
             )
         if points:
             qdrant_client.upsert_points(points)
