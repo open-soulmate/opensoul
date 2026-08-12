@@ -33,7 +33,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(user["id"])
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "user_id": str(user["id"]), "username": user["username"]}
 
 
 @router.get("/me", response_model=UserResponse)
