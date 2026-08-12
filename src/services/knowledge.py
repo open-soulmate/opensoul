@@ -148,7 +148,14 @@ async def list_knowledge(
         values.extend([limit, offset])
 
     rows = await db_pool.fetch(query, *values)
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d.get("metadata"), str):
+            try: d["metadata"] = json.loads(d["metadata"])
+            except: d["metadata"] = {}
+        result.append(d)
+    return result
 
 
 async def update_knowledge(knowledge_id: UUID, data: KnowledgeUpdate, user_id: UUID) -> dict | None:
