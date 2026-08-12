@@ -55,18 +55,16 @@ async def get_embedding(text: str) -> list[float]:
 
 
 async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Get embedding vectors for multiple texts.
-
-    Automatically splits into sub-batches when the input exceeds MAX_BATCH_SIZE.
-    """
-    if not texts:
-        return []
-
-    all_embeddings: list[list[float]] = []
-    async with httpx.AsyncClient() as client:
-        for i in range(0, len(texts), MAX_BATCH_SIZE):
-            batch = texts[i : i + MAX_BATCH_SIZE]
-            batch_embeddings = await _call_embedding_api(client, batch)
-            all_embeddings.extend(batch_embeddings)
-
-    return all_embeddings
+    """Get embedding vectors for multiple texts. Returns empty if no API key."""
+    if not texts or not _get_api_key():
+        return [[] for _ in texts]
+    try:
+        all_embeddings: list[list[float]] = []
+        async with httpx.AsyncClient() as client:
+            for i in range(0, len(texts), MAX_BATCH_SIZE):
+                batch = texts[i : i + MAX_BATCH_SIZE]
+                batch_embeddings = await _call_embedding_api(client, batch)
+                all_embeddings.extend(batch_embeddings)
+        return all_embeddings
+    except Exception:
+        return [[] for _ in texts]
