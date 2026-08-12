@@ -81,7 +81,11 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
             "content_type": data.content_type,
         }])
 
-    return dict(row)
+    d = dict(row)
+    if isinstance(d.get("metadata"), str):
+        try: d["metadata"] = json.loads(d["metadata"])
+        except: d["metadata"] = {}
+    return d
 
 
 async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
@@ -94,7 +98,11 @@ async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
         knowledge_id,
         str(user_id),
     )
-    return dict(row) if row else None
+    d = dict(row)
+    if isinstance(d.get("metadata"), str):
+        try: d["metadata"] = json.loads(d["metadata"])
+        except: d["metadata"] = {}
+    return d if row else None
 
 
 async def list_knowledge(
