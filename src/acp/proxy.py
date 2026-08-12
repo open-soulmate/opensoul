@@ -107,11 +107,11 @@ class ACPProcess:
         resp = await self._send_rpc("session/list", {})
         return resp.get("sessions", [])
 
-    async def new_session(self) -> dict:
+    async def new_session(self, cwd: str = "/home/climbing") -> dict:
         """Create a new session."""
         if not self.is_running:
             await self.start()
-        resp = await self._send_rpc("session/new", {})
+        resp = await self._send_rpc("session/new", {"cwd": cwd, "mcpServers": []})
         return resp
 
     async def _send_rpc(self, method: str, params: dict) -> dict[str, Any]:
