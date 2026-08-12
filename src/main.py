@@ -16,7 +16,9 @@ from src.api.knowledge_requests import router as knowledge_requests_router
 from src.api.kb_sharing import router as kb_sharing_router
 from src.api.dedup import router as dedup_router
 from src.api.permission import router as permission_router
+from src.api.agent_proxy import router as agent_proxy_router
 from src.a2a.api import router as a2a_router
+from src.acp.api import router as acp_router
 from src.api.search import router as search_router
 from src.api.chat import router as chat_router
 from src.api.graph import router as graph_router
@@ -107,7 +109,9 @@ app.include_router(knowledge_requests_router, prefix="/api/knowledge-requests", 
 app.include_router(kb_sharing_router, prefix="/api/kb-sharing", tags=["kb-sharing"])
 app.include_router(dedup_router, prefix="/api/dedup", tags=["dedup"])
 app.include_router(permission_router, prefix="/api/permission", tags=["permission"])
+app.include_router(agent_proxy_router, prefix="/api/agent-proxy", tags=["agent-proxy"])
 app.include_router(a2a_router, tags=["a2a"])
+app.include_router(acp_router, prefix="/api/acp", tags=["acp"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
