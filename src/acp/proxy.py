@@ -230,9 +230,11 @@ class ACPProcess:
                     texts.append(p["text"])
             if texts:
                 return texts
-            # Check for content field directly
+            # Check for content field - actual Hermes ACP format: {content: {text: "...", type: "text"}}
             content = update.get("content", "")
-            if content:
+            if isinstance(content, dict) and content.get("type") == "text" and content.get("text"):
+                return [content["text"]]
+            elif isinstance(content, str) and content:
                 return [content]
 
         # Format 2: {method: "session/update", params: {update: {type: "content_block_delta", delta: {text: "..."}}}}  (Anthropic-style)
