@@ -30,7 +30,7 @@ def _get_os() -> str:
 AGENT_REGISTRY = {
     # ── CLI Coding Agents ──
     "hermes": {"name": "Hermes Agent", "binary": "hermes", "description": "Nous Research Hermes Agent - 开源AI助手框架", "icon": "🏛️", "category": "coding",
-               "install": {"linux": "pip install hermes-agent", "darwin": "pip install hermes-agent", "win32": "pip install hermes-agent"}},
+               "install": {"linux": "pip install --break-system-packages hermes-agent", "darwin": "pip install --break-system-packages hermes-agent", "win32": "pip install --break-system-packages hermes-agent"}},
     "claude": {"name": "Claude Code", "binary": "claude", "description": "Anthropic Claude Code CLI - 终端AI编程", "icon": "🟣", "category": "coding",
                "install": {"linux": "npm install -g @anthropic-ai/claude-code", "darwin": "npm install -g @anthropic-ai/claude-code", "win32": "npm install -g @anthropic-ai/claude-code"}},
     "codex": {"name": "Codex CLI", "binary": "codex", "description": "OpenAI Codex CLI - GPT驱动的编程助手", "icon": "🟢", "category": "coding",
@@ -40,27 +40,27 @@ AGENT_REGISTRY = {
     "opencode": {"name": "OpenCode", "binary": "opencode", "description": "开源AI编程助手", "icon": "⚡", "category": "coding",
                  "install": {"linux": "go install github.com/opencode-ai/opencode@latest", "darwin": "brew install opencode", "win32": "go install github.com/opencode-ai/opencode@latest"}},
     "aider": {"name": "Aider", "binary": "aider", "description": "AI结对编程 - 终端内编辑代码", "icon": "🤝", "category": "coding",
-              "install": {"linux": "pip install aider-chat", "darwin": "brew install aider", "win32": "pip install aider-chat"}},
+              "install": {"linux": "pip install --break-system-packages aider-chat", "darwin": "brew install aider", "win32": "pip install --break-system-packages aider-chat"}},
     "gemini": {"name": "Gemini CLI", "binary": "gemini", "description": "Google Gemini CLI - 多模态AI编程", "icon": "🔵", "category": "coding",
                "install": {"linux": "npm install -g @google/gemini-cli", "darwin": "npm install -g @google/gemini-cli", "win32": "npm install -g @google/gemini-cli"}},
     "copilot": {"name": "GitHub Copilot", "binary": "gh", "description": "GitHub Copilot CLI - 代码补全与对话", "icon": "🐙", "category": "coding",
                 "install": {"linux": "gh extension install github/gh-copilot", "darwin": "gh extension install github/gh-copilot", "win32": "gh extension install github/gh-copilot"}},
     "amazon-q": {"name": "Amazon Q", "binary": "q", "description": "Amazon Q Developer - AWS AI编程助手", "icon": "☁️", "category": "coding",
-                 "install": {"linux": "pip install amazon-q-developer-cli", "darwin": "brew install amazon-q", "win32": "pip install amazon-q-developer-cli"}},
+                 "install": {"linux": "pip install --break-system-packages amazon-q-developer-cli", "darwin": "brew install amazon-q", "win32": "pip install --break-system-packages amazon-q-developer-cli"}},
     "qwen": {"name": "Qwen Coder", "binary": "qwen", "description": "通义千问编程版 - 阿里AI编程", "icon": "🟠", "category": "coding",
-             "install": {"linux": "pip install qwen-cli", "darwin": "pip install qwen-cli", "win32": "pip install qwen-cli"}},
+             "install": {"linux": "pip install --break-system-packages qwen-cli", "darwin": "pip install --break-system-packages qwen-cli", "win32": "pip install --break-system-packages qwen-cli"}},
     "deepseek": {"name": "DeepSeek CLI", "binary": "deepseek", "description": "DeepSeek AI - 深度推理编程", "icon": "🐋", "category": "coding",
-                 "install": {"linux": "pip install deepseek-cli", "darwin": "pip install deepseek-cli", "win32": "pip install deepseek-cli"}},
+                 "install": {"linux": "pip install --break-system-packages deepseek-cli", "darwin": "pip install --break-system-packages deepseek-cli", "win32": "pip install --break-system-packages deepseek-cli"}},
     "devin": {"name": "Devin", "binary": "devin", "description": "Devin AI - 自主软件工程师", "icon": "🤖", "category": "coding",
               "install": {"linux": "https://devin.ai", "darwin": "https://devin.ai", "win32": "https://devin.ai"}},
     "open-interpreter": {"name": "Open Interpreter", "binary": "interpreter", "description": "本地代码执行 - 自然语言控制计算机", "icon": "💻", "category": "coding",
-                          "install": {"linux": "pip install open-interpreter", "darwin": "pip install open-interpreter", "win32": "pip install open-interpreter"}},
+                          "install": {"linux": "pip install --break-system-packages open-interpreter", "darwin": "pip install --break-system-packages open-interpreter", "win32": "pip install --break-system-packages open-interpreter"}},
     "gptme": {"name": "GPTMe", "binary": "gptme", "description": "终端AI助手 - 本地执行代码", "icon": "🧠", "category": "coding",
-              "install": {"linux": "pip install gptme", "darwin": "pip install gptme", "win32": "pip install gptme"}},
+              "install": {"linux": "pip install --break-system-packages gptme", "darwin": "pip install --break-system-packages gptme", "win32": "pip install --break-system-packages gptme"}},
     "mentat": {"name": "Mentat", "binary": "mentat", "description": "AI编程助手 - 多文件编辑", "icon": "🧙", "category": "coding",
-               "install": {"linux": "pip install mentat", "darwin": "pip install mentat", "win32": "pip install mentat"}},
+               "install": {"linux": "pip install --break-system-packages mentat", "darwin": "pip install --break-system-packages mentat", "win32": "pip install --break-system-packages mentat"}},
     "sweep": {"name": "Sweep", "binary": "sweep", "description": "AI Junior Dev - 自动修bug和写功能", "icon": "🧹", "category": "coding",
-              "install": {"linux": "pip install sweepai", "darwin": "pip install sweepai", "win32": "pip install sweepai"}},
+              "install": {"linux": "pip install --break-system-packages sweepai", "darwin": "pip install --break-system-packages sweepai", "win32": "pip install --break-system-packages sweepai"}},
     "cursor-agent": {"name": "Cursor Agent", "binary": "cursor", "description": "Cursor IDE内置AI Agent", "icon": "▶️", "category": "ide",
                      "install": {"linux": "https://cursor.sh", "darwin": "https://cursor.sh", "win32": "https://cursor.sh"}},
     "windsurf": {"name": "Windsurf", "binary": "windsurf", "description": "Codeium Windsurf - AI驱动IDE", "icon": "🏄", "category": "ide",
@@ -92,7 +92,7 @@ AGENT_REGISTRY = {
     "jan": {"name": "Jan", "binary": "jan", "description": "开源本地AI聊天 - 隐私优先", "icon": "🔵", "category": "chat",
             "install": {"linux": "https://jan.ai", "darwin": "https://jan.ai", "win32": "https://jan.ai"}},
     "open-webui": {"name": "Open WebUI", "binary": "open-webui", "description": "Ollama Web界面 - 类ChatGPT", "icon": "🌐", "category": "chat",
-                   "install": {"linux": "pip install open-webui", "darwin": "pip install open-webui", "win32": "pip install open-webui"}},
+                   "install": {"linux": "pip install --break-system-packages open-webui", "darwin": "pip install --break-system-packages open-webui", "win32": "pip install --break-system-packages open-webui"}},
     "chatbox": {"name": "ChatBox", "binary": "chatbox", "description": "多模型AI聊天客户端", "icon": "💬", "category": "chat",
                 "install": {"linux": "https://chatboxai.app", "darwin": "https://chatboxai.app", "win32": "https://chatboxai.app"}},
     "lobe-chat": {"name": "LobeChat", "binary": "lobe-chat", "description": "开源AI聊天框架 - 插件丰富", "icon": "🧠", "category": "chat",
@@ -106,27 +106,27 @@ AGENT_REGISTRY = {
 
     # ── Research & Knowledge ──
     "perplexity": {"name": "Perplexity CLI", "binary": "pplx", "description": "AI搜索引擎CLI", "icon": "🔍", "category": "research",
-                   "install": {"linux": "pip install perplexity-cli", "darwin": "pip install perplexity-cli", "win32": "pip install perplexity-cli"}},
+                   "install": {"linux": "pip install --break-system-packages perplexity-cli", "darwin": "pip install --break-system-packages perplexity-cli", "win32": "pip install --break-system-packages perplexity-cli"}},
     "phind": {"name": "Phind", "binary": "phind", "description": "AI编程搜索引擎", "icon": "🔎", "category": "research",
               "install": {"linux": "https://phind.com", "darwin": "https://phind.com", "win32": "https://phind.com"}},
     "you-cli": {"name": "You.com CLI", "binary": "you", "description": "You.com AI搜索CLI", "icon": "🌐", "category": "research",
-                "install": {"linux": "pip install you-cli", "darwin": "pip install you-cli", "win32": "pip install you-cli"}},
+                "install": {"linux": "pip install --break-system-packages you-cli", "darwin": "pip install --break-system-packages you-cli", "win32": "pip install --break-system-packages you-cli"}},
 
     # ── Automation & Agents ──
     "autogpt": {"name": "AutoGPT", "binary": "autogpt", "description": "自主AI Agent - 自动完成任务", "icon": "🤖", "category": "automation",
-                "install": {"linux": "pip install autogpt", "darwin": "pip install autogpt", "win32": "pip install autogpt"}},
+                "install": {"linux": "pip install --break-system-packages autogpt", "darwin": "pip install --break-system-packages autogpt", "win32": "pip install --break-system-packages autogpt"}},
     "crewai": {"name": "CrewAI", "binary": "crewai", "description": "多Agent协作框架", "icon": "👥", "category": "automation",
-               "install": {"linux": "pip install crewai", "darwin": "pip install crewai", "win32": "pip install crewai"}},
+               "install": {"linux": "pip install --break-system-packages crewai", "darwin": "pip install --break-system-packages crewai", "win32": "pip install --break-system-packages crewai"}},
     "autogen": {"name": "AutoGen", "binary": "autogen", "description": "微软多Agent对话框架", "icon": "🔄", "category": "automation",
-                "install": {"linux": "pip install pyautogen", "darwin": "pip install pyautogen", "win32": "pip install pyautogen"}},
+                "install": {"linux": "pip install --break-system-packages pyautogen", "darwin": "pip install --break-system-packages pyautogen", "win32": "pip install --break-system-packages pyautogen"}},
     "langchain": {"name": "LangChain", "binary": "langchain", "description": "LLM应用开发框架", "icon": "🦜", "category": "automation",
-                  "install": {"linux": "pip install langchain", "darwin": "pip install langchain", "win32": "pip install langchain"}},
+                  "install": {"linux": "pip install --break-system-packages langchain", "darwin": "pip install --break-system-packages langchain", "win32": "pip install --break-system-packages langchain"}},
     "llamaindex": {"name": "LlamaIndex", "binary": "llamaindex", "description": "数据连接LLM框架 - RAG", "icon": "🦙", "category": "automation",
-                   "install": {"linux": "pip install llama-index", "darwin": "pip install llama-index", "win32": "pip install llama-index"}},
+                   "install": {"linux": "pip install --break-system-packages llama-index", "darwin": "pip install --break-system-packages llama-index", "win32": "pip install --break-system-packages llama-index"}},
     "semantic-kernel": {"name": "Semantic Kernel", "binary": "sk", "description": "微软AI编排框架", "icon": "🧠", "category": "automation",
-                        "install": {"linux": "pip install semantic-kernel", "darwin": "pip install semantic-kernel", "win32": "pip install semantic-kernel"}},
+                        "install": {"linux": "pip install --break-system-packages semantic-kernel", "darwin": "pip install --break-system-packages semantic-kernel", "win32": "pip install --break-system-packages semantic-kernel"}},
     "haystack": {"name": "Haystack", "binary": "haystack", "description": "deepset NLP/RAG框架", "icon": "🌾", "category": "automation",
-                 "install": {"linux": "pip install haystack-ai", "darwin": "pip install haystack-ai", "win32": "pip install haystack-ai"}},
+                 "install": {"linux": "pip install --break-system-packages haystack-ai", "darwin": "pip install --break-system-packages haystack-ai", "win32": "pip install --break-system-packages haystack-ai"}},
 
     # ── DevOps & Infra ──
     "k9s": {"name": "K9s", "binary": "k9s", "description": "Kubernetes终端管理UI", "icon": "☸️", "category": "devops",
@@ -136,7 +136,7 @@ AGENT_REGISTRY = {
     "terraform": {"name": "Terraform", "binary": "terraform", "description": "基础设施即代码", "icon": "🏗️", "category": "devops",
                   "install": {"linux": "brew install terraform", "darwin": "brew install terraform", "win32": "choco install terraform"}},
     "ansible": {"name": "Ansible", "binary": "ansible", "description": "自动化运维工具", "icon": "📜", "category": "devops",
-                "install": {"linux": "pip install ansible", "darwin": "pip install ansible", "win32": "pip install ansible"}},
+                "install": {"linux": "pip install --break-system-packages ansible", "darwin": "pip install --break-system-packages ansible", "win32": "pip install --break-system-packages ansible"}},
 }
 
 _install_tasks: Dict[str, dict] = {}
@@ -278,14 +278,18 @@ async def _run_install(agent_id: str, cmd: str):
             text = line.decode("utf-8", errors="replace").strip()
             if text:
                 task["output"].append(text)
-                if any(w in text.lower() for w in ["added", "installed", "successfully", "complete"]):
-                    task["progress"] = 90
-                elif any(w in text.lower() for w in ["downloading", "fetching", "receiving"]):
+                lower = text.lower()
+                if any(w in lower for w in ["success", "installed", "complete", "added"]):
+                    task["progress"] = 100
+                elif any(w in lower for w in ["downloading", "fetching", "receiving"]):
+                    task["progress"] = min(task["progress"] + 15, 60)
+                elif any(w in lower for w in ["building", "compiling", "linking"]):
                     task["progress"] = min(task["progress"] + 10, 80)
-                elif any(w in text.lower() for w in ["building", "compiling", "linking"]):
-                    task["progress"] = min(task["progress"] + 5, 85)
-                else:
-                    task["progress"] = min(task["progress"] + 2, 75)
+                elif any(w in lower for w in ["resolving", "collecting", "using"]):
+                    task["progress"] = min(task["progress"] + 5, 40)
+                elif "error" in lower or "failed" in lower:
+                    task["progress"] = task["progress"]  # don't advance on errors
+                # else: don't increment for unknown lines
         await proc.wait()
         if proc.returncode == 0:
             task["status"] = "done"
