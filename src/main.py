@@ -26,6 +26,7 @@ from src.api.agents import router as agents_router
 from src.api.skills import router as skills_router
 from src.api.marketplace import router as marketplace_router
 from src.api.download_api import router as download_router
+from src.api.terminal_ws import router as terminal_router
 from src.api.search import router as search_router
 from src.api.chat import router as chat_router
 from src.api.graph import router as graph_router
@@ -127,6 +128,7 @@ app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
 app.include_router(marketplace_router, prefix="/api/marketplace", tags=["marketplace"])
 app.include_router(download_router, prefix="/api/download", tags=["download"])
+app.include_router(terminal_router, tags=["terminal"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
