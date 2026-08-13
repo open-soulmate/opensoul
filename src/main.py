@@ -90,6 +90,7 @@ app.add_middleware(
 # Static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+app.mount("/admin", StaticFiles(directory=os.path.join(_static_dir, "admin")), name="admin")
 
 
 # Root route — serve admin dashboard
