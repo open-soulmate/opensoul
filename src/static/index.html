@@ -1,122 +1,113 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenSoul</title>
-  <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenSoul</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="app-shell">
-    <!-- Sidebar - identical to OpenMate -->
-    <aside class="sidebar" id="sidebar">
-      <!-- Header: logo + name + collapse toggle -->
-      <div class="sidebar-header">
-        <div class="sidebar-icon-col">
-          <span class="sidebar-logo">OS</span>
-        </div>
-        <div class="sidebar-text">
-          <span class="sidebar-name">OpenSoul</span>
-        </div>
-        <button class="sidebar-toggle" id="sidebar-toggle" title="折叠/展开">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-      </div>
+    <!-- Mobile overlay -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-      <!-- Navigation -->
-      <nav class="sidebar-nav" id="sidebar-nav">
-        <a href="#dashboard" class="nav-item active" data-page="dashboard">
-          <div class="nav-icon-col"><span class="nav-icon">⊞</span></div>
-          <span class="nav-text">仪表盘</span>
-        </a>
-        <a href="#knowledge" class="nav-item" data-page="knowledge">
-          <div class="nav-icon-col"><span class="nav-icon">◈</span></div>
-          <span class="nav-text">知识库</span>
-        </a>
-        <a href="#graph" class="nav-item" data-page="graph">
-          <div class="nav-icon-col"><span class="nav-icon">◇</span></div>
-          <span class="nav-text">图谱</span>
-        </a>
-        <a href="#search" class="nav-item" data-page="search">
-          <div class="nav-icon-col"><span class="nav-icon">⌕</span></div>
-          <span class="nav-text">搜索</span>
-        </a>
-        <a href="#agents" class="nav-item" data-page="agents">
-          <div class="nav-icon-col"><span class="nav-icon">◎</span></div>
-          <span class="nav-text">Agent节点</span>
-        </a>
-        <a href="#marketplace" class="nav-item" data-page="marketplace">
-          <div class="nav-icon-col"><span class="nav-icon">🏪</span></div>
-          <span class="nav-text">技能源</span>
-        </a>
-        <a href="#agent-sources" class="nav-item" data-page="agent-sources">
-          <div class="nav-icon-col"><span class="nav-icon">📦</span></div>
-          <span class="nav-text">Agent源</span>
-        </a>
-        <a href="#settings" class="nav-item" data-page="settings">
-          <div class="nav-icon-col"><span class="nav-icon">⚙</span></div>
-          <span class="nav-text">系统设置</span>
-        </a>
-        <a href="#llm" class="nav-item" data-page="llm">
-          <div class="nav-icon-col"><span class="nav-icon">✦</span></div>
-          <span class="nav-text">LLM配置</span>
-        </a>
-      </nav>
+    <!-- Sidebar -->
+    <aside class="sidebar expanded" id="sidebar">
+        <!-- Toggle button (desktop collapse/expand) -->
+        <button class="sidebar-toggle" id="sidebar-toggle" title="折叠/展开侧边栏">◀</button>
 
-      <!-- Footer: user account -->
-      <div class="sidebar-footer">
-        <button class="sidebar-user" id="sidebar-user-btn">
-          <div class="sidebar-icon-col">
-            <div class="user-avatar">A</div>
-          </div>
-          <div class="sidebar-text user-info">
-            <span class="user-name">Admin</span>
-            <span class="user-version">v0.1.0</span>
-          </div>
-        </button>
-        <!-- Account menu -->
-        <div class="user-menu" id="user-menu">
-          <div class="user-menu-header">
-            <div class="user-avatar user-avatar-lg">A</div>
-            <div>
-              <div class="user-menu-name">Admin</div>
-              <div class="user-menu-status">已登录</div>
+        <!-- Header: Logo + Name + Version -->
+        <div class="sidebar-header">
+            <div class="logo-icon-wrap">OS</div>
+            <div class="logo-text-group">
+                <span class="logo-name">OpenSoul</span>
+                <span class="logo-version" id="sidebar-version">v0.1.0</span>
             </div>
-          </div>
-          <div class="user-menu-items">
-            <a class="user-menu-item" href="#settings">
-              <span>⚙</span><div><div>系统设置</div><div class="user-menu-desc">配置系统参数</div></div>
-            </a>
-            <a class="user-menu-item" href="https://github.com/open-soulmate/opensoul" target="_blank">
-              <span>📄</span><div><div>使用文档</div><div class="user-menu-desc">查看项目文档</div></div>
-            </a>
-            <button class="user-menu-item user-menu-logout" id="btn-logout">
-              <span>🚪</span><div><div>退出登录</div><div class="user-menu-desc">清除登录状态</div></div>
-            </button>
-          </div>
         </div>
-      </div>
+
+        <!-- Navigation -->
+        <nav class="nav-menu">
+            <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                <span class="nav-icon-wrap">⊞</span>
+                <span class="nav-label">仪表盘</span>
+            </a>
+            <a href="#knowledge" class="nav-item" data-page="knowledge">
+                <span class="nav-icon-wrap">◈</span>
+                <span class="nav-label">知识库</span>
+            </a>
+            <a href="#graph" class="nav-item" data-page="graph">
+                <span class="nav-icon-wrap">◇</span>
+                <span class="nav-label">图谱</span>
+            </a>
+            <a href="#search" class="nav-item" data-page="search">
+                <span class="nav-icon-wrap">⌕</span>
+                <span class="nav-label">搜索</span>
+            </a>
+            <a href="#agents" class="nav-item" data-page="agents">
+                <span class="nav-icon-wrap">◎</span>
+                <span class="nav-label">Agent节点</span>
+            </a>
+            <a href="#marketplace" class="nav-item" data-page="marketplace">
+                <span class="nav-icon-wrap">🏪</span>
+                <span class="nav-label">技能源</span>
+            </a>
+            <a href="#agent-sources" class="nav-item" data-page="agent-sources">
+                <span class="nav-icon-wrap">📦</span>
+                <span class="nav-label">Agent源</span>
+            </a>
+            <a href="#settings" class="nav-item" data-page="settings">
+                <span class="nav-icon-wrap">⚙</span>
+                <span class="nav-label">系统设置</span>
+            </a>
+            <a href="#llm" class="nav-item" data-page="llm">
+                <span class="nav-icon-wrap">✦</span>
+                <span class="nav-label">LLM配置</span>
+            </a>
+        </nav>
+
+        <!-- Footer: User info -->
+        <div class="sidebar-footer">
+            <div class="sidebar-user">
+                <div class="user-avatar">A</div>
+                <div class="user-info">
+                    <span class="user-name">Admin</span>
+                    <span class="user-role" id="sidebar-status-text">Soul 状态</span>
+                </div>
+            </div>
+        </div>
     </aside>
 
-    <!-- Main content -->
+    <!-- Main Content -->
     <main class="main-content">
-      <!-- Topbar -->
-      <header class="topbar">
-        <div class="topbar-left">
-          <button class="mobile-menu-btn" id="mobile-menu-btn">☰</button>
-          <h1 class="page-title" id="page-title">仪表盘</h1>
-        </div>
-        <div class="topbar-right">
-          <span class="badge badge-ok" id="header-status">-</span>
-          <span class="badge" id="header-version">v-</span>
-        </div>
-      </header>
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <button class="menu-toggle" id="menu-toggle">☰</button>
+                <span class="breadcrumb">OpenSoul</span>
+                <span class="breadcrumb-sep">/</span>
+                <h1 class="page-title" id="page-title">仪表盘</h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="status-badge">
+                    <span class="status-label">版本</span>
+                    <span class="status-value" id="header-version">-</span>
+                </div>
+                <div class="status-badge">
+                    <span class="status-label">运行时间</span>
+                    <span class="status-value" id="uptime">-</span>
+                </div>
+                <div class="status-badge">
+                    <span class="status-label">状态</span>
+                    <span class="status-value status-ok" id="header-status">-</span>
+                </div>
+            </div>
+        </header>
 
-      <!-- Page content -->
-      <div class="page-content" id="page-content"></div>
+        <!-- Page Content Area -->
+        <div class="page-content" id="page-content">
+            <!-- Dynamic content loaded here -->
+        </div>
     </main>
-  </div>
 
-  <script src="/static/app.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>
