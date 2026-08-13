@@ -164,8 +164,11 @@ class ACPProcess:
             try:
                 event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
                 chunks = self._extract_text_chunks(event)
+                if chunks:
+                    logger.info(f"ACP: Got {len(chunks)} text chunks from event")
                 collected.extend(chunks)
                 if self._is_stream_end(event) and collected:
+                    logger.info(f"ACP: Stream end detected, total collected={len(collected)}")
                     break
             except asyncio.TimeoutError:
                 if collected:
