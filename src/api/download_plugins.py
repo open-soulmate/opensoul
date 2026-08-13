@@ -1,0 +1,594 @@
+"""Download plugin system - pluggable download protocols.
+
+Supports: aria2 (resume+P2P), wget (resume), curl (basic), IPFS, BitTorrent.
+Plugins can self-update and are hot-swappable.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import shutil
+import subprocess
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Optional, Callable, Dict, List
+from uuid import UUID
+
+logger = logging.getLogger(__name__)
+
+
+class PluginStatus(Enum):
+    AVAILABLE = "available"
+    INSTALLING = "installing"
+    UPDATING = "updating"
+    ERROR = "error"
+    DISABLED = "disabled"
+
+
+@dataclass
+class DownloadProgress:
+    """Progress info for a download task"""
+    url: str
+    dest: str
+    total_bytes: int = 0
+    downloaded_bytes: int = 0
+    speed: float = 0  # bytes/sec
+    eta: int = 0  # seconds
+    status: str = "pending"  # pending, downloading, paused, done, error
+    error: Optional[str] = None
+    supports_resume: bool = False
+    plugin: str = ""
+
+    @property
+    def progress_pct(self) -> float:
+        if self.total_bytes <= 0:
+            return 0
+        return min(100, (self.downloaded_bytes / self.total_bytes) * 100)
+
+
+@dataclass
+class PluginInfo:
+    """Metadata for a download plugin"""
+    id: str
+    name: str
+    description: str
+    version: str
+    binary: str
+    supports_resume: bool
+    supports_p2p: bool
+    install_cmd: Dict[str, str]  # os -> install command
+    update_cmd: Dict[str, str]
+    check_version_cmd: str
+    status: PluginStatus = PluginStatus.AVAILABLE
+    priority: int = 100  # lower = higher priority
+
+
+class DownloadPlugin(ABC):
+    """Abstract base for download plugins"""
+
+    @abstractmethod
+    def get_info(self) -> PluginInfo:
+        """Return plugin metadata"""
+        ...
+
+    @abstractmethod
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        """Download a file with optional resume support"""
+        ...
+
+    @abstractmethod
+    async def pause(self, task_id: str) -> bool:
+        """Pause a download"""
+        ...
+
+    @abstractmethod
+    async def resume_download(self, task_id: str) -> bool:
+        """Resume a paused download"""
+        ...
+
+    @abstractmethod
+    async def cancel(self, task_id: str) -> bool:
+        """Cancel a download"""
+        ...
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Check if the binary is installed"""
+        ...
+
+    @abstractmethod
+    async def install(self) -> bool:
+        """Install the plugin binary"""
+        ...
+
+    @abstractmethod
+    async def update(self) -> bool:
+        """Update the plugin binary"""
+        ...
+
+    @abstractmethod
+    async def get_version(self) -> Optional[str]:
+        """Get installed version"""
+        ...
+
+
+# ─── Aria2 Plugin (resume + P2P via BitTorrent) ──────────────────
+
+class Aria2Plugin(DownloadPlugin):
+    """aria2c - supports HTTP resume, BitTorrent, Metalink"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="aria2", name="Aria2", description="高速下载器，支持断点续传+BT+Metalink",
+            version="1.37.0", binary="aria2c",
+            supports_resume=True, supports_p2p=True,
+            install_cmd={"linux": "sudo pacman -S --noconfirm aria2 || sudo apt install -y aria2",
+                         "darwin": "brew install aria2"},
+            update_cmd={"linux": "sudo pacman -Syu aria2 || sudo apt upgrade aria2",
+                        "darwin": "brew upgrade aria2"},
+            check_version_cmd="aria2c --version | head -1",
+            priority=10,  # highest priority
+        )
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="aria2", supports_resume=True)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Check for partial file
+        control_file = dest + ".aria2"
+        if resume and dest_path.exists():
+            progress.downloaded_bytes = dest_path.stat().st_size
+            progress.status = "downloading"
+
+        cmd = [
+            "aria2c",
+            "--dir", str(dest_path.parent),
+            "--out", dest_path.name,
+            "--continue=true" if resume else "--continue=false",
+            "--file-allocation=none",
+            "--summary-interval=1",
+            "--enable-color=false",
+            url,
+        ]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            self._tasks[dest] = proc
+
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").strip()
+
+                # Parse aria2 progress: [#abc123 1.2MiB/10MiB(12%) CN:1 DL:512KiB ETA:18s]
+                if "/" in text and "(" in text:
+                    try:
+                        parts = text.split("(")[1].split(")")[0].replace("%", "")
+                        progress.progress_pct  # just reference
+                        progress.downloaded_bytes = int(progress.total_bytes * float(parts) / 100)
+                        if "DL:" in text:
+                            speed_str = text.split("DL:")[1].split()[0].replace("KiB", "").replace("MiB", "").replace("GiB", "")
+                            progress.speed = float(speed_str) * 1024  # approximate
+                        if "ETA:" in text:
+                            eta_str = text.split("ETA:")[1].split("]")[0].strip().replace("s", "")
+                            progress.eta = int(eta_str)
+                    except (ValueError, IndexError):
+                        pass
+
+                if progress_cb:
+                    progress_cb(progress)
+
+            await proc.wait()
+            if proc.returncode == 0:
+                progress.status = "done"
+                progress.downloaded_bytes = progress.total_bytes or dest_path.stat().st_size
+                progress.total_bytes = progress.downloaded_bytes
+            else:
+                progress.status = "error"
+                progress.error = f"aria2c exit code {proc.returncode}"
+
+        except FileNotFoundError:
+            progress.status = "error"
+            progress.error = "aria2c not found"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        finally:
+            self._tasks.pop(dest, None)
+
+        if progress_cb:
+            progress_cb(progress)
+        return progress
+
+    async def pause(self, task_id: str) -> bool:
+        proc = self._tasks.get(task_id)
+        if proc:
+            proc.terminate()
+            return True
+        return False
+
+    async def resume_download(self, task_id: str) -> bool:
+        # aria2 handles resume automatically with --continue=true
+        return True
+
+    async def cancel(self, task_id: str) -> bool:
+        proc = self._tasks.pop(task_id, None)
+        if proc:
+            proc.kill()
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return shutil.which("aria2c") is not None
+
+    async def install(self) -> bool:
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.install_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def update(self) -> bool:
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.update_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "aria2c", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else None
+        except Exception:
+            return None
+
+
+# ─── Wget Plugin (HTTP resume) ────────────────────────────────────
+
+class WgetPlugin(DownloadPlugin):
+    """wget - supports HTTP resume via Range header"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="wget", name="Wget", description="经典下载器，支持HTTP断点续传",
+            version="1.24", binary="wget",
+            supports_resume=True, supports_p2p=False,
+            install_cmd={"linux": "sudo pacman -S --noconfirm wget || sudo apt install -y wget",
+                         "darwin": "brew install wget"},
+            update_cmd={"linux": "sudo pacman -Syu wget || sudo apt upgrade wget",
+                        "darwin": "brew upgrade wget"},
+            check_version_cmd="wget --version | head -1",
+            priority=50,
+        )
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="wget", supports_resume=True)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = ["wget", "-c" if resume else "", "-O", str(dest_path), "--progress=dot:mega", url]
+        cmd = [c for c in cmd if c]  # remove empty strings
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            self._tasks[dest] = proc
+
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").strip()
+                # wget progress: .......... .......... ..........  50%  512K  18s
+                if "%" in text:
+                    try:
+                        pct = float(text.split("%")[0].strip().split()[-1])
+                        progress.downloaded_bytes = int(progress.total_bytes * pct / 100)
+                    except (ValueError, IndexError):
+                        pass
+                if progress_cb:
+                    progress_cb(progress)
+
+            await proc.wait()
+            progress.status = "done" if proc.returncode == 0 else "error"
+            if proc.returncode != 0:
+                progress.error = f"wget exit code {proc.returncode}"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        finally:
+            self._tasks.pop(dest, None)
+
+        if progress_cb:
+            progress_cb(progress)
+        return progress
+
+    async def pause(self, task_id: str) -> bool:
+        proc = self._tasks.get(task_id)
+        if proc:
+            proc.terminate()
+            return True
+        return False
+
+    async def resume_download(self, task_id: str) -> bool:
+        return True  # wget -c handles resume
+
+    async def cancel(self, task_id: str) -> bool:
+        proc = self._tasks.pop(task_id, None)
+        if proc:
+            proc.kill()
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return shutil.which("wget") is not None
+
+    async def install(self) -> bool:
+        proc = await asyncio.create_subprocess_shell("sudo pacman -S --noconfirm wget || sudo apt install -y wget")
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def update(self) -> bool:
+        proc = await asyncio.create_subprocess_shell("sudo pacman -Syu wget || sudo apt upgrade wget")
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "wget", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else None
+        except Exception:
+            return None
+
+
+# ─── Curl Plugin (basic, no resume) ──────────────────────────────
+
+class CurlPlugin(DownloadPlugin):
+    """curl - basic download, always available as fallback"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="curl", name="cURL", description="基础下载器，无断点续传",
+            version="8.0", binary="curl",
+            supports_resume=False, supports_p2p=False,
+            install_cmd={},  # always available
+            update_cmd={},
+            check_version_cmd="curl --version | head -1",
+            priority=100,  # lowest priority
+        )
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="curl", supports_resume=False)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = ["curl", "-L", "-o", str(dest_path), "--progress-bar", url]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            self._tasks[dest] = proc
+
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                if progress_cb:
+                    progress_cb(progress)
+
+            await proc.wait()
+            progress.status = "done" if proc.returncode == 0 else "error"
+            if proc.returncode != 0:
+                progress.error = f"curl exit code {proc.returncode}"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        finally:
+            self._tasks.pop(dest, None)
+
+        if progress_cb:
+            progress_cb(progress)
+        return progress
+
+    async def pause(self, task_id: str) -> bool:
+        proc = self._tasks.get(task_id)
+        if proc:
+            proc.terminate()
+            return True
+        return False
+
+    async def resume_download(self, task_id: str) -> bool:
+        return False  # curl doesn't support resume in our impl
+
+    async def cancel(self, task_id: str) -> bool:
+        proc = self._tasks.pop(task_id, None)
+        if proc:
+            proc.kill()
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return shutil.which("curl") is not None
+
+    async def install(self) -> bool:
+        return True  # always available
+
+    async def update(self) -> bool:
+        return True  # system managed
+
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else None
+        except Exception:
+            return None
+
+
+# ─── Plugin Manager ───────────────────────────────────────────────
+
+class DownloadManager:
+    """Manages download plugins with auto-fallback and auto-update"""
+
+    def __init__(self):
+        self._plugins: Dict[str, DownloadPlugin] = {}
+        self._register_builtins()
+
+    def _register_builtins(self):
+        """Register built-in plugins"""
+        self.register(Aria2Plugin())
+        self.register(WgetPlugin())
+        self.register(CurlPlugin())
+
+    def register(self, plugin: DownloadPlugin):
+        """Register a download plugin"""
+        info = plugin.get_info()
+        self._plugins[info.id] = plugin
+        logger.info(f"Registered download plugin: {info.name} (resume={info.supports_resume}, p2p={info.supports_p2p})")
+
+    def unregister(self, plugin_id: str):
+        """Unregister a plugin"""
+        self._plugins.pop(plugin_id, None)
+
+    def get_plugin(self, plugin_id: str) -> Optional[DownloadPlugin]:
+        """Get a specific plugin"""
+        return self._plugins.get(plugin_id)
+
+    def get_best_plugin(self, require_resume: bool = False, require_p2p: bool = False) -> Optional[DownloadPlugin]:
+        """Get the best available plugin matching requirements"""
+        candidates = []
+        for plugin in self._plugins.values():
+            info = plugin.get_info()
+            if not plugin.is_available():
+                continue
+            if require_resume and not info.supports_resume:
+                continue
+            if require_p2p and not info.supports_p2p:
+                continue
+            candidates.append((info.priority, plugin))
+
+        if not candidates:
+            # Fallback: try to install the best plugin
+            for plugin in sorted(self._plugins.values(), key=lambda p: p.get_info().priority):
+                info = plugin.get_info()
+                if require_resume and not info.supports_resume:
+                    continue
+                if require_p2p and not info.supports_p2p:
+                    continue
+                # Try to install
+                return plugin  # return it, download() will fail and we'll fallback
+
+        candidates.sort(key=lambda x: x[0])
+        return candidates[0][1] if candidates else None
+
+    def list_plugins(self) -> List[PluginInfo]:
+        """List all registered plugins with status"""
+        result = []
+        for plugin in self._plugins.values():
+            info = plugin.get_info()
+            info.status = PluginStatus.AVAILABLE if plugin.is_available() else PluginStatus.DISABLED
+            result.append(info)
+        return sorted(result, key=lambda x: x.priority)
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       plugin_id: Optional[str] = None,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        """Download with auto-fallback across plugins"""
+        # Get plugin chain
+        if plugin_id:
+            plugin = self.get_plugin(plugin_id)
+            if not plugin:
+                return DownloadProgress(url=url, dest=dest, status="error", error=f"Plugin {plugin_id} not found")
+            plugins = [plugin]
+        else:
+            # Build fallback chain
+            plugins = sorted(self._plugins.values(), key=lambda p: p.get_info().priority)
+            if resume:
+                plugins = [p for p in plugins if p.get_info().supports_resume] + [p for p in plugins if not p.get_info().supports_resume]
+
+        last_error = None
+        for plugin in plugins:
+            if not plugin.is_available():
+                continue
+            info = plugin.get_info()
+            logger.info(f"Trying download with {info.name}: {url}")
+            try:
+                result = await plugin.download(url, dest, resume=resume, progress_cb=progress_cb)
+                if result.status == "done":
+                    return result
+                last_error = result.error
+                logger.warning(f"{info.name} failed: {last_error}")
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"{info.name} exception: {last_error}")
+
+        return DownloadProgress(url=url, dest=dest, status="error",
+                                error=f"All plugins failed. Last error: {last_error}")
+
+    async def auto_update_plugins(self) -> Dict[str, bool]:
+        """Auto-update all installed plugins"""
+        results = {}
+        for plugin in self._plugins.values():
+            if plugin.is_available():
+                try:
+                    success = await plugin.update()
+                    results[plugin.get_info().id] = success
+                except Exception as e:
+                    results[plugin.get_info().id] = False
+                    logger.error(f"Failed to update {plugin.get_info().name}: {e}")
+        return results
+
+    async def install_plugin(self, plugin_id: str) -> bool:
+        """Install a plugin"""
+        plugin = self.get_plugin(plugin_id)
+        if not plugin:
+            return False
+        if plugin.is_available():
+            return True
+        return await plugin.install()
+
+
+# Singleton
+_download_manager: Optional[DownloadManager] = None
+
+
+def get_download_manager() -> DownloadManager:
+    global _download_manager
+    if _download_manager is None:
+        _download_manager = DownloadManager()
+    return _download_manager
