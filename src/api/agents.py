@@ -226,3 +226,66 @@ async def _run_install(agent_id: str, cmd: str):
     except Exception as e:
         task["status"] = "error"
         task["error"] = str(e)
+
+
+class UninstallRequest(BaseModel):
+    agent_id: str
+
+
+@router.post("/uninstall")
+async def uninstall_agent(req: UninstallRequest, user_id: UUID = Depends(get_current_user)):
+    """Uninstall an agent using package manager"""
+    if req.agent_id not in AGENT_REGISTRY:
+        return {"success": False, "error": f"Unknown agent: {req.agent_id}"}
+    agent = AGENT_REGISTRY[req.agent_id]
+    binary = agent["binary"]
+    path = shutil.which(binary)
+    if not path:
+        return {"success": False, "error": "Agent not installed"}
+    
+    # Try common uninstall commands
+    cmds = []
+    if shutil.which("npm"):
+        cmds.append(f"npm uninstall -g {binary}")
+    if shutil.which("pip"):
+        cmds.append(f"pip uninstall -y {binary}")
+    if shutil.which("pip3"):
+        cmds.append(f"pip3 uninstall -y {binary}")
+    
+    for cmd in cmds:
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            if proc.returncode == 0:
+                return {"success": True, "output": stdout.decode()[-300:]}
+        except Exception:
+            continue
+    
+    return {"success": False, "error": "Could not uninstall. Try manually: " + path}
+
+
+class UpdateRequest(BaseModel):
+    agent_id: str
+
+
+@router.post("/update")
+async def update_agent(req: UpdateRequest, user_id: UUID = Depends(get_current_user)):
+    """Update an agent - uses install command which typically upgrades"""
+    if req.agent_id not in AGENT_REGISTRY:
+        return {"success": False, "error": f"Unknown agent: {req.agent_id}"}
+    
+    agent = AGENT_REGISTRY[req.agent_id]
+    os_name = _get_os()
+    cmd = agent["install"].get(os_name)
+    if not cmd:
+        return {"success": False, "error": f"No update command for {os_name}"}
+    
+    # Check if already updating
+    if req.agent_id in _install_tasks and _install_tasks[req.agent_id]["status"] == "running":
+        return {"success": True, "task_id": req.agent_id, "status": "already_running"}
+    
+    _install_tasks[req.agent_id] = {"status": "running", "progress": 0, "output": [], "error": None}
+    asyncio.create_task(_run_install(req.agent_id, cmd))
+    return {"success": True, "task_id": req.agent_id, "status": "started"}
