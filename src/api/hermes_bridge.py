@@ -1,10 +1,12 @@
 """Hermes session bridge - lists sessions from ALL platforms (WeChat, Telegram, etc.)
-and allows sending messages to specific sessions.
-"""
+and allows sending messages to specific sessions."""
 
 import asyncio
 import json
 import logging
+import os
+import re
+import subprocess
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,163 +14,153 @@ from pydantic import BaseModel
 
 from src.api.user import get_current_user
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-class SessionInfo(BaseModel):
-    id: str
-    title: str
-    preview: str
-    last_active: str
-    source: str  # weixin, telegram, discord, local, etc.
+class SendMessageRequest(BaseModel):
+    text: str
+    session_id: str | None = None
 
 
-class SendMessage(BaseModel):
-    session_id: str
-    message: str
-
-
-@router.get("/list")
-async def list_sessions(
-    source: str | None = None,
-    limit: int = 20,
-    user_id: UUID = Depends(get_current_user),
-):
-    """列出Hermes所有平台的会话（微信、Telegram等）"""
+def _list_sessions_sync(limit: int, source: str | None = None) -> dict:
+    """Synchronous hermes sessions list (runs in thread executor)."""
+    env = {**os.environ, "COLUMNS": "200"}
     cmd = ["hermes", "sessions", "list", "--limit", str(limit)]
     if source:
         cmd.extend(["--source", source])
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15, env=env,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-        output = stdout.decode("utf-8", errors="replace").strip()
+        output = result.stdout.strip()
 
         sessions = []
         for line in output.split("\n"):
-            if line.startswith("Title") or line.startswith("─") or not line.strip():
+            # Skip header/separator lines
+            if ("Preview" in line or "Title" in line) and "Workspace" in line:
                 continue
-            # Parse: Title  Preview  LastActive  ID
-            parts = line.rsplit(maxsplit=3)
-            if len(parts) >= 2:
-                sid = parts[-1] if len(parts) >= 4 else parts[-1]
-                # Find the session ID (format: YYYYMMDD_HHMMSS_xxxxxxxx or cron_xxx)
-                if len(sid) >= 8 and ("_" in sid):
-                    title = " ".join(parts[:-3]) if len(parts) >= 4 else " ".join(parts[:-2])
-                    preview = parts[-3] if len(parts) >= 4 else ""
-                    last_active = parts[-2] if len(parts) >= 4 else parts[-1]
-                    sessions.append({
-                        "id": sid,
-                        "title": title.strip() or "—",
-                        "preview": preview,
-                        "last_active": last_active,
-                        "source": source or "all",
-                    })
+            if line.startswith("─") or line.startswith("═") or not line.strip():
+                continue
+
+            # Find session ID at end of line
+            m = re.search(r'(\d{8}_\d{6}_[a-f0-9]+|cron_\w+)$', line)
+            if not m:
+                continue
+
+            sid = m.group(1)
+            rest = line[:m.start()].rstrip()
+
+            # Split rest by 2+ spaces (column separator)
+            cols = re.split(r'\s{2,}', rest)
+
+            if len(cols) >= 4:
+                name_or_title, workspace, last_active, src = cols[0].strip(), cols[1].strip(), cols[2].strip(), cols[3].strip()
+            elif len(cols) >= 3:
+                name_or_title, workspace, last_active = cols[0].strip(), cols[1].strip(), cols[2].strip()
+                src = "cli"
+            elif len(cols) >= 2:
+                name_or_title, workspace = cols[0].strip(), cols[1].strip()
+                last_active, src = "", "cli"
+            else:
+                name_or_title = cols[0].strip() if cols else ""
+                workspace, last_active, src = "", "", "cli"
+
+            # Map source to platform
+            platform_map = {"cli": "hermes", "wx": "wechat", "wxentry": "wechat", "tg": "telegram", "dc": "discord"}
+            platform = platform_map.get(src.lower(), src.lower() or "hermes")
+
+            # Use session ID as fallback name when title is "—"
+            display_name = name_or_title if name_or_title and name_or_title != "—" else sid
+
+            sessions.append({
+                "id": sid,
+                "name": display_name,
+                "platform": platform,
+                "chat_id": "",
+                "workspace": workspace,
+                "last_active": last_active,
+                "last_message": name_or_title[:80] if name_or_title else "",
+            })
 
         return {"sessions": sessions, "total": len(sessions)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("list_sessions error: %s", e)
+        return {"sessions": [], "total": 0, "error": str(e)}
+
+
+@router.get("/sessions")
+async def list_sessions(
+    source: str | None = None,
+    limit: int = 50,
+    user_id: UUID = Depends(get_current_user),
+):
+    """列出Hermes所有平台的会话（微信、Telegram等）"""
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _list_sessions_sync, limit, source)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
 
 
 @router.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str, user_id: UUID = Depends(get_current_user)):
     """获取指定会话的历史消息"""
     try:
-        cmd = ["hermes", "sessions", "export", "--session-id", session_id, "--format", "jsonl", "-"]
         proc = await asyncio.create_subprocess_exec(
-            *cmd,
+            "hermes", "sessions", "export", "--session-id", session_id, "--format", "jsonl", "-",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         output = stdout.decode("utf-8", errors="replace").strip()
 
-        if not output:
-            return {"messages": [], "session": None}
-
-        # JSONL: one JSON object per session, containing messages array
-        data = json.loads(output.split("\n")[0])
         messages = []
-        for msg in data.get("messages", []):
-            role = msg.get("role", "")
-            # Only include user and assistant messages (skip system/tool)
-            if role not in ("user", "assistant"):
+        for line in output.split("\n"):
+            if not line.strip():
                 continue
-            content = msg.get("content", "")
-            if not content and role == "assistant":
-                # Assistant messages with tool_calls have no text content
+            try:
+                msg = json.loads(line)
+                messages.append({
+                    "id": msg.get("id", ""),
+                    "role": msg.get("role", "unknown"),
+                    "content": msg.get("content", ""),
+                    "timestamp": msg.get("timestamp", ""),
+                    "source": msg.get("source", ""),
+                })
+            except json.JSONDecodeError:
                 continue
-            messages.append({
-                "id": str(msg.get("id", "")),
-                "role": "user" if role == "user" else "agent",
-                "content": content,
-                "timestamp": msg.get("timestamp"),
-            })
 
-        return {
-            "messages": messages,
-            "session": {
-                "id": data.get("id"),
-                "title": data.get("title", ""),
-                "source": data.get("source", ""),
-                "started_at": data.get("started_at"),
-                "message_count": data.get("message_count", 0),
-            },
-        }
+        return {"messages": messages, "total": len(messages)}
     except Exception as e:
-        logger.error(f"Failed to load session messages: {e}")
+        logger.error("get_session_messages error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/send")
-async def send_to_session(data: SendMessage, user_id: UUID = Depends(get_current_user)):
-    """向指定会话发送消息（继续对话）"""
+@router.post("/sessions/send")
+async def send_message(
+    req: SendMessageRequest,
+    user_id: UUID = Depends(get_current_user),
+):
+    """向指定会话发送消息"""
     try:
-        # Use hermes send or hermes -z with session context
-        cmd = ["hermes", "send", "--to", "weixin", data.message]
+        if req.session_id:
+            cmd = ["hermes", "send", "--session", req.session_id, "--", req.text]
+        else:
+            cmd = ["hermes", "-z", req.text]
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         output = stdout.decode("utf-8", errors="replace").strip()
-        error = stderr.decode("utf-8", errors="replace").strip()
 
-        return {
-            "ok": proc.returncode == 0,
-            "output": output,
-            "error": error if proc.returncode != 0 else None,
-        }
+        return {"ok": True, "content": output, "source": "hermes-cli"}
     except asyncio.TimeoutError:
-        raise HTTPException(status_code=408, detail="Timeout")
+        raise HTTPException(status_code=504, detail="Hermes response timeout")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/platforms")
-async def list_platforms(user_id: UUID = Depends(get_current_user)):
-    """列出可用的消息平台"""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "hermes", "send", "--list",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-        output = stdout.decode("utf-8", errors="replace").strip()
-
-        platforms = []
-        for line in output.split("\n"):
-            line = line.strip()
-            if line and not line.startswith("Usage") and not line.startswith("Examples"):
-                platforms.append(line)
-
-        return {"platforms": platforms}
-    except Exception as e:
+        logger.error("send_message error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
