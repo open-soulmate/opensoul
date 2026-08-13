@@ -124,6 +124,17 @@ class ACPProcess:
                     "params": {"prompt": parts, "sessionId": session_id}}
 
         async with self._read_lock:
+            # Drain stale events from previous RPC calls
+            while True:
+                try:
+                    stale = await asyncio.wait_for(self._proc.stdout.readline(), timeout=0.3)
+                    if stale:
+                        m = self._parse(stale)
+                        if m: print(f"ACP drain: {m.get('method','')}", flush=True)
+                    else: break
+                except asyncio.TimeoutError:
+                    break
+
             self._proc.stdin.write((json.dumps(request) + "\n").encode())
             await self._proc.stdin.drain()
 
