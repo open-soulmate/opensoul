@@ -58,7 +58,7 @@ class ACPProcess:
             result = await self._prompt(text, sid)
             if result.get("response_text"):
                 return result
-            print("ACP: empty, falling back to hermes -z", flush=True)
+            print("ACP: events not captured (buffering), using hermes -z", flush=True)
         except Exception as e:
             print(f"ACP: error {e}, falling back to hermes -z", flush=True)
         return await self._cli(text)
