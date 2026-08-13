@@ -29,6 +29,7 @@ from src.api.download_api import router as download_router
 from src.api.terminal_ws import router as terminal_router
 from src.api.ai_groups import router as ai_groups_router
 from src.api.ai_engine import router as ai_engine_router
+from src.api.agent_collaboration import router as agent_collab_router
 from src.api.search import router as search_router
 from src.api.chat import router as chat_router
 from src.api.graph import router as graph_router
@@ -133,6 +134,7 @@ app.include_router(download_router, prefix="/api/download", tags=["download"])
 app.include_router(terminal_router, tags=["terminal"])
 app.include_router(ai_groups_router, tags=["ai-groups"])
 app.include_router(ai_engine_router, tags=["ai-engine"])
+app.include_router(agent_collab_router, tags=["agent-collaboration"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
