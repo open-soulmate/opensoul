@@ -106,31 +106,37 @@ async def list_sessions(
 
 @router.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str, user_id: UUID = Depends(get_current_user)):
-    """获取指定会话的历史消息"""
+    """获取指定会话的历史消息 - 直接查SQLite数据库"""
+    import sqlite3
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "hermes", "sessions", "export", "--session-id", session_id, "--format", "jsonl", "-",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        output = stdout.decode("utf-8", errors="replace").strip()
+        db_path = os.path.expanduser("~/.hermes/state.db")
+        db = sqlite3.connect(db_path)
+        db.row_factory = sqlite3.Row
+        rows = db.execute(
+            """SELECT id, role, content, tool_calls, tool_name, timestamp 
+               FROM messages 
+               WHERE session_id = ? AND active = 1 AND compacted = 0
+               ORDER BY id""",
+            (session_id,),
+        ).fetchall()
+        db.close()
 
         messages = []
-        for line in output.split("\n"):
-            if not line.strip():
+        for r in rows:
+            role = r["role"]
+            content = r["content"] or ""
+            # Skip tool messages and empty assistant messages
+            if role == "tool":
                 continue
-            try:
-                msg = json.loads(line)
-                messages.append({
-                    "id": msg.get("id", ""),
-                    "role": msg.get("role", "unknown"),
-                    "content": msg.get("content", ""),
-                    "timestamp": msg.get("timestamp", ""),
-                    "source": msg.get("source", ""),
-                })
-            except json.JSONDecodeError:
+            if role == "assistant" and not content.strip():
                 continue
+            messages.append({
+                "id": str(r["id"]),
+                "role": role,
+                "content": content,
+                "timestamp": r["timestamp"] or "",
+                "source": "hermes-db",
+            })
 
         return {"messages": messages, "total": len(messages)}
     except Exception as e:
