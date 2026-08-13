@@ -77,6 +77,62 @@ async def update_all_plugins(user_id: UUID = Depends(get_current_user)):
     return {"results": results}
 
 
+class BatchPluginRequest(BaseModel):
+    action: str  # 'install' | 'uninstall' | 'update'
+    plugin_ids: list[str]
+
+
+@router.post("/plugins/batch")
+async def batch_plugin_action(req: BatchPluginRequest, user_id: UUID = Depends(get_current_user)):
+    """Batch install/uninstall/update plugins"""
+    dm = get_download_manager()
+    results = {}
+
+    for plugin_id in req.plugin_ids:
+        plugin = dm.get_plugin(plugin_id)
+        if not plugin:
+            results[plugin_id] = {"success": False, "error": "Plugin not found"}
+            continue
+
+        try:
+            if req.action == "install":
+                if plugin.is_available():
+                    results[plugin_id] = {"success": True, "message": "Already installed"}
+                else:
+                    success = await plugin.install()
+                    results[plugin_id] = {"success": success}
+
+            elif req.action == "update":
+                if not plugin.is_available():
+                    results[plugin_id] = {"success": False, "error": "Not installed"}
+                else:
+                    success = await plugin.update()
+                    results[plugin_id] = {"success": success}
+
+            elif req.action == "uninstall":
+                if not plugin.is_available():
+                    results[plugin_id] = {"success": True, "message": "Not installed"}
+                else:
+                    info = plugin.get_info()
+                    import platform
+                    os_name = "darwin" if platform.system() == "Darwin" else "linux"
+                    # Construct uninstall command from binary name
+                    if os_name == "darwin":
+                        cmd = f"brew uninstall {info.binary} 2>/dev/null || true"
+                    else:
+                        cmd = f"sudo pacman -R --noconfirm {info.binary} 2>/dev/null || sudo apt remove -y {info.binary} 2>/dev/null || true"
+                    proc = await asyncio.create_subprocess_shell(cmd)
+                    await proc.wait()
+                    results[plugin_id] = {"success": True, "message": "Uninstalled"}
+            else:
+                results[plugin_id] = {"success": False, "error": f"Unknown action: {req.action}"}
+        except Exception as e:
+            logger.error(f"Batch {req.action} failed for {plugin_id}: {e}")
+            results[plugin_id] = {"success": False, "error": str(e)}
+
+    return {"results": results}
+
+
 @router.get("/plugins/{plugin_id}/version")
 async def get_plugin_version(plugin_id: str, user_id: UUID = Depends(get_current_user)):
     """Get installed version of a plugin"""

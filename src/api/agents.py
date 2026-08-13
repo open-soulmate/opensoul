@@ -137,6 +137,30 @@ AGENT_REGISTRY = {
                   "install": {"linux": "brew install terraform", "darwin": "brew install terraform", "win32": "choco install terraform"}},
     "ansible": {"name": "Ansible", "binary": "ansible", "description": "自动化运维工具", "icon": "📜", "category": "devops",
                 "install": {"linux": "pip install --break-system-packages ansible", "darwin": "pip install --break-system-packages ansible", "win32": "pip install --break-system-packages ansible"}},
+
+    # ── AI Agent Frameworks ──
+    "openclaw": {"name": "OpenClaw", "binary": "openclaw", "description": "开源AI Agent框架 - 可扩展自主Agent", "icon": "🦞", "category": "automation",
+                 "install": {"linux": "pip install --break-system-packages openclaw", "darwin": "pip install --break-system-packages openclaw", "win32": "pip install --break-system-packages openclaw"}},
+    "pi-agent": {"name": "Pi Agent", "binary": "pi", "description": "Inflection AI Pi - 个人AI助手", "icon": "🥧", "category": "chat",
+                 "install": {"linux": "pip install --break-system-packages pi-agent", "darwin": "pip install --break-system-packages pi-agent", "win32": "pip install --break-system-packages pi-agent"}},
+    "openai-agents": {"name": "OpenAI Agents SDK", "binary": "agents", "description": "OpenAI Agents SDK - 多Agent编排框架", "icon": "🤖", "category": "automation",
+                      "install": {"linux": "pip install --break-system-packages openai-agents", "darwin": "pip install --break-system-packages openai-agents", "win32": "pip install --break-system-packages openai-agents"}},
+    "smolagents": {"name": "SmolAgents", "binary": "smolagents", "description": "HuggingFace轻量Agent框架 - 代码优先", "icon": "🤗", "category": "automation",
+                   "install": {"linux": "pip install --break-system-packages smolagents", "darwin": "pip install --break-system-packages smolagents", "win32": "pip install --break-system-packages smolagents"}},
+    "pydantic-ai": {"name": "PydanticAI", "binary": "pydantic-ai", "description": "Pydantic类型安全Agent框架", "icon": "📐", "category": "automation",
+                    "install": {"linux": "pip install --break-system-packages pydantic-ai", "darwin": "pip install --break-system-packages pydantic-ai", "win32": "pip install --break-system-packages pydantic-ai"}},
+    "letta": {"name": "Letta", "binary": "letta", "description": "Letta(原MemGPT) - 长期记忆AI Agent", "icon": "🧬", "category": "automation",
+              "install": {"linux": "pip install --break-system-packages letta", "darwin": "pip install --break-system-packages letta", "win32": "pip install --break-system-packages letta"}},
+    "browser-use": {"name": "Browser Use", "binary": "browser-use", "description": "AI浏览器自动化Agent - 智能网页操作", "icon": "🌐", "category": "automation",
+                    "install": {"linux": "pip install --break-system-packages browser-use", "darwin": "pip install --break-system-packages browser-use", "win32": "pip install --break-system-packages browser-use"}},
+    "mastra": {"name": "Mastra", "binary": "mastra", "description": "TypeScript AI Agent框架 - LLM编排", "icon": "⚡", "category": "automation",
+               "install": {"linux": "npm install -g @mastra/core", "darwin": "npm install -g @mastra/core", "win32": "npm install -g @mastra/core"}},
+    "composio": {"name": "Composio", "binary": "composio", "description": "Agent工具集成平台 - 250+工具连接", "icon": "🔌", "category": "automation",
+                 "install": {"linux": "pip install --break-system-packages composio-core", "darwin": "pip install --break-system-packages composio-core", "win32": "pip install --break-system-packages composio-core"}},
+    "agentstack": {"name": "AgentStack", "binary": "agentstack", "description": "AI Agent快速开发框架 - 脚手架工具", "icon": "🏗️", "category": "automation",
+                   "install": {"linux": "pip install --break-system-packages agentstack", "darwin": "pip install --break-system-packages agentstack", "win32": "pip install --break-system-packages agentstack"}},
+    "phidata": {"name": "Phidata", "binary": "phi", "description": "Phidata AI Agent框架 - 多模态Agent", "icon": "💎", "category": "automation",
+                "install": {"linux": "pip install --break-system-packages phidata", "darwin": "pip install --break-system-packages phidata", "win32": "pip install --break-system-packages phidata"}},
 }
 
 _install_tasks: Dict[str, dict] = {}
