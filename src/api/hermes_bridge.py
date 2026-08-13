@@ -144,6 +144,30 @@ async def get_session_messages(session_id: str, user_id: UUID = Depends(get_curr
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, user_id: UUID = Depends(get_current_user)):
+    """删除指定会话及其所有消息"""
+    import sqlite3
+    try:
+        db_path = os.path.expanduser("~/.hermes/state.db")
+        db = sqlite3.connect(db_path)
+        # Delete messages first
+        db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        # Delete session
+        db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        # Try to delete from session_lineage too
+        try:
+            db.execute("DELETE FROM session_lineage WHERE session_id = ?", (session_id,))
+        except Exception:
+            pass
+        db.commit()
+        db.close()
+        return {"success": True, "deleted_session": session_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @router.post("/sessions/send")
 async def send_message(
     req: SendMessageRequest,
@@ -170,3 +194,72 @@ async def send_message(
     except Exception as e:
         logger.error("send_message error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sessions/search")
+async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)):
+    """搜索会话 - 同时搜索会话名称和消息内容"""
+    import sqlite3
+    if not q:
+        return {"sessions": [], "query": q}
+    try:
+        db_path = os.path.expanduser("~/.hermes/state.db")
+        db = sqlite3.connect(db_path)
+        db.row_factory = sqlite3.Row
+
+        # Search session titles
+        title_matches = db.execute("""
+            SELECT DISTINCT s.id, s.title, s.created_at, s.updated_at, s.source
+            FROM sessions s
+            WHERE s.active = 1 AND s.title LIKE ?
+            ORDER BY s.updated_at DESC
+            LIMIT 20
+        """, (f"%{q}%",)).fetchall()
+
+        # Search message content
+        msg_matches = db.execute("""
+            SELECT DISTINCT m.session_id, s.title, s.created_at, s.updated_at, s.source,
+                   m.content as matched_content
+            FROM messages m
+            JOIN sessions s ON m.session_id = s.id
+            WHERE s.active = 1 AND m.content LIKE ?
+            ORDER BY s.updated_at DESC
+            LIMIT 20
+        """, (f"%{q}%",)).fetchall()
+
+        db.close()
+
+        # Merge results, dedup by session_id
+        seen = set()
+        results = []
+
+        for r in title_matches:
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                results.append({
+                    "id": r["id"], "title": r["title"],
+                    "created_at": r["created_at"], "updated_at": r["updated_at"],
+                    "source": r["source"], "match_type": "title",
+                    "snippet": None,
+                })
+
+        for r in msg_matches:
+            if r["session_id"] not in seen:
+                seen.add(r["session_id"])
+                # Extract snippet around match
+                content = r["matched_content"] or ""
+                idx = content.lower().find(q.lower())
+                start = max(0, idx - 40)
+                end = min(len(content), idx + len(q) + 40)
+                snippet = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
+
+                results.append({
+                    "id": r["session_id"], "title": r["title"],
+                    "created_at": r["created_at"], "updated_at": r["updated_at"],
+                    "source": r["source"], "match_type": "content",
+                    "snippet": snippet,
+                })
+
+        return {"sessions": results, "query": q, "total": len(results)}
+    except Exception as e:
+        return {"sessions": [], "error": str(e)}
