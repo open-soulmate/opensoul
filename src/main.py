@@ -27,6 +27,7 @@ from src.api.skills import router as skills_router
 from src.api.marketplace import router as marketplace_router
 from src.api.download_api import router as download_router
 from src.api.terminal_ws import router as terminal_router
+from src.api.ai_groups import router as ai_groups_router
 from src.api.search import router as search_router
 from src.api.chat import router as chat_router
 from src.api.graph import router as graph_router
