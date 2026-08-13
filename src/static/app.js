@@ -82,6 +82,8 @@ const Router = {
             agents: 'Agent节点',
             settings: '系统设置',
             llm: 'LLM配置',
+            marketplace: '技能源管理',
+            'agent-sources': 'Agent源管理',
         };
         document.getElementById('page-title').textContent = titles[page] || page;
 
