@@ -40,7 +40,7 @@ def _get_os() -> str:
 
 # Full agent registry - 20+ agents
 AGENT_REGISTRY = {
-    "hermes": {"name": "Hermes Agent", "binary": "hermes", "description": "Nous Research Hermes Agent", "icon": "🏛️",
+    "hermes": {"name": "Hermes Agent", "binary": "hermes", "description": "Nous Research Hermes Agent", "category": "coding", "category": "coding", "category": "coding", "category": "coding", "category": "coding", "category": "chat", "category": "chat", "category": "ide", "category": "coding", "category": "chat", "category": "coding", "category": "ide", "category": "ide", "category": "ide", "category": "ide", "category": "ide", "category": "ide", "category": "coding", "category": "coding", "category": "coding", "icon": "🏛️",
                "install": {"linux": "pip install hermes-agent", "darwin": "pip install hermes-agent", "win32": "pip install hermes-agent"}},
     "mimo": {"name": "MiMo Code", "binary": "mimo", "description": "Xiaomi MiMo Code CLI", "icon": "📱",
              "install": {"linux": "npm install -g @anthropic-ai/claude-code", "darwin": "npm install -g @anthropic-ai/claude-code", "win32": "npm install -g @anthropic-ai/claude-code"}},
