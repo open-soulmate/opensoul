@@ -125,8 +125,7 @@ class ACPProcess:
         self._msg_id += 1
         msg_id = str(self._msg_id)
         request = {'jsonrpc': '2.0', 'id': msg_id, 'method': method, 'params': params}
-        line = json.dumps(request) + '
-'
+        line = json.dumps(request) + chr(10)
         self._proc.stdin.write(line.encode())
         await self._proc.stdin.drain()
 
