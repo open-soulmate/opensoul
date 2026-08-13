@@ -22,6 +22,7 @@ from src.acp.api import router as acp_router
 from src.api.hermes_bridge import router as hermes_bridge_router
 from src.api.ws_chat import router as ws_router
 from src.api.hermes_cron import router as hermes_cron_router
+from src.api.agents import router as agents_router
 from src.api.search import router as search_router
 from src.api.chat import router as chat_router
 from src.api.graph import router as graph_router
@@ -118,6 +119,7 @@ app.include_router(acp_router, prefix="/api/acp", tags=["acp"])
 app.include_router(hermes_bridge_router, prefix="/api/hermes", tags=["hermes-bridge"])
 app.include_router(ws_router, tags=["websocket"])
 app.include_router(hermes_cron_router, prefix="/api/cron", tags=["cron"])
+app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
