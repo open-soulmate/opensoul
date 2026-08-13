@@ -474,6 +474,9 @@ class DownloadManager:
         self.register(Aria2Plugin())
         self.register(WgetPlugin())
         self.register(CurlPlugin())
+        self.register(CurlResumePlugin())
+        self.register(AxelPlugin())
+        self.register(RsyncPlugin())
 
     def register(self, plugin: DownloadPlugin):
         """Register a download plugin"""
@@ -592,3 +595,333 @@ def get_download_manager() -> DownloadManager:
     if _download_manager is None:
         _download_manager = DownloadManager()
     return _download_manager
+
+
+# ─── Axel Plugin (multi-threaded HTTP/FTP) ──────────────────────
+
+class AxelPlugin(DownloadPlugin):
+    """axel - multi-threaded download accelerator with resume"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="axel", name="Axel", description="多线程下载加速器，支持HTTP/FTP断点续传",
+            version="2.17", binary="axel",
+            supports_resume=True, supports_p2p=False,
+            install_cmd={"linux": "sudo pacman -S --noconfirm axel || sudo apt install -y axel",
+                         "darwin": "brew install axel"},
+            update_cmd={"linux": "sudo pacman -Syu axel || sudo apt upgrade axel",
+                        "darwin": "brew upgrade axel"},
+            check_version_cmd="axel --version | head -1",
+            priority=20,  # between aria2 and wget
+        )
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="axel", supports_resume=True)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = ["axel", "-n", "4"]  # 4 threads
+        if resume and dest_path.exists():
+            cmd.append("-c")  # continue
+        cmd.extend(["-o", str(dest_path), url])
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            self._tasks[dest] = proc
+
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").strip()
+                # axel progress: [  0%] [.......... .......... .......... ..........] [ 512KB/s] [ETA: 18s]
+                if "%" in text:
+                    try:
+                        pct = float(text.split("%")[0].strip().split()[-1].replace("[", "").replace("]", ""))
+                        progress.downloaded_bytes = int(progress.total_bytes * pct / 100)
+                        if "KB/s" in text:
+                            speed = float(text.split("KB/s")[0].split()[-1].split("[")[-1])
+                            progress.speed = speed * 1024
+                        elif "MB/s" in text:
+                            speed = float(text.split("MB/s")[0].split()[-1].split("[")[-1])
+                            progress.speed = speed * 1024 * 1024
+                        if "ETA:" in text:
+                            eta = text.split("ETA:")[1].split("]")[0].strip().replace("s", "")
+                            progress.eta = int(float(eta))
+                    except (ValueError, IndexError):
+                        pass
+                if progress_cb:
+                    progress_cb(progress)
+
+            await proc.wait()
+            progress.status = "done" if proc.returncode == 0 else "error"
+            if proc.returncode != 0:
+                progress.error = f"axel exit code {proc.returncode}"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        finally:
+            self._tasks.pop(dest, None)
+
+        if progress_cb:
+            progress_cb(progress)
+        return progress
+
+    async def pause(self, task_id: str) -> bool:
+        proc = self._tasks.get(task_id)
+        if proc:
+            proc.terminate()
+            return True
+        return False
+
+    async def resume_download(self, task_id: str) -> bool:
+        return True
+
+    async def cancel(self, task_id: str) -> bool:
+        proc = self._tasks.pop(task_id, None)
+        if proc:
+            proc.kill()
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return shutil.which("axel") is not None
+
+    async def install(self) -> bool:
+        proc = await asyncio.create_subprocess_shell(
+            "sudo pacman -S --noconfirm axel || sudo apt install -y axel")
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def update(self) -> bool:
+        proc = await asyncio.create_subprocess_shell(
+            "sudo pacman -Syu axel || sudo apt upgrade axel")
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "axel", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else None
+        except Exception:
+            return None
+
+
+# ─── Curl Enhanced Plugin (with HTTP Range resume) ───────────────
+
+class CurlResumePlugin(DownloadPlugin):
+    """curl with HTTP Range header for resume support"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="curl-resume", name="cURL (Resume)", description="cURL增强版，支持HTTP Range断点续传",
+            version="8.0", binary="curl",
+            supports_resume=True, supports_p2p=False,
+            install_cmd={},  # always available
+            update_cmd={},
+            check_version_cmd="curl --version | head -1",
+            priority=45,  # between wget and axel
+        )
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="curl-resume", supports_resume=True)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cmd = ["curl", "-L", "-C", "-", "-o", str(dest_path), "--progress-bar", url]
+        if not resume:
+            cmd = ["curl", "-L", "-o", str(dest_path), "--progress-bar", url]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            self._tasks[dest] = proc
+
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                if progress_cb:
+                    progress_cb(progress)
+
+            await proc.wait()
+            progress.status = "done" if proc.returncode == 0 else "error"
+            if proc.returncode != 0:
+                progress.error = f"curl exit code {proc.returncode}"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        finally:
+            self._tasks.pop(dest, None)
+
+        if progress_cb:
+            progress_cb(progress)
+        return progress
+
+    async def pause(self, task_id: str) -> bool:
+        proc = self._tasks.get(task_id)
+        if proc:
+            proc.terminate()
+            return True
+        return False
+
+    async def resume_download(self, task_id: str) -> bool:
+        return True
+
+    async def cancel(self, task_id: str) -> bool:
+        proc = self._tasks.pop(task_id, None)
+        if proc:
+            proc.kill()
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return shutil.which("curl") is not None
+
+    async def install(self) -> bool:
+        return True
+
+    async def update(self) -> bool:
+        return True
+
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else None
+        except Exception:
+            return None
+
+
+# ─── Rsync Plugin (large file sync) ──────────────────────────────
+
+class RsyncPlugin(DownloadPlugin):
+    """rsync - delta sync for large files, resume support"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="rsync", name="Rsync", description="增量同步大文件，支持断点续传",
+            version="3.3", binary="rsync",
+            supports_resume=True, supports_p2p=False,
+            install_cmd={"linux": "sudo pacman -S --noconfirm rsync || sudo apt install -y rsync",
+                         "darwin": "brew install rsync"},
+            update_cmd={"linux": "sudo pacman -Syu rsync || sudo apt upgrade rsync",
+                        "darwin": "brew upgrade rsync"},
+            check_version_cmd="rsync --version | head -1",
+            priority=60,  # lower priority, for specific use cases
+        )
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb: Optional[Callable[[DownloadProgress], None]] = None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="rsync", supports_resume=True)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # rsync works with rsync:// protocol or local paths
+        # For HTTP URLs, fall back to other plugins
+        if url.startswith("http://") or url.startswith("https://"):
+            progress.status = "error"
+            progress.error = "rsync only supports rsync:// and local paths"
+            return progress
+
+        cmd = ["rsync", "-avP", "--partial", url, str(dest_path)]
+        if not resume:
+            cmd = ["rsync", "-av", url, str(dest_path)]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            self._tasks[dest] = proc
+
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").strip()
+                # rsync progress: 1,234,567  45%  512.00kB/s  0:00:18
+                if "%" in text:
+                    try:
+                        parts = text.split()
+                        for i, p in enumerate(parts):
+                            if "%" in p:
+                                pct = float(p.replace("%", ""))
+                                if i > 0:
+                                    progress.downloaded_bytes = int(parts[i-1].replace(",", ""))
+                                break
+                    except (ValueError, IndexError):
+                        pass
+                if progress_cb:
+                    progress_cb(progress)
+
+            await proc.wait()
+            progress.status = "done" if proc.returncode == 0 else "error"
+            if proc.returncode != 0:
+                progress.error = f"rsync exit code {proc.returncode}"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        finally:
+            self._tasks.pop(dest, None)
+
+        if progress_cb:
+            progress_cb(progress)
+        return progress
+
+    async def pause(self, task_id: str) -> bool:
+        proc = self._tasks.get(task_id)
+        if proc:
+            proc.terminate()
+            return True
+        return False
+
+    async def resume_download(self, task_id: str) -> bool:
+        return True
+
+    async def cancel(self, task_id: str) -> bool:
+        proc = self._tasks.pop(task_id, None)
+        if proc:
+            proc.kill()
+            return True
+        return False
+
+    def is_available(self) -> bool:
+        return shutil.which("rsync") is not None
+
+    async def install(self) -> bool:
+        proc = await asyncio.create_subprocess_shell(
+            "sudo pacman -S --noconfirm rsync || sudo apt install -y rsync")
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def update(self) -> bool:
+        proc = await asyncio.create_subprocess_shell(
+            "sudo pacman -Syu rsync || sudo apt upgrade rsync")
+        await proc.wait()
+        return proc.returncode == 0
+
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "rsync", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else None
+        except Exception:
+            return None
