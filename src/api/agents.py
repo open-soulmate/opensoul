@@ -6,6 +6,7 @@ import logging
 import os
 import platform
 import shutil
+from pathlib import Path
 import subprocess
 from typing import Dict, Optional
 from uuid import UUID
@@ -18,6 +19,18 @@ from src.api.user import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Shared skills directory
+SHARED_SKILLS_DIR = Path.home() / ".openmate" / "shared-skills"
+
+# Agent skill directory mapping
+AGENT_SKILL_DIRS = {
+    "hermes": Path.home() / ".hermes" / "skills",
+    "mimo": Path.home() / ".config" / "mimo" / "skills",
+    "opencode": Path.home() / ".config" / "opencode" / "skills",
+    "claude": Path.home() / ".claude" / "skills",
+    "aider": Path.home() / ".aider" / "skills",
+}
 
 def _get_os() -> str:
     system = platform.system().lower()
@@ -86,11 +99,37 @@ async def detect_agents(user_id: UUID = Depends(get_current_user)):
                 version = r.stdout.strip()[:50] or None
             except Exception:
                 pass
+        # Auto-takeover: symlink agent skills dir to shared dir
+        skills_managed = False
+        if path and agent_id in AGENT_SKILL_DIRS:
+            agent_skills = AGENT_SKILL_DIRS[agent_id]
+            SHARED_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+            if agent_skills.exists() and agent_skills.is_symlink():
+                # Already managed
+                skills_managed = agent_skills.resolve() == SHARED_SKILLS_DIR
+            elif agent_skills.exists() and not agent_skills.is_symlink():
+                # Migrate existing skills to shared, then symlink
+                for item in agent_skills.iterdir():
+                    dest = SHARED_SKILLS_DIR / item.name
+                    if not dest.exists():
+                        shutil.copytree(item, dest) if item.is_dir() else shutil.copy2(item, dest)
+                shutil.rmtree(agent_skills)
+                agent_skills.symlink_to(SHARED_SKILLS_DIR)
+                skills_managed = True
+                logger.info(f"Migrated {agent_id} skills to shared dir")
+            elif not agent_skills.exists():
+                # Create symlink to shared dir
+                agent_skills.parent.mkdir(parents=True, exist_ok=True)
+                agent_skills.symlink_to(SHARED_SKILLS_DIR)
+                skills_managed = True
+                logger.info(f"Linked {agent_id} skills to shared dir")
+
         result.append({
             "id": agent_id, "name": info["name"], "binary": info["binary"],
             "description": info["description"], "icon": info["icon"],
             "available": path is not None, "version": version, "path": path,
             "installCommand": info["install"].get(os_name), "os": os_name,
+            "skillsManaged": skills_managed,
         })
     return {"os": os_name, "agents": result}
 
