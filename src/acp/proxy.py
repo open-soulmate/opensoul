@@ -21,6 +21,8 @@ class ACPProcess:
         self._event_queue: asyncio.Queue = asyncio.Queue()
         self._initialized: bool = False
         self._default_session_id: str | None = None
+        self._event_count: int = 0
+        self._chunk_count: int = 0
 
     @property
     def is_running(self) -> bool:
@@ -146,6 +148,8 @@ class ACPProcess:
             except:
                 break
 
+        self._chunk_count = 0
+        self._event_count = 0
         params = {
             "prompt": [{"type": "text", "text": text}],
             "sessionId": session_id,
@@ -159,19 +163,16 @@ class ACPProcess:
         while time.time() - start < 30:
             try:
                 event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
-                update = event.get("params", {}).get("update", {})
-                su = update.get("sessionUpdate") or update.get("session_update", "")
-                if su == "agent_message_chunk":
-                    for p in update.get("parts", []):
-                        if p.get("type") == "text":
-                            collected.append(p.get("text", ""))
-                if su == "usage_update" and collected:
+                chunks = self._extract_text_chunks(event)
+                collected.extend(chunks)
+                if self._is_stream_end(event) and collected:
                     break
             except asyncio.TimeoutError:
                 if collected:
                     break
                 continue
 
+        logger.info(f"ACP response: {self._chunk_count} chunks, {self._event_count} events, {len(collected)} text parts")
         resp["response_text"] = "".join(collected)
         return resp
 
@@ -183,6 +184,8 @@ class ACPProcess:
             except:
                 break
 
+        self._chunk_count = 0
+        self._event_count = 0
         parts = []
         if text:
             parts.append({"type": "text", "text": text})
@@ -197,21 +200,75 @@ class ACPProcess:
         while time.time() - start < 60:
             try:
                 event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
-                update = event.get("params", {}).get("update", {})
-                su = update.get("sessionUpdate") or update.get("session_update", "")
-                if su == "agent_message_chunk":
-                    for p in update.get("parts", []):
-                        if p.get("type") == "text":
-                            collected.append(p.get("text", ""))
-                if su == "usage_update" and collected:
+                chunks = self._extract_text_chunks(event)
+                collected.extend(chunks)
+                if self._is_stream_end(event) and collected:
                     break
             except asyncio.TimeoutError:
                 if collected:
                     break
                 continue
 
+        logger.info(f"ACP image response: {self._chunk_count} chunks, {self._event_count} events, {len(collected)} text parts")
         resp["response_text"] = "".join(collected)
         return resp
+
+    def _extract_text_chunks(self, event: dict) -> list[str]:
+        """Extract text from ACP events, trying multiple known formats."""
+        self._event_count += 1
+        method = event.get("method", "")
+        params = event.get("params", {})
+        update = params.get("update", {})
+
+        # Format 1: {method: "session/update", params: {update: {sessionUpdate: "agent_message_chunk", parts: [...]}}}
+        su = update.get("sessionUpdate") or update.get("session_update", "")
+        if su == "agent_message_chunk":
+            self._chunk_count += 1
+            texts = []
+            for p in update.get("parts", []):
+                if p.get("type") == "text" and p.get("text"):
+                    texts.append(p["text"])
+            if texts:
+                return texts
+            # Check for content field directly
+            content = update.get("content", "")
+            if content:
+                return [content]
+
+        # Format 2: {method: "session/update", params: {update: {type: "content_block_delta", delta: {text: "..."}}}}  (Anthropic-style)
+        if update.get("type") == "content_block_delta":
+            delta = update.get("delta", {})
+            if delta.get("type") == "text_delta" and delta.get("text"):
+                self._chunk_count += 1
+                return [delta["text"]]
+
+        # Format 3: {method: "session/update", params: {update: {type: "message_delta", content: [...]}}}
+        if update.get("type") in ("message", "message_delta"):
+            for p in update.get("content", []):
+                if isinstance(p, dict) and p.get("type") == "text" and p.get("text"):
+                    self._chunk_count += 1
+                    return [p["text"]]
+
+        # Format 4: Direct text in params
+        if params.get("text") and method == "session/update":
+            self._chunk_count += 1
+            return [params["text"]]
+
+        # Log unhandled event for debugging
+        if method == "session/update" and self._event_count <= 20:
+            logger.debug(f"ACP event #{self._event_count}: method={method}, update_keys={list(update.keys())}, su={su}")
+        elif self._event_count == 21:
+            logger.debug("ACP event logging capped at 20")
+
+        return []
+
+    def _is_stream_end(self, event: dict) -> bool:
+        """Check if event signals end of agent response stream."""
+        params = event.get("params", {})
+        update = params.get("update", {})
+        su = update.get("sessionUpdate") or update.get("session_update", "")
+        ev_type = update.get("type", "")
+        return su in ("usage_update", "turn_end", "message_complete") or ev_type in ("message_stop",)
 
     async def _send_rpc(self, method: str, params: dict) -> dict[str, Any]:
         """Send a JSON-RPC request and wait for response."""
@@ -245,6 +302,7 @@ class ACPProcess:
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
+                    logger.debug(f"ACP non-JSON line: {line[:200]}")
                     continue
 
                 msg_id = str(msg.get("id", ""))
@@ -255,6 +313,8 @@ class ACPProcess:
                     else:
                         future.set_result(msg.get("result", {}))
                 else:
+                    method = msg.get("method", "unknown")
+                    logger.debug(f"ACP event: method={method}, id={msg.get('id')}")
                     await self._event_queue.put(msg)
         except Exception as e:
             logger.error(f"ACP read loop error: {e}")
