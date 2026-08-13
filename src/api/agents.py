@@ -95,7 +95,7 @@ async def detect_agents(user_id: UUID = Depends(get_current_user)):
         version = None
         if path:
             try:
-                r = subprocess.run([info["binary"], "--version"], capture_output=True, text=True, timeout=5)
+                r = subprocess.run([info["binary"], "--version"], capture_output=True, text=True, timeout=2, env={**os.environ, "NO_COLOR": "1"})
                 version = r.stdout.strip()[:50] or None
             except Exception:
                 pass
