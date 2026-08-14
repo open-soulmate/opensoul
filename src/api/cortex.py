@@ -8,6 +8,20 @@ from src.cortex.chain_of_thought import ChainOfThought
 router = APIRouter()
 
 
+@router.get("/health")
+async def cortex_health():
+    """OpenCortex health check."""
+    return {
+        "status": "ok",
+        "component": "OpenCortex",
+        "modules": {
+            "task_planner": "available",
+            "multi_agent": "available",
+            "chain_of_thought": "available",
+        },
+    }
+
+
 class PlanRequest(BaseModel):
     goal: str
 

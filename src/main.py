@@ -41,6 +41,8 @@ from src.api.llm import router as llm_router
 from src.api.agent import router as agent_router
 from src.api.export import router as export_router
 from src.api.cortex import router as cortex_router
+from src.api.nerve import router as nerve_router
+from src.api.will import router as will_router
 from src.api.gland import router as gland_router
 from src.api.gland import gateway as gland_gateway
 from src.api.vital import router as vital_router
@@ -155,6 +157,8 @@ app.include_router(llm_router, prefix="/api/llm", tags=["llm"])
 app.include_router(agent_router, prefix="/api/agent", tags=["agent"])
 app.include_router(export_router, prefix="/api/export", tags=["export"])
 app.include_router(cortex_router, prefix="/api/cortex", tags=["cortex"])
+app.include_router(nerve_router, prefix="/api/nerve", tags=["nerve"])
+app.include_router(will_router, prefix="/api/will", tags=["will"])
 app.include_router(gland_router, prefix="/api/gland", tags=["gland"])
 app.include_router(vital_router, prefix="/api/vital", tags=["vital"])
 app.include_router(vein_router, prefix="/api/vein", tags=["vein"])
