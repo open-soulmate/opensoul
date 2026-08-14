@@ -1074,9 +1074,19 @@ class OdlPlugin(DownloadPlugin):
             progress.error = str(e)
         return progress
 
+    async def pause(self, task_id: str) -> bool: return True
     async def pause_download(self, task_id: str) -> bool: return True
     async def resume_download(self, task_id: str) -> bool: return True
     async def cancel(self, task_id: str) -> bool: return True
+    async def get_version(self) -> Optional[str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "odl", "--help", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode().strip().split("\n")[0] if stdout else "1.0"
+        except Exception:
+            return "1.0"
 
 class RsyncPlugin(DownloadPlugin):
     """rsync - delta sync for large files, resume support"""
