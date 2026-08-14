@@ -144,8 +144,9 @@ class MetricsCollector:
         try:
             from src.database.meilisearch import meili_client
 
-            stats = meili_client.get_stats()
-            biz.search_count = stats.get("numberOfSearches", 0)
+            if meili_client.AVAILABLE and meili_client.client is not None:
+                stats = meili_client.get_stats()
+                biz.search_count = stats.get("numberOfSearches", 0)
         except Exception:
             pass
 

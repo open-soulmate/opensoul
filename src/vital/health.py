@@ -72,6 +72,11 @@ class HealthChecker:
         try:
             from src.database.qdrant import qdrant_client
 
+            if not qdrant_client.AVAILABLE:
+                return ComponentHealth("qdrant", Status.SKIPPED, message="qdrant_client not installed")
+            if qdrant_client.client is None:
+                return ComponentHealth("qdrant", Status.SKIPPED, message="qdrant client unavailable")
+
             t0 = time.monotonic()
             qdrant_client.client.get_collections()
             latency = (time.monotonic() - t0) * 1000
@@ -82,6 +87,11 @@ class HealthChecker:
     async def _check_meilisearch(self) -> ComponentHealth:
         try:
             from src.database.meilisearch import meili_client
+
+            if not meili_client.AVAILABLE:
+                return ComponentHealth("meilisearch", Status.SKIPPED, message="meilisearch not installed")
+            if meili_client.client is None:
+                return ComponentHealth("meilisearch", Status.SKIPPED, message="meilisearch client unavailable")
 
             t0 = time.monotonic()
             meili_client.client.health()
