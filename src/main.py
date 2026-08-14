@@ -49,6 +49,7 @@ from src.api.sense import router as sense_router
 from src.api.immune import router as immune_router
 from src.api.marrow import router as marrow_router
 from src.api.gene import router as gene_router
+from src.api.echo import router as echo_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -159,6 +160,7 @@ app.include_router(sense_router, prefix="/api/sense", tags=["sense"])
 app.include_router(immune_router, prefix="/api/immune", tags=["immune"])
 app.include_router(marrow_router, prefix="/api/marrow", tags=["marrow"])
 app.include_router(gene_router, prefix="/api/gene", tags=["gene"])
+app.include_router(echo_router, prefix="/api/echo", tags=["echo"])
 
 
 if __name__ == "__main__":
