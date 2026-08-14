@@ -134,6 +134,12 @@ class MessageDispatcher:
         elif config.channel == Channel.TELEGRAM:
             return self._send_telegram(msg, config)
 
+        elif config.channel == Channel.EMAIL:
+            return self._send_email(msg, config)
+
+        elif config.channel == Channel.WECHAT_WORK:
+            return self._send_wechat_work(msg, config)
+
         else:
             return SendResult(
                 success=False,
@@ -235,6 +241,96 @@ class MessageDispatcher:
 
         except Exception as e:
             return SendResult(success=False, msg_id=msg.msg_id, channel="telegram", error=str(e))
+
+    def _send_email(self, msg: Message, config: ChannelConfig) -> SendResult:
+        """Send via SMTP email."""
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        try:
+            smtp_host = config.endpoint or config.extra.get("smtp_host", "")
+            smtp_port = int(config.extra.get("smtp_port", 587))
+            username = config.extra.get("username", "")
+            password = config.token or config.extra.get("password", "")
+            from_addr = config.extra.get("from", username)
+            to_addr = msg.target or config.extra.get("to", "")
+
+            if not smtp_host or not to_addr:
+                return SendResult(success=False, msg_id=msg.msg_id, channel="email",
+                                  error="Missing smtp_host or recipient address")
+
+            # Build email
+            email_msg = MIMEMultipart("alternative")
+            email_msg["Subject"] = msg.title
+            email_msg["From"] = from_addr
+            email_msg["To"] = to_addr
+
+            # Plain text body
+            text_body = f"{msg.title}\n\n{msg.content}"
+            email_msg.attach(MIMEText(text_body, "plain", "utf-8"))
+
+            # HTML body
+            html_body = f"""<html><body>
+<h2>{msg.title}</h2>
+<p>{msg.content.replace(chr(10), '<br>')}</p>
+<hr><small>OpenEcho · Priority: {msg.priority}</small>
+</body></html>"""
+            email_msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+            # Send
+            use_ssl = config.extra.get("use_ssl", False) or smtp_port == 465
+            if use_ssl:
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+                    if username and password:
+                        server.login(username, password)
+                    server.sendmail(from_addr, [to_addr], email_msg.as_string())
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                    server.ehlo()
+                    if smtp_port == 587:
+                        server.starttls()
+                        server.ehlo()
+                    if username and password:
+                        server.login(username, password)
+                    server.sendmail(from_addr, [to_addr], email_msg.as_string())
+
+            return SendResult(success=True, msg_id=msg.msg_id, channel="email")
+
+        except Exception as e:
+            return SendResult(success=False, msg_id=msg.msg_id, channel="email", error=str(e))
+
+    def _send_wechat_work(self, msg: Message, config: ChannelConfig) -> SendResult:
+        """Send via WeChat Work (企业微信) robot webhook."""
+        try:
+            webhook_url = config.endpoint
+            if not webhook_url:
+                return SendResult(success=False, msg_id=msg.msg_id, channel="wechat_work",
+                                  error="Missing webhook URL")
+
+            # WeChat Work robot supports markdown format
+            payload = json.dumps({
+                "msgtype": "markdown",
+                "markdown": {
+                    "content": f"## {msg.title}\n\n{msg.content}\n\n> Priority: {msg.priority}",
+                },
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                webhook_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                if result.get("errcode", 0) != 0:
+                    return SendResult(success=False, msg_id=msg.msg_id, channel="wechat_work",
+                                      error=f"WeChat API error: {result.get('errmsg', 'unknown')}")
+                return SendResult(success=True, msg_id=msg.msg_id, channel="wechat_work")
+
+        except Exception as e:
+            return SendResult(success=False, msg_id=msg.msg_id, channel="wechat_work", error=str(e))
 
     def history(self, limit: int = 50, channel: Channel | None = None) -> list[dict]:
         with self._lock:
