@@ -29,7 +29,7 @@ async def list_relations(user_id: UUID, offset: int = 0, limit: int = 100) -> li
         "SELECT r.* FROM relations r "
         "JOIN entities e ON r.source_id = e.id "
         "WHERE e.user_id = $1 "
-        "ORDER BY r.created_at DESC OFFSET $2 LIMIT $3",
+        "ORDER BY r.created_at DESC LIMIT $3 OFFSET $2",
         user_id, offset, limit,
     )
     return [_row_to_relation(r) for r in rows]
