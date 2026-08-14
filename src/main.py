@@ -64,6 +64,7 @@ from src.api.voice import router as voice_router
 from src.api.vision import router as vision_router
 from src.api.mind import router as mind_router
 from src.api.trajectory import router as trajectory_router
+from src.api.trajectory_api import router as trajectory_api_router
 from src.api.plugins_api import router as plugins_router
 from src.api.mcp import router as mcp_router
 from src.vital.collector import MetricsCollector
@@ -240,6 +241,7 @@ app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
 app.include_router(vision_router, prefix="/api/vision", tags=["vision"])
 app.include_router(mind_router, prefix="/api/mind", tags=["mind"])
 app.include_router(trajectory_router, prefix="/api/trajectory", tags=["trajectory"])
+app.include_router(trajectory_api_router, prefix="/api/trajectory-v2", tags=["trajectory-v2"])
 app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
 app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
 
