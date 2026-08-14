@@ -60,6 +60,9 @@ from src.api.heredity import router as heredity_router
 from src.api.pulse import router as pulse_router
 from src.api.nest import router as nest_router
 from src.api.limb import router as limb_router
+from src.api.voice import router as voice_router
+from src.api.vision import router as vision_router
+from src.api.mind import router as mind_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -181,6 +184,9 @@ app.include_router(heredity_router, prefix="/api/heredity", tags=["heredity"])
 app.include_router(pulse_router, prefix="/api/pulse", tags=["pulse"])
 app.include_router(nest_router, prefix="/api/nest", tags=["nest"])
 app.include_router(limb_router, prefix="/api/limb", tags=["limb"])
+app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
+app.include_router(vision_router, prefix="/api/vision", tags=["vision"])
+app.include_router(mind_router, prefix="/api/mind", tags=["mind"])
 
 
 if __name__ == "__main__":
