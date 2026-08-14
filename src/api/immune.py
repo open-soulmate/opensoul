@@ -179,13 +179,13 @@ async def get_audit_log(
         except ValueError:
             raise HTTPException(400, f"Invalid action. Valid: {[a.value for a in AuditAction]}")
 
-    return audit.query(
+    return {"entries": audit.query(
         action=action_enum,
         risk_level=risk_level,
         client_ip=client_ip,
         limit=limit,
         since=since,
-    )
+    )}
 
 
 @router.get("/audit/stats")
