@@ -128,7 +128,9 @@ class Aria2Plugin(DownloadPlugin):
             id="aria2", name="Aria2", description="高速下载器，支持断点续传+BT+Metalink",
             version="1.37.0", binary="aria2c",
             supports_resume=True, supports_p2p=True,
-            install_cmd={"linux": "pacman -S --noconfirm aria2 2>/dev/null || apt install -y aria2 2>/dev/null || pip install aria2", "darwin": "brew install aria2", "windows": "winget install aria2.aria2 || choco install aria2"},
+            install_cmd={"linux": "mkdir -p ~/.local/bin && curl -sL https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-linux-gnu-64bit-build1.tar.gz | tar xzf - -C /tmp && cp /tmp/aria2-1.37.0-linux-gnu-64bit-build1/aria2c ~/.local/bin/ && chmod +x ~/.local/bin/aria2c",
+                         "darwin": "brew install aria2",
+                         "windows": "winget install aria2.aria2 || choco install aria2"},
             update_cmd={"linux": "pacman -Syu --noconfirm aria2 2>/dev/null || apt upgrade -y aria2 2>/dev/null || echo already_latest", "darwin": "brew upgrade aria2", "windows": "winget upgrade aria2.aria2 || choco upgrade aria2"},
             check_version_cmd="aria2c --version | head -1",
             priority=10,  # highest priority
@@ -617,7 +619,9 @@ class AxelPlugin(DownloadPlugin):
             id="axel", name="Axel", description="多线程下载加速器，支持HTTP/FTP断点续传",
             version="2.17", binary="axel",
             supports_resume=True, supports_p2p=False,
-            install_cmd={"linux": "pacman -S --noconfirm axel 2>/dev/null || apt install -y axel 2>/dev/null || pip install axel", "darwin": "brew install axel", "windows": "choco install axel"},
+            install_cmd={"linux": "mkdir -p ~/.local/bin && curl -sL https://github.com/axel-download-accelerator/axel/releases/download/v2.17.13/axel-2.17.13-linux-x86_64.tar.gz | tar xzf - -C /tmp && cp /tmp/axel-*/axel ~/.local/bin/ && chmod +x ~/.local/bin/axel",
+                         "darwin": "brew install axel",
+                         "windows": "choco install axel"},
             update_cmd={"linux": "pacman -Syu --noconfirm axel 2>/dev/null || apt upgrade -y axel 2>/dev/null || echo already_latest", "darwin": "brew upgrade axel", "windows": "choco upgrade axel"},
             check_version_cmd="axel --version | head -1",
             priority=20,  # between aria2 and wget
