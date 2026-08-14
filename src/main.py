@@ -58,6 +58,8 @@ from src.api.hippo import router as hippo_router
 from src.api.reflex import router as reflex_router
 from src.api.heredity import router as heredity_router
 from src.api.pulse import router as pulse_router
+from src.api.nest import router as nest_router
+from src.api.limb import router as limb_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -177,6 +179,8 @@ app.include_router(hippo_router, prefix="/api/hippo", tags=["hippo"])
 app.include_router(reflex_router, prefix="/api/reflex", tags=["reflex"])
 app.include_router(heredity_router, prefix="/api/heredity", tags=["heredity"])
 app.include_router(pulse_router, prefix="/api/pulse", tags=["pulse"])
+app.include_router(nest_router, prefix="/api/nest", tags=["nest"])
+app.include_router(limb_router, prefix="/api/limb", tags=["limb"])
 
 
 if __name__ == "__main__":

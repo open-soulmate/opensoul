@@ -35,6 +35,8 @@ SEED_COMPONENTS = [
     ("openreflex", "OpenReflex", "0.1.0", {"opensoul": ">=0.1.0"}),
     ("openheredity", "OpenHeredity", "0.1.0", {"opensoul": ">=0.1.0"}),
     ("openpulse", "OpenPulse", "0.1.0", {}),
+    ("opennest", "OpenNest", "0.1.0", {"opensoul": ">=0.1.0"}),
+    ("openlimb", "OpenLimb", "0.1.0", {"opensoul": ">=0.1.0"}),
 ]
 
 for cid, cname, ver, deps in SEED_COMPONENTS:
