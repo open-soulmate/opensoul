@@ -20,6 +20,22 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 
+def _detect_os() -> str:
+    import platform
+    system = platform.system()
+    if system == "Darwin":
+        return "darwin"
+    elif system == "Windows":
+        return "windows"
+    return "linux"
+
+
+def _refresh_path():
+    local_bin = os.path.expanduser("~/.local/bin")
+    if local_bin not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
+
+
 class PluginStatus(Enum):
     AVAILABLE = "available"
     INSTALLING = "installing"
@@ -234,25 +250,50 @@ class Aria2Plugin(DownloadPlugin):
 
     async def install(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.install_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no install command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: install timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                _refresh_path()
+                return True
+            logger.error(f"{info.name}: install failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: install exception: {e}")
+            return False
 
     async def update(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.update_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no update command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: update timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                return True
+            logger.error(f"{info.name}: update failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: update exception: {e}")
+            return False
 
     async def get_version(self) -> Optional[str]:
         try:
@@ -261,7 +302,8 @@ class Aria2Plugin(DownloadPlugin):
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             return stdout.decode().strip().split("\n")[0] if stdout else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Aria2: get_version exception: {e}")
             return None
 
 
@@ -349,25 +391,50 @@ class WgetPlugin(DownloadPlugin):
 
     async def install(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.install_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no install command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: install timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                _refresh_path()
+                return True
+            logger.error(f"{info.name}: install failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: install exception: {e}")
+            return False
 
     async def update(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.update_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no update command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: update timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                return True
+            logger.error(f"{info.name}: update failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: update exception: {e}")
+            return False
 
     async def get_version(self) -> Optional[str]:
         try:
@@ -376,7 +443,8 @@ class WgetPlugin(DownloadPlugin):
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             return stdout.decode().strip().split("\n")[0] if stdout else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Wget: get_version exception: {e}")
             return None
 
 
@@ -392,8 +460,8 @@ class CurlPlugin(DownloadPlugin):
             id="curl", name="cURL", description="基础下载器，无断点续传",
             version="8.0", binary="curl",
             supports_resume=False, supports_p2p=False,
-            install_cmd={},  # always available
-            update_cmd={},
+            install_cmd={"linux": "echo curl is pre-installed", "darwin": "echo curl is pre-installed", "windows": "echo curl is pre-installed"},
+            update_cmd={"linux": "echo curl is system-managed", "darwin": "echo curl is system-managed", "windows": "echo curl is system-managed"},
             check_version_cmd="curl --version | head -1",
             priority=100,  # lowest priority
         )
@@ -454,10 +522,51 @@ class CurlPlugin(DownloadPlugin):
         return shutil.which("curl") is not None
 
     async def install(self) -> bool:
-        return True  # always available
+        info = self.get_info()
+        os_name = _detect_os()
+        cmd = info.install_cmd.get(os_name)
+        if not cmd:
+            logger.error(f"{info.name}: no install command for {os_name}")
+            return False
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: install timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                _refresh_path()
+                return True
+            logger.error(f"{info.name}: install failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: install exception: {e}")
+            return False
 
     async def update(self) -> bool:
-        return True  # system managed
+        info = self.get_info()
+        os_name = _detect_os()
+        cmd = info.update_cmd.get(os_name)
+        if not cmd:
+            logger.error(f"{info.name}: no update command for {os_name}")
+            return False
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: update timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                return True
+            logger.error(f"{info.name}: update failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: update exception: {e}")
+            return False
 
     async def get_version(self) -> Optional[str]:
         try:
@@ -466,7 +575,8 @@ class CurlPlugin(DownloadPlugin):
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             return stdout.decode().strip().split("\n")[0] if stdout else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"cURL: get_version exception: {e}")
             return None
 
 
