@@ -128,10 +128,8 @@ class Aria2Plugin(DownloadPlugin):
             id="aria2", name="Aria2", description="高速下载器，支持断点续传+BT+Metalink",
             version="1.37.0", binary="aria2c",
             supports_resume=True, supports_p2p=True,
-            install_cmd={"linux": "pacman -S --noconfirm aria2 2>/dev/null || (curl -sL https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-linux-gnu-64bit-build1.tar.bz2 | tar xjf - -C /tmp && cp /tmp/aria2-*/bin/aria2c ~/.local/bin/aria2c && chmod +x ~/.local/bin/aria2c)",
-                         "darwin": "brew install aria2"},
-            update_cmd={"linux": "pacman -Syu --noconfirm aria2 2>/dev/null || echo already_latest",
-                        "darwin": "brew upgrade aria2"},
+            install_cmd={"linux": "pacman -S --noconfirm aria2 2>/dev/null || apt install -y aria2 2>/dev/null || pip install aria2", "darwin": "brew install aria2", "windows": "winget install aria2.aria2 || choco install aria2"},
+            update_cmd={"linux": "pacman -Syu --noconfirm aria2 2>/dev/null || apt upgrade -y aria2 2>/dev/null || echo already_latest", "darwin": "brew upgrade aria2", "windows": "winget upgrade aria2.aria2 || choco upgrade aria2"},
             check_version_cmd="aria2c --version | head -1",
             priority=10,  # highest priority
         )
@@ -277,10 +275,8 @@ class WgetPlugin(DownloadPlugin):
             id="wget", name="Wget", description="经典下载器，支持HTTP断点续传",
             version="1.24", binary="wget",
             supports_resume=True, supports_p2p=False,
-            install_cmd={"linux": "pacman -S --noconfirm wget 2>/dev/null || echo already_installed",
-                         "darwin": "brew install wget"},
-            update_cmd={"linux": "pacman -Syu --noconfirm wget 2>/dev/null || echo already_latest",
-                        "darwin": "brew upgrade wget"},
+            install_cmd={"linux": "pacman -S --noconfirm wget 2>/dev/null || apt install -y wget 2>/dev/null || pip install wget", "darwin": "brew install wget", "windows": "winget install GNU.Wget || choco install wget"},
+            update_cmd={"linux": "pacman -Syu --noconfirm wget 2>/dev/null || apt upgrade -y wget 2>/dev/null || echo already_latest", "darwin": "brew upgrade wget", "windows": "winget upgrade GNU.Wget || choco upgrade wget"},
             check_version_cmd="wget --version | head -1",
             priority=50,
         )
@@ -350,12 +346,24 @@ class WgetPlugin(DownloadPlugin):
         return shutil.which("wget") is not None
 
     async def install(self) -> bool:
-        proc = await asyncio.create_subprocess_shell("sudo pacman -S --noconfirm wget || sudo apt install -y wget")
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.install_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
         await proc.wait()
         return proc.returncode == 0
 
     async def update(self) -> bool:
-        proc = await asyncio.create_subprocess_shell("sudo pacman -Syu wget || sudo apt upgrade wget")
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.update_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
         await proc.wait()
         return proc.returncode == 0
 
@@ -609,10 +617,8 @@ class AxelPlugin(DownloadPlugin):
             id="axel", name="Axel", description="多线程下载加速器，支持HTTP/FTP断点续传",
             version="2.17", binary="axel",
             supports_resume=True, supports_p2p=False,
-            install_cmd={"linux": "sudo pacman -S --noconfirm axel || sudo apt install -y axel",
-                         "darwin": "brew install axel"},
-            update_cmd={"linux": "sudo pacman -Syu axel || sudo apt upgrade axel",
-                        "darwin": "brew upgrade axel"},
+            install_cmd={"linux": "pacman -S --noconfirm axel 2>/dev/null || apt install -y axel 2>/dev/null || pip install axel", "darwin": "brew install axel", "windows": "choco install axel"},
+            update_cmd={"linux": "pacman -Syu --noconfirm axel 2>/dev/null || apt upgrade -y axel 2>/dev/null || echo already_latest", "darwin": "brew upgrade axel", "windows": "choco upgrade axel"},
             check_version_cmd="axel --version | head -1",
             priority=20,  # between aria2 and wget
         )
@@ -693,14 +699,24 @@ class AxelPlugin(DownloadPlugin):
         return shutil.which("axel") is not None
 
     async def install(self) -> bool:
-        proc = await asyncio.create_subprocess_shell(
-            "sudo pacman -S --noconfirm axel || sudo apt install -y axel")
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.install_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
         await proc.wait()
         return proc.returncode == 0
 
     async def update(self) -> bool:
-        proc = await asyncio.create_subprocess_shell(
-            "sudo pacman -Syu axel || sudo apt upgrade axel")
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.update_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
         await proc.wait()
         return proc.returncode == 0
 
@@ -819,10 +835,8 @@ class RsyncPlugin(DownloadPlugin):
             id="rsync", name="Rsync", description="增量同步大文件，支持断点续传",
             version="3.3", binary="rsync",
             supports_resume=True, supports_p2p=False,
-            install_cmd={"linux": "sudo pacman -S --noconfirm rsync || sudo apt install -y rsync",
-                         "darwin": "brew install rsync"},
-            update_cmd={"linux": "sudo pacman -Syu rsync || sudo apt upgrade rsync",
-                        "darwin": "brew upgrade rsync"},
+            install_cmd={"linux": "pacman -S --noconfirm rsync 2>/dev/null || apt install -y rsync 2>/dev/null || echo install_manually", "darwin": "brew install rsync", "windows": "winget install Rsync.Rsync || choco install rsync"},
+            update_cmd={"linux": "pacman -Syu --noconfirm rsync 2>/dev/null || apt upgrade -y rsync 2>/dev/null || echo already_latest", "darwin": "brew upgrade rsync", "windows": "winget upgrade Rsync.Rsync || choco upgrade rsync"},
             check_version_cmd="rsync --version | head -1",
             priority=60,  # lower priority, for specific use cases
         )
@@ -905,14 +919,24 @@ class RsyncPlugin(DownloadPlugin):
         return shutil.which("rsync") is not None
 
     async def install(self) -> bool:
-        proc = await asyncio.create_subprocess_shell(
-            "sudo pacman -S --noconfirm rsync || sudo apt install -y rsync")
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.install_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
         await proc.wait()
         return proc.returncode == 0
 
     async def update(self) -> bool:
-        proc = await asyncio.create_subprocess_shell(
-            "sudo pacman -Syu rsync || sudo apt upgrade rsync")
+        info = self.get_info()
+        import platform
+        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        cmd = info.update_cmd.get(os_name)
+        if not cmd:
+            return False
+        proc = await asyncio.create_subprocess_shell(cmd)
         await proc.wait()
         return proc.returncode == 0
 
