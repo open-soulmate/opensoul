@@ -596,6 +596,7 @@ class DownloadManager:
         self.register(CurlPlugin())
         self.register(CurlResumePlugin())
         self.register(AxelPlugin())
+        self.register(OdlPlugin())
         # self.register(RsyncPlugin())  # removed: rsync is sync tool, not download
 
     def register(self, plugin: DownloadPlugin):
