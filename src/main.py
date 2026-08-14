@@ -48,6 +48,7 @@ from src.api.vein import router as vein_router
 from src.api.sense import router as sense_router
 from src.api.immune import router as immune_router
 from src.api.marrow import router as marrow_router
+from src.api.gene import router as gene_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -157,6 +158,7 @@ app.include_router(vein_router, prefix="/api/vein", tags=["vein"])
 app.include_router(sense_router, prefix="/api/sense", tags=["sense"])
 app.include_router(immune_router, prefix="/api/immune", tags=["immune"])
 app.include_router(marrow_router, prefix="/api/marrow", tags=["marrow"])
+app.include_router(gene_router, prefix="/api/gene", tags=["gene"])
 
 
 if __name__ == "__main__":
