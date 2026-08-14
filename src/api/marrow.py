@@ -63,13 +63,13 @@ async def create_backup(req: BackupCreateRequest):
     }
 
 
-@router.get("/backup")
+@router.get("/backups")
 async def list_backups():
     """List all backups."""
     return {"backups": backup_manager.list_backups()}
 
 
-@router.get("/backup/{backup_id}")
+@router.get("/backups/{backup_id}")
 async def get_backup(backup_id: str):
     """Get backup details."""
     result = backup_manager.get_backup(backup_id)
@@ -78,7 +78,7 @@ async def get_backup(backup_id: str):
     return result
 
 
-@router.delete("/backup/{backup_id}")
+@router.delete("/backups/{backup_id}")
 async def delete_backup(backup_id: str):
     """Delete a backup."""
     result = backup_manager.delete_backup(backup_id)
@@ -87,11 +87,11 @@ async def delete_backup(backup_id: str):
     return result
 
 
-@router.post("/restore")
-async def restore_backup(req: RestoreRequest):
+@router.post("/restore/{backup_id}")
+async def restore_backup(backup_id: str, req: RestoreRequest | None = None):
     """Restore a backup to target directory."""
-    expanded = os.path.expanduser(req.target_dir)
-    result = backup_manager.restore_backup(req.backup_id, expanded)
+    target = (req.target_dir if req else None) or os.path.expanduser("~/.opensoul/restore")
+    result = backup_manager.restore_backup(backup_id, target)
     if not result["success"]:
         raise HTTPException(400, result["error"])
     return result

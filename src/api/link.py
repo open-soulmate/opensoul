@@ -39,7 +39,7 @@ class WebhookSendRequest(BaseModel):
 
 # ── Connector CRUD ─────────────────────────────────────────
 
-@router.post("/connector")
+@router.post("/connectors")
 async def create_connector(req: ConnectorCreateRequest):
     """Create a new integration connector."""
     connector = manager.create_connector(
@@ -60,7 +60,7 @@ async def create_connector(req: ConnectorCreateRequest):
     }
 
 
-@router.get("/connector")
+@router.get("/connectors")
 async def list_connectors(
     type: str = Query(default=None),
     status: str = Query(default=None),
@@ -69,7 +69,7 @@ async def list_connectors(
     return {"connectors": manager.list_connectors(type=type, status=status)}
 
 
-@router.get("/connector/{connector_id}")
+@router.get("/connectors/{connector_id}")
 async def get_connector(connector_id: str):
     """Get connector details."""
     c = manager.get_connector(connector_id)
@@ -94,7 +94,7 @@ async def get_connector(connector_id: str):
     }
 
 
-@router.patch("/connector/{connector_id}")
+@router.patch("/connectors/{connector_id}")
 async def update_connector(connector_id: str, req: ConnectorUpdateRequest):
     """Update a connector."""
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
@@ -103,12 +103,22 @@ async def update_connector(connector_id: str, req: ConnectorUpdateRequest):
     return {"message": "updated"}
 
 
-@router.delete("/connector/{connector_id}")
+@router.delete("/connectors/{connector_id}")
 async def delete_connector(connector_id: str):
     """Delete a connector."""
     if not manager.delete_connector(connector_id):
         raise HTTPException(404, "Connector not found")
     return {"message": "deleted"}
+
+
+# ── Connector Test (frontend calls /connectors/{id}/test) ──
+
+@router.post("/connectors/{connector_id}/test")
+async def test_connector(connector_id: str, req: WebhookSendRequest | None = None):
+    """Test a connector by sending a test payload."""
+    payload = req.payload if req else {"test": True, "timestamp": __import__("time").time()}
+    result = manager.send_webhook(connector_id, payload)
+    return result
 
 
 # ── Webhook Ingress ────────────────────────────────────────
@@ -150,7 +160,7 @@ async def receive_webhook(connector_id: str, request: Request):
 
 # ── Webhook Egress ─────────────────────────────────────────
 
-@router.post("/connector/{connector_id}/send")
+@router.post("/connectors/{connector_id}/send")
 async def send_webhook(connector_id: str, req: WebhookSendRequest):
     """Send a webhook to a connector's endpoint."""
     result = manager.send_webhook(connector_id, req.payload)
