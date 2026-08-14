@@ -29,7 +29,7 @@ CACHE_DIR = Path.home() / ".openmate" / "download-cache"
 # ─── Plugin Management ───────────────────────────────────────────
 
 @router.get("/plugins")
-async def list_plugins(user_id: UUID = Depends(get_current_user)):
+async def list_plugins():
     """List all download plugins and their status"""
     dm = get_download_manager()
     plugins = dm.list_plugins()
