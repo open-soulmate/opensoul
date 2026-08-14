@@ -75,6 +75,8 @@ class RateLimiter:
             "hour_count": self._hour_windows[key].current_count,
             "minute_limit": self.config.requests_per_minute,
             "hour_limit": self.config.requests_per_hour,
+            "burst_count": min(self._minute_windows[key].current_count, self.config.burst_size),
+            "burst_limit": self.config.burst_size,
         }
 
     def reset(self, key: str | None = None):
