@@ -69,6 +69,9 @@ class MetricsCollector:
         """由中间件调用，记录每次请求。"""
         self._request_count += 1
         self._latencies.append(latency_ms)
+        # 限制列表大小，防止内存泄漏（保留最近10000条）
+        if len(self._latencies) > 10000:
+            self._latencies = self._latencies[-5000:]
         if is_error:
             self._error_count += 1
 
