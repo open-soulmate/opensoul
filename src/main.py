@@ -54,6 +54,7 @@ from src.api.gene import router as gene_router
 from src.api.echo import router as echo_router
 from src.api.mirror import router as mirror_router
 from src.api.link import router as link_router
+from src.api.hippo import router as hippo_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -169,6 +170,7 @@ app.include_router(gene_router, prefix="/api/gene", tags=["gene"])
 app.include_router(echo_router, prefix="/api/echo", tags=["echo"])
 app.include_router(mirror_router, prefix="/api/mirror", tags=["mirror"])
 app.include_router(link_router, prefix="/api/link", tags=["link"])
+app.include_router(hippo_router, prefix="/api/hippo", tags=["hippo"])
 
 
 if __name__ == "__main__":
