@@ -37,7 +37,7 @@ class SnapshotRequest(BaseModel):
 
 # ── Sandbox Endpoints ──────────────────────────────────────
 
-@router.post("/sandbox")
+@router.post("/sandboxes")
 async def create_sandbox(req: SandboxCreateRequest):
     """Create a new isolated sandbox."""
     sandbox = manager.create(
@@ -55,13 +55,13 @@ async def create_sandbox(req: SandboxCreateRequest):
     }
 
 
-@router.get("/sandbox")
+@router.get("/sandboxes")
 async def list_sandboxes(status: str = Query(default=None)):
     """List all sandboxes."""
     return {"sandboxes": manager.list_sandboxes(status=status)}
 
 
-@router.get("/sandbox/{sandbox_id}")
+@router.get("/sandboxes/{sandbox_id}")
 async def get_sandbox(sandbox_id: str):
     """Get sandbox details."""
     sandbox = manager.get(sandbox_id)
@@ -81,7 +81,7 @@ async def get_sandbox(sandbox_id: str):
     }
 
 
-@router.delete("/sandbox/{sandbox_id}")
+@router.delete("/sandboxes/{sandbox_id}")
 async def destroy_sandbox(sandbox_id: str):
     """Destroy a sandbox and clean up resources."""
     if not manager.destroy(sandbox_id):
@@ -89,7 +89,7 @@ async def destroy_sandbox(sandbox_id: str):
     return {"message": f"Sandbox '{sandbox_id}' destroyed"}
 
 
-@router.post("/sandbox/{sandbox_id}/pause")
+@router.post("/sandboxes/{sandbox_id}/pause")
 async def pause_sandbox(sandbox_id: str):
     """Pause a sandbox."""
     if not manager.pause(sandbox_id):
@@ -97,7 +97,7 @@ async def pause_sandbox(sandbox_id: str):
     return {"message": "paused"}
 
 
-@router.post("/sandbox/{sandbox_id}/resume")
+@router.post("/sandboxes/{sandbox_id}/resume")
 async def resume_sandbox(sandbox_id: str):
     """Resume a paused sandbox."""
     if not manager.resume(sandbox_id):
@@ -107,7 +107,7 @@ async def resume_sandbox(sandbox_id: str):
 
 # ── Sandbox Actions ────────────────────────────────────────
 
-@router.post("/sandbox/{sandbox_id}/log")
+@router.post("/sandboxes/{sandbox_id}/log")
 async def log_action(sandbox_id: str, req: LogActionRequest):
     """Log an action in the sandbox."""
     if not manager.log_action(sandbox_id, req.action, req.detail):
@@ -115,16 +115,16 @@ async def log_action(sandbox_id: str, req: LogActionRequest):
     return {"message": "logged"}
 
 
-@router.get("/sandbox/{sandbox_id}/log")
-async def get_log(sandbox_id: str, limit: int = Query(default=100)):
+@router.get("/sandboxes/{sandbox_id}/logs")
+async def get_logs(sandbox_id: str, limit: int = Query(default=100)):
     """Get sandbox action log."""
     entries = manager.get_log(sandbox_id, limit)
     if not entries and not manager.get(sandbox_id):
         raise HTTPException(404, "Sandbox not found")
-    return {"log": entries}
+    return {"logs": entries}
 
 
-@router.post("/sandbox/{sandbox_id}/variable")
+@router.post("/sandboxes/{sandbox_id}/variables")
 async def set_variable(sandbox_id: str, req: VariableRequest):
     """Set a variable in the sandbox."""
     if not manager.set_variable(sandbox_id, req.key, req.value):
@@ -132,16 +132,16 @@ async def set_variable(sandbox_id: str, req: VariableRequest):
     return {"message": "set", "key": req.key}
 
 
-@router.get("/sandbox/{sandbox_id}/variable/{key}")
-async def get_variable(sandbox_id: str, key: str):
-    """Get a variable from the sandbox."""
-    value = manager.get_variable(sandbox_id, key)
-    if value is None and not manager.get(sandbox_id):
+@router.get("/sandboxes/{sandbox_id}/variables")
+async def get_variables(sandbox_id: str):
+    """Get all variables from the sandbox."""
+    sandbox = manager.get(sandbox_id)
+    if not sandbox:
         raise HTTPException(404, "Sandbox not found")
-    return {"key": key, "value": value}
+    return {"variables": sandbox.variables}
 
 
-@router.post("/sandbox/{sandbox_id}/snapshot")
+@router.post("/sandboxes/{sandbox_id}/snapshot")
 async def take_snapshot(sandbox_id: str, req: SnapshotRequest):
     """Take a snapshot of sandbox state."""
     result = manager.snapshot(sandbox_id, req.name)
