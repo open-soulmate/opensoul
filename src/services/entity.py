@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 from src.database.postgres import db_pool
@@ -14,12 +15,16 @@ def _row_to_entity(row) -> dict:
 
 
 async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
+    import json as _json
     import uuid as _uuid
     entity_id = str(_uuid.uuid4())
+    props = _json.dumps(data.properties) if isinstance(data.properties, dict) else data.properties
     await db_pool.execute(
         "INSERT INTO entities (id, name, type, description, properties, user_id) "
         "VALUES ($1, $2, $3, $4, $5, $6)",
-        entity_id, data.name, data.entity_type, data.description, data.properties, str(user_id),
+        entity_id, data.name, data.entity_type, data.description,
+        json.dumps(data.properties) if data.properties else None,
+        str(user_id),
     )
     row = await db_pool.fetchrow("SELECT * FROM entities WHERE id = $1", entity_id)
     return _row_to_entity(row)
