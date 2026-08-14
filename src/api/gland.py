@@ -86,7 +86,7 @@ async def gland_health():
     _ensure_bootstrapped()
     providers = gateway.list_providers()
     total_keys = sum(
-        len(gateway.key_manager._keys.get(p["name"], []))
+        len(gateway.key_manager._slots.get(p["name"], []))
         for p in providers
     )
     return {
