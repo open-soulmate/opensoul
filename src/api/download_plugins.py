@@ -1007,6 +1007,76 @@ class CurlResumePlugin(DownloadPlugin):
 
 
 # ─── Rsync Plugin (large file sync) ──────────────────────────────
+# ─── Odl Plugin (Rust native multi-segment downloader) ─────────
+
+class OdlPlugin(DownloadPlugin):
+    """odl - Rust native multi-segment downloader, no external deps"""
+
+    _tasks: Dict[str, asyncio.subprocess.Process] = {}
+
+    def get_info(self) -> PluginInfo:
+        return PluginInfo(
+            id="odl", name="Odl (Native)", description="原生多线程下载引擎(Rust)，跨平台无需安装",
+            version="1.0", binary="odl",
+            supports_resume=True, supports_p2p=False,
+            install_cmd={},
+            update_cmd={},
+            check_version_cmd="odl --help | head -1",
+            priority=5,
+        )
+
+    def is_available(self) -> bool:
+        return shutil.which("odl") is not None
+
+    async def install(self) -> bool:
+        return self.is_available()
+
+    async def update(self) -> bool:
+        return True
+
+    async def download(self, url: str, dest: str, resume: bool = True,
+                       progress_cb=None) -> DownloadProgress:
+        progress = DownloadProgress(url=url, dest=dest, plugin="odl", supports_resume=True)
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = ["odl", "download", url, "-o", str(dest_path), "-s", "8"]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            while True:
+                line = await (proc.stdout.readline() if proc.stdout else asyncio.sleep(0))
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").strip()
+                try:
+                    import json as _json
+                    data = _json.loads(text)
+                    if data.get("event") == "progress":
+                        progress.downloaded_bytes = data.get("total_downloaded", 0)
+                        progress.status = "downloading"
+                    elif data.get("event") == "complete":
+                        progress.downloaded_bytes = data.get("total_bytes", 0)
+                        progress.total_bytes = data.get("total_bytes", 0)
+                        progress.status = "done"
+                except: pass
+            await proc.wait()
+            if proc.returncode != 0:
+                progress.status = "error"
+                progress.error = f"odl exit code {proc.returncode}"
+            else:
+                progress.status = "done"
+        except FileNotFoundError:
+            progress.status = "error"
+            progress.error = "odl not found"
+        except Exception as e:
+            progress.status = "error"
+            progress.error = str(e)
+        return progress
+
+    async def pause_download(self, task_id: str) -> bool: return True
+    async def resume_download(self, task_id: str) -> bool: return True
+    async def cancel(self, task_id: str) -> bool: return True
 
 class RsyncPlugin(DownloadPlugin):
     """rsync - delta sync for large files, resume support"""
