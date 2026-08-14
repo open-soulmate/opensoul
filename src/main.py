@@ -123,11 +123,58 @@ async def index():
     return FileResponse(os.path.join(_static_dir, "index.html"))
 
 
+import asyncio
+import httpx
+
 # Health check endpoint
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
 
+
+# Unified health — checks all organ endpoints in parallel
+_ORGAN_HEALTH_ROUTES = [
+    ("soul", "/api/health"),
+    ("cortex", "/api/cortex/health"),
+    ("nerve", "/api/nerve/health"),
+    ("vein", "/api/vein/health"),
+    ("sense", "/api/sense/health"),
+    ("will", "/api/will/health"),
+    ("immune", "/api/immune/health"),
+    ("vital", "/api/vital/health"),
+    ("marrow", "/api/marrow/health"),
+    ("gland", "/api/gland/health"),
+    ("gene", "/api/gene/health"),
+    ("echo", "/api/echo/health"),
+    ("mirror", "/api/mirror/health"),
+    ("link", "/api/link/health"),
+    ("hippo", "/api/hippo/health"),
+    ("reflex", "/api/reflex/health"),
+    ("heredity", "/api/heredity/health"),
+    ("pulse", "/api/pulse/health"),
+    ("nest", "/api/nest/health"),
+    ("limb", "/api/limb/health"),
+    ("voice", "/api/voice/health"),
+    ("vision", "/api/vision/health"),
+    ("mind", "/api/mind/health"),
+]
+
+
+@app.get("/api/health/all")
+async def health_all():
+    """Check all organ health endpoints and return aggregated status."""
+    base = "http://127.0.0.1:8090"
+    results = {}
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        async def _check(name: str, path: str):
+            try:
+                r = await client.get(f"{base}{path}")
+                results[name] = "ok" if r.status_code == 200 else "error"
+            except Exception:
+                results[name] = "error"
+        await asyncio.gather(*[_check(n, p) for n, p in _ORGAN_HEALTH_ROUTES])
+    ok = sum(1 for v in results.values() if v == "ok")
+    return {"status": "ok" if ok == len(results) else "degraded", "healthy": ok, "total": len(results), "organs": results}
 
 # Version endpoint
 @app.get("/api/version")
