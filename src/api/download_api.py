@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from src.api.user import get_current_user
 from src.api.download_plugins import get_download_manager, DownloadProgress
+from src.api.native_downloader import get_downloader, DownloadStatus
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -155,10 +156,9 @@ class DownloadRequest(BaseModel):
 
 @router.post("/download")
 async def start_download(req: DownloadRequest):
-    """Start a download with resume support"""
-    dm = get_download_manager()
+    """Start a background download (native engine)"""
+    dl = get_downloader()
 
-    # Determine destination
     if req.dest:
         dest = req.dest
     else:
@@ -166,20 +166,14 @@ async def start_download(req: DownloadRequest):
         filename = req.url.split("/")[-1].split("?")[0] or "download"
         dest = str(CACHE_DIR / filename)
 
-    # Start download in background
-    task_id = f"dl-{hash(req.url) % 100000:05d}"
-
-    async def do_download():
-        return await dm.download(req.url, dest, resume=req.resume, plugin_id=req.plugin_id)
-
-    asyncio.create_task(do_download())
-    return {"task_id": task_id, "dest": dest, "url": req.url, "status": "started"}
+    task = await dl.add_download(req.url, dest)
+    return {"task_id": task.id, "dest": dest, "url": req.url, "status": task.status.value}
 
 
 @router.post("/download/sync")
 async def download_sync(req: DownloadRequest):
-    """Synchronous download (waits for completion)"""
-    dm = get_download_manager()
+    """Download using native Python engine (multi-segment, resume, like Xunlei)"""
+    dl = get_downloader()
 
     if req.dest:
         dest = req.dest
@@ -188,25 +182,29 @@ async def download_sync(req: DownloadRequest):
         filename = req.url.split("/")[-1].split("?")[0] or "download"
         dest = str(CACHE_DIR / filename)
 
-    result = await dm.download(req.url, dest, resume=req.resume, plugin_id=req.plugin_id)
+    task = await dl.download_sync(req.url, dest)
     return {
-        "status": result.status, "dest": result.dest, "url": result.url,
-        "total_bytes": result.total_bytes, "downloaded_bytes": result.downloaded_bytes,
-        "plugin": result.plugin, "supports_resume": result.supports_resume,
-        "error": result.error,
+        "status": task.status.value, "dest": task.dest, "url": task.url,
+        "total_bytes": task.total_bytes, "downloaded_bytes": task.downloaded_bytes,
+        "speed": task.speed, "eta": task.eta, "progress_pct": task.progress_pct,
+        "plugin": task.plugin, "supports_resume": task.supports_resume,
+        "error": task.error, "task_id": task.id,
     }
 
 
 @router.get("/download/progress")
 async def download_progress_stream():
     """SSE stream for download progress (all active downloads)"""
-    dm = get_download_manager()
+    dl = get_downloader()
 
     async def stream():
         while True:
-            # In a real impl, this would track active downloads
             await asyncio.sleep(1)
-            yield f"data: {json.dumps({'status': 'idle'})}\n\n"
+            tasks = [t.to_dict() for t in dl.list_tasks() if t.status.value in ("downloading", "connecting", "pending")]
+            if tasks:
+                yield f"data: {json.dumps({'tasks': tasks})}\n\n"
+            else:
+                yield f"data: {json.dumps({'tasks': [], 'status': 'idle'})}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -251,3 +249,35 @@ async def delete_cache_file(filename: str):
         filepath.unlink()
         return {"success": True}
     raise HTTPException(status_code=404, detail="File not found")
+
+# ─── Task Management ────────────────────────────────────────────
+
+@router.get("/tasks")
+async def list_download_tasks():
+    """List all download tasks"""
+    dl = get_downloader()
+    return {"tasks": [t.to_dict() for t in dl.list_tasks()]}
+
+
+@router.post("/tasks/{task_id}/pause")
+async def pause_download(task_id: str):
+    """Pause a download"""
+    dl = get_downloader()
+    await dl.pause(task_id)
+    return {"status": "paused", "task_id": task_id}
+
+
+@router.post("/tasks/{task_id}/resume")
+async def resume_download(task_id: str):
+    """Resume a paused download"""
+    dl = get_downloader()
+    await dl.resume(task_id)
+    return {"status": "resumed", "task_id": task_id}
+
+
+@router.delete("/tasks/{task_id}")
+async def cancel_download(task_id: str):
+    """Cancel and remove a download task"""
+    dl = get_downloader()
+    await dl.remove(task_id)
+    return {"status": "removed", "task_id": task_id}
