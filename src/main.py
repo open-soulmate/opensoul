@@ -67,6 +67,7 @@ from src.api.trajectory import router as trajectory_router
 from src.api.trajectory_api import router as trajectory_api_router
 from src.api.plugins_api import router as plugins_router
 from src.api.mcp import router as mcp_router
+from src.api.learn import router as learn_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -163,6 +164,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("mind", "/api/mind/health"),
     ("trajectory", "/api/trajectory/health"),
     ("mcp", "/api/mcp/health"),
+    ("learn", "/api/learn/health"),
 ]
 
 
@@ -244,6 +246,7 @@ app.include_router(trajectory_router, prefix="/api/trajectory", tags=["trajector
 app.include_router(trajectory_api_router, prefix="/api/trajectory-v2", tags=["trajectory-v2"])
 app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
 app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
+app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
 
 
 if __name__ == "__main__":
