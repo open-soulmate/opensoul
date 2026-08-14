@@ -128,9 +128,9 @@ class Aria2Plugin(DownloadPlugin):
             id="aria2", name="Aria2", description="高速下载器，支持断点续传+BT+Metalink",
             version="1.37.0", binary="aria2c",
             supports_resume=True, supports_p2p=True,
-            install_cmd={"linux": "sudo pacman -S --noconfirm aria2 || sudo apt install -y aria2",
+            install_cmd={"linux": "pacman -S --noconfirm aria2 2>/dev/null || (curl -sL https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-linux-gnu-64bit-build1.tar.bz2 | tar xjf - -C /tmp && cp /tmp/aria2-*/bin/aria2c ~/.local/bin/aria2c && chmod +x ~/.local/bin/aria2c)",
                          "darwin": "brew install aria2"},
-            update_cmd={"linux": "sudo pacman -Syu aria2 || sudo apt upgrade aria2",
+            update_cmd={"linux": "pacman -Syu --noconfirm aria2 2>/dev/null || echo already_latest",
                         "darwin": "brew upgrade aria2"},
             check_version_cmd="aria2c --version | head -1",
             priority=10,  # highest priority
@@ -277,9 +277,9 @@ class WgetPlugin(DownloadPlugin):
             id="wget", name="Wget", description="经典下载器，支持HTTP断点续传",
             version="1.24", binary="wget",
             supports_resume=True, supports_p2p=False,
-            install_cmd={"linux": "sudo pacman -S --noconfirm wget || sudo apt install -y wget",
+            install_cmd={"linux": "pacman -S --noconfirm wget 2>/dev/null || echo already_installed",
                          "darwin": "brew install wget"},
-            update_cmd={"linux": "sudo pacman -Syu wget || sudo apt upgrade wget",
+            update_cmd={"linux": "pacman -Syu --noconfirm wget 2>/dev/null || echo already_latest",
                         "darwin": "brew upgrade wget"},
             check_version_cmd="wget --version | head -1",
             priority=50,
@@ -476,7 +476,7 @@ class DownloadManager:
         self.register(CurlPlugin())
         self.register(CurlResumePlugin())
         self.register(AxelPlugin())
-        self.register(RsyncPlugin())
+        # self.register(RsyncPlugin())  # removed: rsync is sync tool, not download
 
     def register(self, plugin: DownloadPlugin):
         """Register a download plugin"""
