@@ -209,21 +209,21 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
 
         # Search session titles
         title_matches = db.execute("""
-            SELECT DISTINCT s.id, s.title, s.created_at, s.updated_at, s.source
+            SELECT DISTINCT s.id, s.title, s.started_at, s.last_activity_at, s.source
             FROM sessions s
-            WHERE s.active = 1 AND s.title LIKE ?
-            ORDER BY s.updated_at DESC
+            WHERE s.archived = 0 AND s.title LIKE ?
+            ORDER BY s.started_at DESC
             LIMIT 20
         """, (f"%{q}%",)).fetchall()
 
         # Search message content
         msg_matches = db.execute("""
-            SELECT DISTINCT m.session_id, s.title, s.created_at, s.updated_at, s.source,
+            SELECT DISTINCT m.session_id, s.title, s.started_at, s.last_activity_at, s.source,
                    m.content as matched_content
             FROM messages m
             JOIN sessions s ON m.session_id = s.id
-            WHERE s.active = 1 AND m.content LIKE ?
-            ORDER BY s.updated_at DESC
+            WHERE s.archived = 0 AND m.active = 1 AND m.content LIKE ?
+            ORDER BY s.started_at DESC
             LIMIT 20
         """, (f"%{q}%",)).fetchall()
 
@@ -238,7 +238,7 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
                 seen.add(r["id"])
                 results.append({
                     "id": r["id"], "title": r["title"],
-                    "created_at": r["created_at"], "updated_at": r["updated_at"],
+                    "created_at": r["started_at"], "updated_at": r["last_activity_at"],
                     "source": r["source"], "match_type": "title",
                     "snippet": None,
                 })
@@ -255,7 +255,7 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
 
                 results.append({
                     "id": r["session_id"], "title": r["title"],
-                    "created_at": r["created_at"], "updated_at": r["updated_at"],
+                    "created_at": r["started_at"], "updated_at": r["last_activity_at"],
                     "source": r["source"], "match_type": "content",
                     "snippet": snippet,
                 })
