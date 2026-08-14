@@ -70,6 +70,7 @@ from src.api.mcp import router as mcp_router
 from src.api.learn import router as learn_router
 from src.api.config_api import router as config_api_router
 from src.api.diagnostics import router as diagnostics_router
+from src.api.sessions_api import router as sessions_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -252,6 +253,7 @@ app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
 app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
+app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 
 
 if __name__ == "__main__":
