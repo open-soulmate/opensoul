@@ -299,6 +299,22 @@ async def cleanup_cache():
     return {"status": "ok", "removed": count}
 
 
+# ── Health ─────────────────────────────────────────────────
+
+@router.get("/health")
+async def vein_health():
+    """OpenVein health check."""
+    return {
+        "status": "ok",
+        "component": "OpenVein",
+        "store": store.stats(),
+        "cache": cache.stats,
+        "uploads": {
+            "active_sessions": len(uploader.list_sessions()),
+        },
+    }
+
+
 # ── Stats ──────────────────────────────────────────────────
 
 @router.get("/stats")
