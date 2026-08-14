@@ -59,6 +59,12 @@ def init_db():
         );
     """)
     conn.commit()
+    # 为已有表添加 temperature 列（如果不存在）
+    try:
+        conn.execute("ALTER TABLE ai_group_agents ADD COLUMN temperature REAL DEFAULT 0.7")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # 列已存在
     conn.close()
 
 
@@ -97,6 +103,17 @@ class CompleteTaskRequest(BaseModel):
 class VerifyTaskRequest(BaseModel):
     passed: bool
     reason: str = ""
+
+
+class UpdateGroupRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class UpdateAgentRequest(BaseModel):
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    role: Optional[str] = None
 
 
 # ── Helper ───────────────────────────────────────────────
@@ -362,5 +379,78 @@ def add_agent(group_id: str, agent: AgentRole):
         )
         conn.commit()
         return {"status": "added"}
+    finally:
+        conn.close()
+
+
+@router.patch("/{group_id}")
+def update_group(group_id: str, req: UpdateGroupRequest):
+    conn = get_db()
+    try:
+        group = conn.execute("SELECT id FROM ai_groups WHERE id=?", (group_id,)).fetchone()
+        if not group:
+            raise HTTPException(404, "AI群不存在")
+        updates, params = [], []
+        if req.name is not None:
+            updates.append("name=?")
+            params.append(req.name)
+        if req.description is not None:
+            updates.append("description=?")
+            params.append(req.description)
+        if not updates:
+            raise HTTPException(400, "没有需要更新的字段")
+        params.append(group_id)
+        conn.execute(f"UPDATE ai_groups SET {', '.join(updates)} WHERE id=?", params)
+        conn.commit()
+        return {"status": "updated"}
+    finally:
+        conn.close()
+
+
+@router.delete("/{group_id}/agents/{agent_id}")
+def remove_agent(group_id: str, agent_id: str):
+    conn = get_db()
+    try:
+        result = conn.execute(
+            "DELETE FROM ai_group_agents WHERE group_id=? AND agent_id=?",
+            (group_id, agent_id)
+        )
+        conn.commit()
+        if result.rowcount == 0:
+            raise HTTPException(404, "Agent不存在")
+        return {"status": "removed"}
+    finally:
+        conn.close()
+
+
+@router.patch("/{group_id}/agents/{agent_id}")
+def update_agent(group_id: str, agent_id: str, req: UpdateAgentRequest):
+    conn = get_db()
+    try:
+        agent = conn.execute(
+            "SELECT id FROM ai_group_agents WHERE group_id=? AND agent_id=?",
+            (group_id, agent_id)
+        ).fetchone()
+        if not agent:
+            raise HTTPException(404, "Agent不存在")
+        updates, params = [], []
+        if req.model is not None:
+            updates.append("model=?")
+            params.append(req.model)
+        if req.temperature is not None:
+            updates.append("temperature=?")
+            params.append(req.temperature)
+        if req.role is not None:
+            updates.append("role=?")
+            params.append(req.role)
+        if not updates:
+            raise HTTPException(400, "没有需要更新的字段")
+        params.extend([group_id, agent_id])
+        conn.execute(
+            f"UPDATE ai_group_agents SET {', '.join(updates)} WHERE group_id=? AND agent_id=?",
+            params
+        )
+        conn.commit()
+        return {"status": "updated"}
     finally:
         conn.close()
