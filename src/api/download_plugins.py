@@ -814,25 +814,50 @@ class AxelPlugin(DownloadPlugin):
 
     async def install(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.install_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no install command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: install timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                _refresh_path()
+                return True
+            logger.error(f"{info.name}: install failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: install exception: {e}")
+            return False
 
     async def update(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.update_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no update command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: update timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                return True
+            logger.error(f"{info.name}: update failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: update exception: {e}")
+            return False
 
     async def get_version(self) -> Optional[str]:
         try:
@@ -841,7 +866,8 @@ class AxelPlugin(DownloadPlugin):
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             return stdout.decode().strip().split("\n")[0] if stdout else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Axel: get_version exception: {e}")
             return None
 
 
@@ -857,8 +883,8 @@ class CurlResumePlugin(DownloadPlugin):
             id="curl-resume", name="cURL (Resume)", description="cURL增强版，支持HTTP Range断点续传",
             version="8.0", binary="curl",
             supports_resume=True, supports_p2p=False,
-            install_cmd={},  # always available
-            update_cmd={},
+            install_cmd={"linux": "echo curl is pre-installed", "darwin": "echo curl is pre-installed", "windows": "echo curl is pre-installed"},
+            update_cmd={"linux": "echo curl is system-managed", "darwin": "echo curl is system-managed", "windows": "echo curl is system-managed"},
             check_version_cmd="curl --version | head -1",
             priority=45,  # between wget and axel
         )
@@ -921,10 +947,51 @@ class CurlResumePlugin(DownloadPlugin):
         return shutil.which("curl") is not None
 
     async def install(self) -> bool:
-        return True
+        info = self.get_info()
+        os_name = _detect_os()
+        cmd = info.install_cmd.get(os_name)
+        if not cmd:
+            logger.error(f"{info.name}: no install command for {os_name}")
+            return False
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: install timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                _refresh_path()
+                return True
+            logger.error(f"{info.name}: install failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: install exception: {e}")
+            return False
 
     async def update(self) -> bool:
-        return True
+        info = self.get_info()
+        os_name = _detect_os()
+        cmd = info.update_cmd.get(os_name)
+        if not cmd:
+            logger.error(f"{info.name}: no update command for {os_name}")
+            return False
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: update timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                return True
+            logger.error(f"{info.name}: update failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: update exception: {e}")
+            return False
 
     async def get_version(self) -> Optional[str]:
         try:
@@ -933,7 +1000,8 @@ class CurlResumePlugin(DownloadPlugin):
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             return stdout.decode().strip().split("\n")[0] if stdout else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"cURL-Resume: get_version exception: {e}")
             return None
 
 
@@ -1034,25 +1102,50 @@ class RsyncPlugin(DownloadPlugin):
 
     async def install(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.install_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no install command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: install timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                _refresh_path()
+                return True
+            logger.error(f"{info.name}: install failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: install exception: {e}")
+            return False
 
     async def update(self) -> bool:
         info = self.get_info()
-        import platform
-        os_name = "darwin" if platform.system() == "Darwin" else "linux"
+        os_name = _detect_os()
         cmd = info.update_cmd.get(os_name)
         if not cmd:
+            logger.error(f"{info.name}: no update command for {os_name}")
             return False
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.wait()
-        return proc.returncode == 0
+        try:
+            proc = await asyncio.create_subprocess_shell(cmd)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.error(f"{info.name}: update timed out after 60s")
+                return False
+            if proc.returncode == 0:
+                return True
+            logger.error(f"{info.name}: update failed with exit code {proc.returncode}")
+            return False
+        except Exception as e:
+            logger.error(f"{info.name}: update exception: {e}")
+            return False
 
     async def get_version(self) -> Optional[str]:
         try:
@@ -1061,5 +1154,6 @@ class RsyncPlugin(DownloadPlugin):
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             return stdout.decode().strip().split("\n")[0] if stdout else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Rsync: get_version exception: {e}")
             return None
