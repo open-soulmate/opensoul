@@ -167,7 +167,7 @@ _install_tasks: Dict[str, dict] = {}
 
 
 @router.get("/detect")
-async def detect_agents(user_id: UUID = Depends(get_current_user)):
+async def detect_agents():
     """检测本机安装的AI Agent"""
     os_name = _get_os()
     result = []
