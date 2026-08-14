@@ -30,6 +30,14 @@ class PluginConfigRequest(BaseModel):
     config: dict
 
 
+class SidebarEntry(BaseModel):
+    href: str
+    label: str
+    icon: str = ""
+    group: str = ""
+    sort_order: int = 0
+
+
 # ─── Helper ────────────────────────────────────────────────────────
 
 async def _ensure_table():
@@ -66,6 +74,28 @@ async def list_plugins():
     await _ensure_table()
     rows = await db_pool.fetch("SELECT * FROM plugins ORDER BY installed_at DESC")
     return [_row_to_dict(r) for r in rows]
+
+
+@router.get("/sidebar", response_model=list[SidebarEntry])
+async def get_sidebar_entries():
+    """Return sidebar entries from all enabled plugins."""
+    await _ensure_table()
+    rows = await db_pool.fetch(
+        "SELECT manifest_json FROM plugins WHERE status = 'enabled'"
+    )
+    entries: list[SidebarEntry] = []
+    for row in rows:
+        try:
+            manifest = json.loads(row["manifest_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for item in manifest.get("sidebar", []):
+            try:
+                entries.append(SidebarEntry(**item))
+            except Exception:
+                logger.warning("Invalid sidebar entry in manifest: %s", item)
+    entries.sort(key=lambda e: e.sort_order)
+    return entries
 
 
 @router.post("/install")
