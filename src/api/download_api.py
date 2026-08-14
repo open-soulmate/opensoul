@@ -281,3 +281,40 @@ async def cancel_download(task_id: str):
     dl = get_downloader()
     await dl.remove(task_id)
     return {"status": "removed", "task_id": task_id}
+
+
+# ─── OpenWing Config ──────────────────────────────────────────
+
+@router.get("/config")
+async def get_config():
+    """Get OpenWing engine configuration"""
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["openwing", "config", "list"],
+            capture_output=True, text=True, timeout=5
+        )
+        if proc.returncode == 0:
+            import json
+            return json.loads(proc.stdout.strip())
+    except Exception:
+        pass
+    return {"threads": 8, "speed_limit": 0, "download_dir": "~/Downloads", "proxy": None}
+
+
+@router.post("/config")
+async def set_config(body: dict):
+    """Set OpenWing engine configuration"""
+    import subprocess
+    key = body.get("key", "")
+    value = body.get("value", "")
+    try:
+        proc = subprocess.run(
+            ["openwing", "config", "set", key, str(value)],
+            capture_output=True, text=True, timeout=5
+        )
+        if proc.returncode == 0:
+            return {"status": "ok", "key": key, "value": value}
+        return {"status": "error", "message": proc.stderr.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

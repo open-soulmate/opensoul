@@ -80,6 +80,28 @@ class BudgetUpdate(BaseModel):
 
 # ── endpoints ───────────────────────────────────────────────────
 
+@router.get("/health")
+async def gland_health():
+    """OpenGland health check."""
+    _ensure_bootstrapped()
+    providers = gateway.list_providers()
+    total_keys = sum(
+        len(gateway.key_manager._keys.get(p["name"], []))
+        for p in providers
+    )
+    return {
+        "status": "ok",
+        "component": "OpenGland",
+        "providers": {
+            "total": len(providers),
+            "enabled": sum(1 for p in providers if p["enabled"]),
+            "unhealthy": sum(1 for p in providers if not p["enabled"]),
+        },
+        "keys": {"total": total_keys},
+        "token_meter": gateway.token_meter.summary(),
+    }
+
+
 @router.get("/models")
 async def list_models():
     """List all available models grouped by provider."""
