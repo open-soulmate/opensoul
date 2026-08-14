@@ -1,0 +1,182 @@
+"""OpenLink API — 突触系统：双向集成网关、Webhook管理。"""
+
+from fastapi import APIRouter, HTTPException, Request, Query
+from pydantic import BaseModel
+
+from src.link.connector import IntegrationManager
+
+router = APIRouter()
+
+# ── Singletons ─────────────────────────────────────────────
+manager = IntegrationManager()
+
+
+# ── Request Schemas ────────────────────────────────────────
+
+class ConnectorCreateRequest(BaseModel):
+    name: str
+    type: str  # "webhook_in", "webhook_out", "rest_api", "oa_system", "custom"
+    endpoint: str = ""
+    secret: str = ""
+    headers: dict = {}
+    config: dict = {}
+    description: str = ""
+    tags: list[str] = []
+
+
+class ConnectorUpdateRequest(BaseModel):
+    name: str | None = None
+    endpoint: str | None = None
+    secret: str | None = None
+    status: str | None = None
+    headers: dict | None = None
+    description: str | None = None
+
+
+class WebhookSendRequest(BaseModel):
+    payload: dict
+
+
+# ── Connector CRUD ─────────────────────────────────────────
+
+@router.post("/connector")
+async def create_connector(req: ConnectorCreateRequest):
+    """Create a new integration connector."""
+    connector = manager.create_connector(
+        name=req.name,
+        type=req.type,
+        endpoint=req.endpoint,
+        secret=req.secret,
+        headers=req.headers,
+        config=req.config,
+        description=req.description,
+        tags=req.tags,
+    )
+    return {
+        "connector_id": connector.connector_id,
+        "name": connector.name,
+        "type": connector.type.value,
+        "status": connector.status.value,
+    }
+
+
+@router.get("/connector")
+async def list_connectors(
+    type: str = Query(default=None),
+    status: str = Query(default=None),
+):
+    """List all connectors."""
+    return {"connectors": manager.list_connectors(type=type, status=status)}
+
+
+@router.get("/connector/{connector_id}")
+async def get_connector(connector_id: str):
+    """Get connector details."""
+    c = manager.get_connector(connector_id)
+    if not c:
+        raise HTTPException(404, "Connector not found")
+    return {
+        "connector_id": c.connector_id,
+        "name": c.name,
+        "type": c.type.value,
+        "status": c.status.value,
+        "endpoint": c.endpoint,
+        "has_secret": bool(c.secret),
+        "headers": c.headers,
+        "config": c.config,
+        "description": c.description,
+        "tags": c.tags,
+        "trigger_count": c.trigger_count,
+        "error_count": c.error_count,
+        "last_triggered": c.last_triggered,
+        "last_error": c.last_error,
+        "created_at": c.created_at,
+    }
+
+
+@router.patch("/connector/{connector_id}")
+async def update_connector(connector_id: str, req: ConnectorUpdateRequest):
+    """Update a connector."""
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not manager.update_connector(connector_id, **updates):
+        raise HTTPException(404, "Connector not found")
+    return {"message": "updated"}
+
+
+@router.delete("/connector/{connector_id}")
+async def delete_connector(connector_id: str):
+    """Delete a connector."""
+    if not manager.delete_connector(connector_id):
+        raise HTTPException(404, "Connector not found")
+    return {"message": "deleted"}
+
+
+# ── Webhook Ingress ────────────────────────────────────────
+
+@router.post("/webhook/{connector_id}")
+async def receive_webhook(connector_id: str, request: Request):
+    """Receive an incoming webhook from an external system."""
+    connector = manager.get_connector(connector_id)
+    if not connector:
+        raise HTTPException(404, "Connector not found")
+    if connector.status.value != "active":
+        raise HTTPException(503, f"Connector is {connector.status.value}")
+
+    # Verify signature if secret exists
+    if connector.secret:
+        signature = request.headers.get("X-Signature", "")
+        body = await request.body()
+        expected = f"sha256={__import__('hmac').new(connector.secret.encode(), body, __import__('hashlib').sha256).hexdigest()}"
+        if not __import__('hmac').compare_digest(signature, expected):
+            raise HTTPException(401, "Invalid signature")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = await request.body()
+        payload = payload.decode("utf-8", errors="replace")
+
+    source_ip = request.client.host if request.client else ""
+    event = manager.record_event(
+        connector_id=connector_id,
+        method=request.method,
+        headers=dict(request.headers),
+        payload=payload,
+        source_ip=source_ip,
+    )
+
+    return {"received": True, "event_id": event.event_id}
+
+
+# ── Webhook Egress ─────────────────────────────────────────
+
+@router.post("/connector/{connector_id}/send")
+async def send_webhook(connector_id: str, req: WebhookSendRequest):
+    """Send a webhook to a connector's endpoint."""
+    result = manager.send_webhook(connector_id, req.payload)
+    if not result["success"]:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+# ── Events ─────────────────────────────────────────────────
+
+@router.get("/events")
+async def get_events(
+    connector_id: str = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """Get webhook event history."""
+    return {"events": manager.get_events(connector_id=connector_id, limit=limit)}
+
+
+# ── Health ─────────────────────────────────────────────────
+
+@router.get("/health")
+async def link_health():
+    """OpenLink health check."""
+    return {
+        "status": "ok",
+        "component": "OpenLink",
+        **manager.stats(),
+    }
