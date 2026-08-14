@@ -47,7 +47,7 @@ async def list_plugins():
 
 
 @router.post("/plugins/{plugin_id}/install")
-async def install_plugin(plugin_id: str, user_id: UUID = Depends(get_current_user)):
+async def install_plugin(plugin_id: str):
     """Install a download plugin"""
     dm = get_download_manager()
     success = await dm.install_plugin(plugin_id)
@@ -57,7 +57,7 @@ async def install_plugin(plugin_id: str, user_id: UUID = Depends(get_current_use
 
 
 @router.post("/plugins/{plugin_id}/update")
-async def update_plugin(plugin_id: str, user_id: UUID = Depends(get_current_user)):
+async def update_plugin(plugin_id: str):
     """Update a specific plugin"""
     dm = get_download_manager()
     plugin = dm.get_plugin(plugin_id)
@@ -70,7 +70,7 @@ async def update_plugin(plugin_id: str, user_id: UUID = Depends(get_current_user
 
 
 @router.post("/plugins/update-all")
-async def update_all_plugins(user_id: UUID = Depends(get_current_user)):
+async def update_all_plugins():
     """Auto-update all installed plugins"""
     dm = get_download_manager()
     results = await dm.auto_update_plugins()
@@ -83,7 +83,7 @@ class BatchPluginRequest(BaseModel):
 
 
 @router.post("/plugins/batch")
-async def batch_plugin_action(req: BatchPluginRequest, user_id: UUID = Depends(get_current_user)):
+async def batch_plugin_action(req: BatchPluginRequest):
     """Batch install/uninstall/update plugins"""
     dm = get_download_manager()
     results = {}
@@ -134,7 +134,7 @@ async def batch_plugin_action(req: BatchPluginRequest, user_id: UUID = Depends(g
 
 
 @router.get("/plugins/{plugin_id}/version")
-async def get_plugin_version(plugin_id: str, user_id: UUID = Depends(get_current_user)):
+async def get_plugin_version(plugin_id: str):
     """Get installed version of a plugin"""
     dm = get_download_manager()
     plugin = dm.get_plugin(plugin_id)
@@ -154,7 +154,7 @@ class DownloadRequest(BaseModel):
 
 
 @router.post("/download")
-async def start_download(req: DownloadRequest, user_id: UUID = Depends(get_current_user)):
+async def start_download(req: DownloadRequest):
     """Start a download with resume support"""
     dm = get_download_manager()
 
@@ -177,7 +177,7 @@ async def start_download(req: DownloadRequest, user_id: UUID = Depends(get_curre
 
 
 @router.post("/download/sync")
-async def download_sync(req: DownloadRequest, user_id: UUID = Depends(get_current_user)):
+async def download_sync(req: DownloadRequest):
     """Synchronous download (waits for completion)"""
     dm = get_download_manager()
 
@@ -198,7 +198,7 @@ async def download_sync(req: DownloadRequest, user_id: UUID = Depends(get_curren
 
 
 @router.get("/download/progress")
-async def download_progress_stream(user_id: UUID = Depends(get_current_user)):
+async def download_progress_stream():
     """SSE stream for download progress (all active downloads)"""
     dm = get_download_manager()
 
@@ -214,7 +214,7 @@ async def download_progress_stream(user_id: UUID = Depends(get_current_user)):
 # ─── Cache Management ────────────────────────────────────────────
 
 @router.get("/cache")
-async def list_cache(user_id: UUID = Depends(get_current_user)):
+async def list_cache():
     """List cached downloads"""
     if not CACHE_DIR.exists():
         return {"files": [], "total_size": 0}
@@ -234,7 +234,7 @@ async def list_cache(user_id: UUID = Depends(get_current_user)):
 
 
 @router.delete("/cache")
-async def clear_cache(user_id: UUID = Depends(get_current_user)):
+async def clear_cache():
     """Clear download cache"""
     import shutil
     if CACHE_DIR.exists():
@@ -244,7 +244,7 @@ async def clear_cache(user_id: UUID = Depends(get_current_user)):
 
 
 @router.delete("/cache/{filename}")
-async def delete_cache_file(filename: str, user_id: UUID = Depends(get_current_user)):
+async def delete_cache_file(filename: str):
     """Delete a specific cached file"""
     filepath = CACHE_DIR / filename
     if filepath.exists():
