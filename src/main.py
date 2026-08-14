@@ -63,6 +63,7 @@ from src.api.limb import router as limb_router
 from src.api.voice import router as voice_router
 from src.api.vision import router as vision_router
 from src.api.mind import router as mind_router
+from src.api.trajectory import router as trajectory_router
 from src.api.plugins_api import router as plugins_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
@@ -158,6 +159,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("voice", "/api/voice/health"),
     ("vision", "/api/vision/health"),
     ("mind", "/api/mind/health"),
+    ("trajectory", "/api/trajectory/health"),
 ]
 
 
@@ -235,6 +237,7 @@ app.include_router(limb_router, prefix="/api/limb", tags=["limb"])
 app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
 app.include_router(vision_router, prefix="/api/vision", tags=["vision"])
 app.include_router(mind_router, prefix="/api/mind", tags=["mind"])
+app.include_router(trajectory_router, prefix="/api/trajectory", tags=["trajectory"])
 app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
 
 
