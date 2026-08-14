@@ -45,6 +45,7 @@ from src.api.gland import router as gland_router
 from src.api.gland import gateway as gland_gateway
 from src.api.vital import router as vital_router
 from src.api.vein import router as vein_router
+from src.api.sense import router as sense_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -151,6 +152,7 @@ app.include_router(cortex_router, prefix="/api/cortex", tags=["cortex"])
 app.include_router(gland_router, prefix="/api/gland", tags=["gland"])
 app.include_router(vital_router, prefix="/api/vital", tags=["vital"])
 app.include_router(vein_router, prefix="/api/vein", tags=["vein"])
+app.include_router(sense_router, prefix="/api/sense", tags=["sense"])
 
 
 if __name__ == "__main__":
