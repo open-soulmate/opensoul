@@ -68,6 +68,23 @@ def _row_to_dict(row) -> dict:
 
 # ─── Endpoints ─────────────────────────────────────────────────────
 
+@router.get("/health")
+async def plugins_health():
+    """OpenPlugins health check."""
+    await _ensure_table()
+    rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM plugins")
+    total = rows[0]["cnt"] if rows else 0
+    enabled_rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM plugins WHERE status = 'enabled'")
+    enabled = enabled_rows[0]["cnt"] if enabled_rows else 0
+    return {
+        "status": "ok",
+        "component": "OpenPlugins",
+        "total_plugins": total,
+        "enabled_plugins": enabled,
+        "disabled_plugins": total - enabled,
+    }
+
+
 @router.get("")
 async def list_plugins():
     """List all installed plugins."""

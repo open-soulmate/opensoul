@@ -544,6 +544,26 @@ async def _probe_mcp(client: httpx.AsyncClient) -> list[dict]:
     return events
 
 
+async def _probe_plugins(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent plugin activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/plugins", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and len(data) > 0:
+                events.append({
+                    "organ": "plugins",
+                    "emoji": "🧩",
+                    "type": "plugin_stats",
+                    "summary": f"Plugins: {len(data)} installed",
+                    "detail": {"total": len(data), "plugins": [p.get("name", "") for p in data[:5]]},
+                })
+    except Exception:
+        pass
+    return events
+
+
 _PROBES = [
     _probe_vein,
     _probe_gland,
@@ -570,6 +590,7 @@ _PROBES = [
     _probe_gene,
     _probe_learn,
     _probe_mcp,
+    _probe_plugins,
 ]
 
 
