@@ -14,6 +14,10 @@ class OrganToggle(BaseModel):
     enabled: bool
 
 
+class BulkOrganToggle(BaseModel):
+    organs: dict[str, bool]
+
+
 @router.get("/config")
 async def get_full_config():
     return config_manager.get()
@@ -48,26 +52,6 @@ async def list_organs_config():
     return {"organs": result, "total": len(result)}
 
 
-@router.put("/organs/{organ_key}")
-async def update_organ_config(organ_key: str, body: OrganToggle):
-    """Enable or disable an organ via config."""
-    if organ_key not in ALL_ORGANS:
-        raise HTTPException(status_code=404, detail=f"Unknown organ: {organ_key}. Valid: {ALL_ORGANS}")
-
-    current = config_manager.get() or {}
-    organs = current.get("organs", {})
-    if organ_key not in organs:
-        organs[organ_key] = {}
-    organs[organ_key]["enabled"] = body.enabled
-    config_manager.update({"organs": organs})
-
-    return {"organ": organ_key, "enabled": body.enabled, "message": f"Organ '{organ_key}' {'enabled' if body.enabled else 'disabled'}"}
-
-
-class BulkOrganToggle(BaseModel):
-    organs: dict[str, bool]
-
-
 @router.put("/organs/bulk")
 async def bulk_toggle_organs(body: BulkOrganToggle):
     """Enable or disable multiple organs at once."""
@@ -83,3 +67,19 @@ async def bulk_toggle_organs(body: BulkOrganToggle):
         updated.append({"organ": key, "enabled": enabled})
     config_manager.update({"organs": organs})
     return {"updated": updated, "count": len(updated)}
+
+
+@router.put("/organs/{organ_key}")
+async def update_organ_config(organ_key: str, body: OrganToggle):
+    """Enable or disable an organ via config."""
+    if organ_key not in ALL_ORGANS:
+        raise HTTPException(status_code=404, detail=f"Unknown organ: {organ_key}. Valid: {ALL_ORGANS}")
+
+    current = config_manager.get() or {}
+    organs = current.get("organs", {})
+    if organ_key not in organs:
+        organs[organ_key] = {}
+    organs[organ_key]["enabled"] = body.enabled
+    config_manager.update({"organs": organs})
+
+    return {"organ": organ_key, "enabled": body.enabled, "message": f"Organ '{organ_key}' {'enabled' if body.enabled else 'disabled'}"}
