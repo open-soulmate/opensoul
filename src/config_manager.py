@@ -9,17 +9,22 @@ import yaml
 CONFIG_DIR = Path.home() / ".openmate"
 CONFIG_PATH = CONFIG_DIR / "config.yaml"
 
+# ── All known organs ────────────────────────────────────────
+ALL_ORGANS: list[str] = [
+    "cortex", "nerve", "vein", "sense", "will",
+    "immune", "vital", "marrow", "gland", "gene",
+    "echo", "mirror", "link", "hippo", "reflex",
+    "heredity", "pulse", "nest", "limb", "voice",
+    "vision", "mind", "trajectory", "mcp", "learn",
+]
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": "2.0",
     "models": {
         "default": "mimo-v2.5-pro",
     },
     "plugins": [],
-    "organs": {
-        "vein": {"enabled": True},
-        "gene": {"enabled": True},
-        "vital": {"enabled": True},
-    },
+    "organs": {organ: {"enabled": True} for organ in ALL_ORGANS},
 }
 
 
