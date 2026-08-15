@@ -1,4 +1,4 @@
-"""Backup manager — snapshot creation, listing, restore."""
+"""Backup manager — snapshot creation, listing, restore, scheduled backups."""
 
 from __future__ import annotations
 
@@ -24,6 +24,24 @@ class BackupManifest:
     tags: list[str] = field(default_factory=list)
     checksum: str = ""
     status: str = "complete"
+
+
+@dataclass
+class ScheduledBackup:
+    """A scheduled backup job."""
+    schedule_id: str
+    name: str
+    source_dirs: list[str]
+    cron_expr: str  # "hourly", "daily", "weekly", or "every_Ns"
+    interval_seconds: int
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    enabled: bool = True
+    created_at: float = 0.0
+    last_run_at: float = 0.0
+    next_run_at: float = 0.0
+    run_count: int = 0
+    last_backup_id: str = ""
 
 
 class BackupManager:
@@ -194,3 +212,184 @@ class BackupManager:
             for chunk in iter(lambda: f.read(8192), b""):
                 h.update(chunk)
         return h.hexdigest()[:16]
+
+
+class BackupScheduler:
+    """Schedule automatic backups at intervals."""
+
+    INTERVALS = {
+        "hourly": 3600,
+        "daily": 86400,
+        "weekly": 604800,
+    }
+
+    def __init__(self, backup_manager: BackupManager):
+        self._manager = backup_manager
+        self._schedules: dict[str, ScheduledBackup] = {}
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._manifest_file = backup_manager.backup_dir / "schedules.json"
+        self._load_schedules()
+
+    def _load_schedules(self):
+        if self._manifest_file.exists():
+            try:
+                data = json.loads(self._manifest_file.read_text())
+                for k, v in data.items():
+                    self._schedules[k] = ScheduledBackup(**v)
+            except Exception:
+                self._schedules = {}
+
+    def _save_schedules(self):
+        data = {k: {
+            "schedule_id": v.schedule_id,
+            "name": v.name,
+            "source_dirs": v.source_dirs,
+            "cron_expr": v.cron_expr,
+            "interval_seconds": v.interval_seconds,
+            "description": v.description,
+            "tags": v.tags,
+            "enabled": v.enabled,
+            "created_at": v.created_at,
+            "last_run_at": v.last_run_at,
+            "next_run_at": v.next_run_at,
+            "run_count": v.run_count,
+            "last_backup_id": v.last_backup_id,
+        } for k, v in self._schedules.items()}
+        self._manifest_file.write_text(json.dumps(data, indent=2))
+
+    def create_schedule(
+        self,
+        name: str,
+        source_dirs: list[str],
+        interval: str = "daily",
+        interval_seconds: int | None = None,
+        description: str = "",
+        tags: list[str] | None = None,
+    ) -> ScheduledBackup:
+        """Create a scheduled backup job."""
+        now = time.time()
+        schedule_id = f"sch_{int(now)}"
+
+        if interval_seconds:
+            secs = interval_seconds
+            cron_expr = f"every_{secs}s"
+        else:
+            secs = self.INTERVALS.get(interval, 86400)
+            cron_expr = interval
+
+        schedule = ScheduledBackup(
+            schedule_id=schedule_id,
+            name=name,
+            source_dirs=source_dirs,
+            cron_expr=cron_expr,
+            interval_seconds=secs,
+            description=description,
+            tags=tags or [],
+            enabled=True,
+            created_at=now,
+            next_run_at=now + secs,
+        )
+
+        with self._lock:
+            self._schedules[schedule_id] = schedule
+            self._save_schedules()
+
+        return schedule
+
+    def delete_schedule(self, schedule_id: str) -> bool:
+        with self._lock:
+            if schedule_id not in self._schedules:
+                return False
+            del self._schedules[schedule_id]
+            self._save_schedules()
+        return True
+
+    def toggle_schedule(self, schedule_id: str, enabled: bool) -> ScheduledBackup | None:
+        with self._lock:
+            s = self._schedules.get(schedule_id)
+            if not s:
+                return None
+            s.enabled = enabled
+            if enabled:
+                s.next_run_at = time.time() + s.interval_seconds
+            self._save_schedules()
+        return s
+
+    def list_schedules(self) -> list[dict]:
+        with self._lock:
+            return [
+                {
+                    "schedule_id": s.schedule_id,
+                    "name": s.name,
+                    "source_dirs": s.source_dirs,
+                    "cron_expr": s.cron_expr,
+                    "interval_seconds": s.interval_seconds,
+                    "description": s.description,
+                    "tags": s.tags,
+                    "enabled": s.enabled,
+                    "created_at": s.created_at,
+                    "last_run_at": s.last_run_at,
+                    "next_run_at": s.next_run_at,
+                    "run_count": s.run_count,
+                    "last_backup_id": s.last_backup_id,
+                }
+                for s in sorted(self._schedules.values(), key=lambda x: x.created_at, reverse=True)
+            ]
+
+    def run_due_backups(self) -> list[dict]:
+        """Check and run any due scheduled backups. Returns list of results."""
+        now = time.time()
+        results = []
+        with self._lock:
+            due = [s for s in self._schedules.values() if s.enabled and s.next_run_at <= now]
+
+        for schedule in due:
+            valid_dirs: list[str | Path] = [d for d in schedule.source_dirs if os.path.exists(os.path.expanduser(d))]
+            if not valid_dirs:
+                results.append({"schedule_id": schedule.schedule_id, "success": False, "error": "No valid source dirs"})
+                continue
+
+            manifest = self._manager.create_backup(
+                source_dirs=valid_dirs,
+                name=f"{schedule.name}_auto_{int(now)}",
+                description=f"Auto-backup from schedule: {schedule.name}",
+                tags=schedule.tags + ["scheduled"],
+            )
+
+            with self._lock:
+                schedule.last_run_at = now
+                schedule.next_run_at = now + schedule.interval_seconds
+                schedule.run_count += 1
+                schedule.last_backup_id = manifest.backup_id
+                self._save_schedules()
+
+            results.append({
+                "schedule_id": schedule.schedule_id,
+                "success": True,
+                "backup_id": manifest.backup_id,
+                "name": manifest.name,
+                "size_bytes": manifest.size_bytes,
+            })
+
+        return results
+
+    def start(self):
+        """Start the background scheduler thread."""
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+
+    def _loop(self):
+        while self._running:
+            try:
+                self.run_due_backups()
+            except Exception:
+                pass
+            time.sleep(60)  # Check every minute
