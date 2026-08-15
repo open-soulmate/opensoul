@@ -71,6 +71,7 @@ from src.api.learn import router as learn_router
 from src.api.config_api import router as config_api_router
 from src.api.diagnostics import router as diagnostics_router
 from src.api.sessions_api import router as sessions_router
+from src.api.event_stream import router as event_stream_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -169,6 +170,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("mcp", "/api/mcp/health"),
     ("learn", "/api/learn/health"),
     ("diagnostics", "/api/diagnostics/health"),
+    ("event-stream", "/api/events/health"),
 ]
 
 
@@ -254,6 +256,7 @@ app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
 app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
+app.include_router(event_stream_router, prefix="/api/events", tags=["event-stream"])
 
 
 if __name__ == "__main__":

@@ -14,3 +14,4 @@ p, user, kb_sharing, read_own
 p, user, dedup, read
 g, admin, admin
 g, climbing, user
+g, admin2, user
