@@ -34,6 +34,7 @@ class ActionType(str, Enum):
     NOTIFY = "notify"
     SCRIPT = "script"
     AGENT = "agent"
+    ORGAN = "organ"
 
 
 class WorkflowStatus(str, Enum):
