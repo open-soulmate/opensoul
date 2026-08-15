@@ -72,6 +72,8 @@ from src.api.config_api import router as config_api_router
 from src.api.diagnostics import router as diagnostics_router
 from src.api.sessions_api import router as sessions_router
 from src.api.event_stream import router as event_stream_router
+from src.api.workspace_api import router as workspace_router
+from src.api.git_api import router as git_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -257,6 +259,8 @@ app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(event_stream_router, prefix="/api/events", tags=["event-stream"])
+app.include_router(workspace_router, prefix="/api", tags=["workspace"])
+app.include_router(git_router, prefix="/api/git", tags=["git"])
 
 
 if __name__ == "__main__":
