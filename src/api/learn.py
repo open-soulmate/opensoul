@@ -1,5 +1,6 @@
 """OpenLearn API — 学习系统：课程管理、章节学习、测验、进度追踪。"""
 
+import json
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -114,6 +115,91 @@ async def create_course(req: CourseCreateRequest):
         generated_by=req.generated_by,
     )
     return _course_dict(course)
+
+
+class AIGenerateRequest(BaseModel):
+    topic: str
+    num_chapters: int = 5
+    language: str = "zh"
+    difficulty: str = "intermediate"  # beginner | intermediate | advanced
+
+
+@router.post("/courses/generate")
+async def generate_course(req: AIGenerateRequest):
+    """AI-generate a course outline with chapters and quiz questions."""
+    try:
+        from src.gland.router import ModelRouter
+        from src.api.gland import gateway, _ensure_bootstrapped
+        _ensure_bootstrapped()
+
+        prompt = f"""你是一个课程设计专家。请为以下主题生成一个完整的课程大纲。
+
+主题: {req.topic}
+章节数量: {req.num_chapters}
+语言: {req.language}
+难度: {req.difficulty}
+
+请以JSON格式返回，格式如下:
+{{
+  "title": "课程标题",
+  "description": "课程描述",
+  "chapters": [
+    {{
+      "title": "章节标题",
+      "content": "章节内容（Markdown格式，至少200字）",
+      "quiz": [
+        {{
+          "question": "问题",
+          "options": ["选项A", "选项B", "选项C", "选项D"],
+          "correct_index": 0,
+          "explanation": "解释"
+        }}
+      ]
+    }}
+  ]
+}}
+
+只返回JSON，不要有其他文字。"""
+
+        result = await gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=4096,
+        )
+
+        content = result.get("content", "")
+        # Try to extract JSON from response
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+
+        data = json.loads(content.strip())
+
+        # Create the course
+        course = engine.create_course(
+            title=data.get("title", req.topic),
+            description=data.get("description", ""),
+            tags=[req.topic],
+            topics=[req.topic],
+            generated_by="ai",
+        )
+
+        # Add chapters
+        for i, ch_data in enumerate(data.get("chapters", [])):
+            chapter = engine.add_chapter(
+                course.course_id,
+                title=ch_data.get("title", f"Chapter {i+1}"),
+                content=ch_data.get("content", ""),
+                quiz=ch_data.get("quiz", []),
+            )
+
+        return _course_dict(course)
+
+    except json.JSONDecodeError:
+        raise HTTPException(500, "Failed to parse AI response as JSON")
+    except Exception as exc:
+        raise HTTPException(502, f"AI generation failed: {str(exc)}")
 
 
 @router.get("/courses/{course_id}")
