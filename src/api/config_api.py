@@ -1,13 +1,17 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.config_manager import config_manager
+from src.config_manager import config_manager, ALL_ORGANS
 
 router = APIRouter()
 
 
 class ConfigUpdate(BaseModel):
     data: dict
+
+
+class OrganToggle(BaseModel):
+    enabled: bool
 
 
 @router.get("/config")
@@ -27,3 +31,34 @@ async def get_section(section: str):
 async def update_config(body: ConfigUpdate):
     updated = config_manager.update(body.data)
     return updated
+
+
+@router.get("/organs")
+async def list_organs_config():
+    """List all organs with their config-enabled status."""
+    organs_config = config_manager.get(section="organs") or {}
+    result = []
+    for organ in ALL_ORGANS:
+        cfg = organs_config.get(organ, {})
+        result.append({
+            "key": organ,
+            "enabled": cfg.get("enabled", True),
+            "config": cfg,
+        })
+    return {"organs": result, "total": len(result)}
+
+
+@router.put("/organs/{organ_key}")
+async def update_organ_config(organ_key: str, body: OrganToggle):
+    """Enable or disable an organ via config."""
+    if organ_key not in ALL_ORGANS:
+        raise HTTPException(status_code=404, detail=f"Unknown organ: {organ_key}. Valid: {ALL_ORGANS}")
+
+    current = config_manager.get() or {}
+    organs = current.get("organs", {})
+    if organ_key not in organs:
+        organs[organ_key] = {}
+    organs[organ_key]["enabled"] = body.enabled
+    config_manager.update({"organs": organs})
+
+    return {"organ": organ_key, "enabled": body.enabled, "message": f"Organ '{organ_key}' {'enabled' if body.enabled else 'disabled'}"}
