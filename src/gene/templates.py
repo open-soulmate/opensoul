@@ -375,6 +375,163 @@ class TemplateEngine:
                 ],
                 builtin=True,
             ),
+            # ── Phase 3+ Templates ──────────────────────────────────────
+            Template(
+                template_id="agent-bidding-collab",
+                name="标书协作Agent",
+                category="agent",
+                description="标书协作Agent，支持多人协同编辑、自动合规检查、模板化生成投标文档",
+                tags=["bidding", "collaboration", "document", "compliance"],
+                config={
+                    "system_prompt": "你是一个标书协作专家。帮助用户编写、审查和优化投标文档。检查合规性、格式一致性和内容完整性。支持多人协作模式。",
+                    "model": "gpt-4",
+                    "temperature": 0.3,
+                    "tools": ["knowledge_search", "file_read", "file_write"],
+                },
+                variables=[
+                    {"name": "project_name", "type": "string", "default": "", "description": "项目名称"},
+                    {"name": "compliance_rules", "type": "list", "default": [], "description": "合规检查规则列表"},
+                    {"name": "template_doc", "type": "string", "default": "", "description": "标书模板文档路径"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="workflow-multi-agent",
+                name="多Agent协作流水线",
+                category="workflow",
+                description="多Agent分工协作流水线：规划→执行→验证→总结，支持并行任务和结果聚合",
+                tags=["multi-agent", "collaboration", "orchestration"],
+                config={
+                    "steps": [
+                        {"name": "任务规划", "type": "plan", "config": {"agent": "planner", "decompose": True}},
+                        {"name": "并行执行", "type": "execute_parallel", "config": {"agents": ["worker-1", "worker-2"], "timeout_seconds": 300}},
+                        {"name": "结果验证", "type": "verify", "config": {"agent": "verifier", "criteria": ["completeness", "accuracy"]}},
+                        {"name": "汇总输出", "type": "aggregate", "config": {"agent": "summarizer", "format": "markdown"}},
+                    ],
+                    "trigger": {"type": "manual"},
+                    "max_iterations": 3,
+                },
+                variables=[
+                    {"name": "task_description", "type": "string", "default": "", "description": "任务描述"},
+                    {"name": "worker_count", "type": "number", "default": 2, "description": "工作Agent数量"},
+                    {"name": "output_format", "type": "string", "default": "markdown", "description": "输出格式 (markdown/json/html)"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="skill-data-masking",
+                name="数据脱敏Skill",
+                category="skill",
+                description="敏感数据自动脱敏Skill，支持手机号、身份证、银行卡、邮箱等多类型脱敏规则",
+                tags=["security", "privacy", "masking", "compliance", "immune"],
+                config={
+                    "rules": [
+                        {"type": "phone", "pattern": r"1[3-9]\d{9}", "mask": "***"},
+                        {"type": "id_card", "pattern": r"\d{17}[\dXx]", "mask": "***"},
+                        {"type": "bank_card", "pattern": r"\d{16,19}", "mask": "***"},
+                        {"type": "email", "pattern": r"[\w.]+@[\w.]+", "mask": "***"},
+                    ],
+                    "output_mode": "replace",  # replace / annotate / remove
+                    "log_original": False,
+                },
+                variables=[
+                    {"name": "input_text", "type": "string", "default": "", "description": "待脱敏的文本"},
+                    {"name": "custom_rules", "type": "list", "default": [], "description": "自定义脱敏规则"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="workflow-doc-translate",
+                name="文档翻译流水线",
+                category="workflow",
+                description="文档翻译流水线：解析→分段→翻译→校对→合并，支持多语言和术语表",
+                tags=["translation", "document", "multilingual", "i18n"],
+                config={
+                    "steps": [
+                        {"name": "文档解析", "type": "parse", "config": {"format": "auto"}},
+                        {"name": "智能分段", "type": "segment", "config": {"strategy": "paragraph", "max_length": 2000}},
+                        {"name": "批量翻译", "type": "translate", "config": {"model": "gpt-4", "batch_size": 5}},
+                        {"name": "术语校对", "type": "review", "config": {"glossary_check": True}},
+                        {"name": "文档合并", "type": "merge", "config": {"preserve_formatting": True}},
+                    ],
+                    "trigger": {"type": "manual"},
+                },
+                variables=[
+                    {"name": "source_lang", "type": "string", "default": "auto", "description": "源语言"},
+                    {"name": "target_lang", "type": "string", "default": "en", "description": "目标语言"},
+                    {"name": "glossary_kb", "type": "string", "default": "", "description": "术语表知识库ID"},
+                    {"name": "source_file", "type": "string", "default": "", "description": "源文件路径"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="agent-customer-chatbot",
+                name="客服聊天机器人",
+                category="agent",
+                description="智能客服Agent，基于产品知识库回答用户问题，支持多轮对话和人工转接",
+                tags=["customer-service", "chatbot", "support", "faq"],
+                config={
+                    "system_prompt": "你是一个专业的客服助手。基于产品知识库回答用户问题。如果无法解决，建议转接人工客服。保持友好、专业的语气。",
+                    "model": "gpt-4",
+                    "temperature": 0.4,
+                    "tools": ["knowledge_search"],
+                    "max_turns": 10,
+                    "handoff_threshold": 3,  # 连续无法回答次数触发转接
+                },
+                variables=[
+                    {"name": "product_name", "type": "string", "default": "", "description": "产品名称"},
+                    {"name": "knowledge_base_id", "type": "string", "default": "", "description": "产品知识库ID"},
+                    {"name": "handoff_agent", "type": "string", "default": "human", "description": "转接目标Agent"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="kb-meeting-notes",
+                name="会议纪要知识库",
+                category="knowledge_base",
+                description="会议纪要和讨论记录知识库，支持按参会人、日期、议题检索",
+                tags=["meeting", "notes", "collaboration", "search"],
+                config={
+                    "chunk_size": 512,
+                    "chunk_overlap": 64,
+                    "embedding_model": "text-embedding-3-small",
+                    "metadata_schema": {
+                        "meeting_date": "date",
+                        "attendees": "list",
+                        "topic": "string",
+                        "action_items": "list",
+                        "decisions": "list",
+                    },
+                    "auto_extract_actions": True,
+                },
+                variables=[
+                    {"name": "team_name", "type": "string", "default": "", "description": "团队名称"},
+                    {"name": "auto_summary", "type": "boolean", "default": True, "description": "自动生成会议摘要"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="workflow-knowledge-graph",
+                name="知识图谱构建流水线",
+                category="workflow",
+                description="文档→实体抽取→关系抽取→图谱入库 的知识图谱自动构建流水线",
+                tags=["knowledge-graph", "ner", "relation", "graph"],
+                config={
+                    "steps": [
+                        {"name": "文档预处理", "type": "parse", "config": {"chunk_size": 1000}},
+                        {"name": "实体抽取", "type": "ner", "config": {"model": "gpt-4", "entity_types": ["person", "organization", "location", "concept", "event"]}},
+                        {"name": "关系抽取", "type": "relation", "config": {"model": "gpt-4", "relation_types": ["works_at", "located_in", "related_to", "part_of"]}},
+                        {"name": "实体消歧", "type": "disambiguate", "config": {"similarity_threshold": 0.85}},
+                        {"name": "图谱入库", "type": "store_graph", "config": {"target": "soul_graph", "merge_strategy": "update"}},
+                    ],
+                    "trigger": {"type": "manual"},
+                },
+                variables=[
+                    {"name": "source_kb", "type": "string", "default": "", "description": "源知识库ID"},
+                    {"name": "entity_types", "type": "list", "default": [], "description": "自定义实体类型"},
+                ],
+                builtin=True,
+            ),
         ]
 
         for t in builtins:
@@ -484,6 +641,47 @@ class TemplateEngine:
         elif isinstance(obj, list):
             return [TemplateEngine._substitute(item, variables) for item in obj]
         return obj
+
+    def categories(self) -> list[dict]:
+        """List all categories with template counts."""
+        with self._lock:
+            cats: dict[str, int] = {}
+            for t in self._templates.values():
+                cats[t.category] = cats.get(t.category, 0) + 1
+        return [{"category": k, "count": v} for k, v in sorted(cats.items())]
+
+    def tags(self) -> list[dict]:
+        """List all tags with usage counts."""
+        with self._lock:
+            tag_counts: dict[str, int] = {}
+            for t in self._templates.values():
+                for tag in t.tags:
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        return [{"tag": k, "count": v} for k, v in sorted(tag_counts.items(), key=lambda x: -x[1])]
+
+    def search(self, query: str) -> list[dict]:
+        """Search templates by name, description, or tags."""
+        q = query.lower()
+        with self._lock:
+            results = [
+                t for t in self._templates.values()
+                if q in t.name.lower() or q in t.description.lower() or any(q in tag.lower() for tag in t.tags)
+            ]
+        return [
+            {
+                "template_id": t.template_id,
+                "name": t.name,
+                "category": t.category,
+                "description": t.description,
+                "version": t.version,
+                "author": t.author,
+                "tags": t.tags,
+                "variables": t.variables,
+                "usage_count": t.usage_count,
+                "builtin": t.builtin,
+            }
+            for t in sorted(results, key=lambda x: x.created_at, reverse=True)
+        ]
 
     def stats(self) -> dict:
         with self._lock:

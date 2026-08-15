@@ -40,6 +40,24 @@ async def list_templates(
     return {"templates": engine.list_templates(category=category, tag=tag)}
 
 
+@router.get("/templates/search/{query}")
+async def search_templates(query: str):
+    """Search templates by name, description, or tags."""
+    return {"templates": engine.search(query), "query": query}
+
+
+@router.get("/categories")
+async def list_categories():
+    """List all template categories with counts."""
+    return {"categories": engine.categories()}
+
+
+@router.get("/tags")
+async def list_tags():
+    """List all template tags with usage counts."""
+    return {"tags": engine.tags()}
+
+
 @router.get("/templates/{template_id}")
 async def get_template(template_id: str):
     """Get template details."""
