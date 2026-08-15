@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.echo.dispatcher import MessageDispatcher, Channel
+from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
@@ -52,6 +53,15 @@ async def send_message(req: SendRequest):
         target=req.target,
         priority=req.priority,
     )
+
+    # Emit event
+    if result.success:
+        push_event({
+            "organ": "echo", "emoji": "🔊", "type": "message_sent",
+            "summary": f"📨 [{req.channel}] {req.title}",
+            "detail": {"channel": req.channel, "title": req.title, "msg_id": result.msg_id},
+        })
+
     return {
         "success": result.success,
         "msg_id": result.msg_id,

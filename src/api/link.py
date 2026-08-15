@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel
 
 from src.link.connector import IntegrationManager
+from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
@@ -58,6 +59,12 @@ async def create_connector(req: ConnectorCreateRequest):
         "type": connector.type.value,
         "status": connector.status.value,
     }
+
+    push_event({
+        "organ": "link", "emoji": "🔗", "type": "connector_created",
+        "summary": f"🔌 Connector created: {connector.name} ({connector.type.value})",
+        "detail": {"connector_id": connector.connector_id, "name": connector.name, "type": connector.type.value},
+    })
 
 
 @router.get("/connectors")
@@ -155,7 +162,14 @@ async def receive_webhook(connector_id: str, request: Request):
         source_ip=source_ip,
     )
 
+    push_event({
+        "organ": "link", "emoji": "🔗", "type": "webhook_received",
+        "summary": f"📥 Webhook received from {source_ip} → {connector_id}",
+        "detail": {"connector_id": connector_id, "source_ip": source_ip, "method": request.method},
+    })
+
     return {"received": True, "event_id": event.event_id}
+
 
 
 # ── Webhook Egress ─────────────────────────────────────────
