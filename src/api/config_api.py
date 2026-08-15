@@ -62,3 +62,24 @@ async def update_organ_config(organ_key: str, body: OrganToggle):
     config_manager.update({"organs": organs})
 
     return {"organ": organ_key, "enabled": body.enabled, "message": f"Organ '{organ_key}' {'enabled' if body.enabled else 'disabled'}"}
+
+
+class BulkOrganToggle(BaseModel):
+    organs: dict[str, bool]
+
+
+@router.put("/organs/bulk")
+async def bulk_toggle_organs(body: BulkOrganToggle):
+    """Enable or disable multiple organs at once."""
+    current = config_manager.get() or {}
+    organs = current.get("organs", {})
+    updated = []
+    for key, enabled in body.organs.items():
+        if key not in ALL_ORGANS:
+            continue
+        if key not in organs:
+            organs[key] = {}
+        organs[key]["enabled"] = enabled
+        updated.append({"organ": key, "enabled": enabled})
+    config_manager.update({"organs": organs})
+    return {"updated": updated, "count": len(updated)}
