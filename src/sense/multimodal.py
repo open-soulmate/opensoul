@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,9 +68,81 @@ class MultimodalAnalyzer:
         )
 
     def extract_frames(self, video_bytes: bytes, interval: float = 1.0, max_frames: int = 10) -> list[bytes]:
-        """Extract frames from video (placeholder — needs ffmpeg)."""
-        # Placeholder: actual implementation would use ffmpeg via subprocess
-        return []
+        """Extract frames from video using ffmpeg."""
+        import subprocess
+        import glob as _glob
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(video_bytes)
+            tmp_path = tmp.name
+
+        out_dir = tempfile.mkdtemp(prefix="frames_")
+        try:
+            # Use ffmpeg to extract frames at given interval
+            cmd = [
+                "ffmpeg", "-i", tmp_path,
+                "-vf", f"fps=1/{interval}",
+                "-frames:v", str(max_frames),
+                "-q:v", "2",
+                os.path.join(out_dir, "frame_%04d.jpg"),
+            ]
+            subprocess.run(cmd, capture_output=True, timeout=60, check=False)
+
+            frames = []
+            for fp in sorted(_glob.glob(os.path.join(out_dir, "frame_*.jpg"))):
+                with open(fp, "rb") as f:
+                    frames.append(f.read())
+            return frames
+        finally:
+            os.unlink(tmp_path)
+            import shutil
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    def analyze_video(self, video_bytes: bytes) -> VideoAnalysis:
+        """Extract video metadata using ffprobe."""
+        import subprocess
+        import json as _json
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(video_bytes)
+            tmp_path = tmp.name
+
+        try:
+            cmd = [
+                "ffprobe", "-v", "quiet",
+                "-print_format", "json",
+                "-show_format", "-show_streams",
+                tmp_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(f"ffprobe failed: {result.stderr[:200]}")
+
+            info = _json.loads(result.stdout)
+            video_stream = next(
+                (s for s in info.get("streams", []) if s.get("codec_type") == "video"),
+                {},
+            )
+            fmt = info.get("format", {})
+
+            # Parse frame rate
+            fps_str = video_stream.get("r_frame_rate", "0/1")
+            try:
+                num, den = fps_str.split("/")
+                fps = float(num) / float(den) if float(den) > 0 else 0.0
+            except (ValueError, ZeroDivisionError):
+                fps = 0.0
+
+            return VideoAnalysis(
+                duration=float(fmt.get("duration", 0)),
+                width=int(video_stream.get("width", 0)),
+                height=int(video_stream.get("height", 0)),
+                fps=round(fps, 2),
+                codec=video_stream.get("codec_name", "unknown"),
+                file_size=len(video_bytes),
+            )
+        finally:
+            os.unlink(tmp_path)
 
     @staticmethod
     def _extract_dominant_colors(img: Image.Image, n: int = 5) -> list[str]:
