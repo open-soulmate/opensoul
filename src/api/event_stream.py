@@ -198,6 +198,352 @@ async def _probe_cron(client: httpx.AsyncClient) -> list[dict]:
         pass
     return events
 
+async def _probe_hippo(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent memory operations from Hippo."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/hippo/memories?limit=5", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total = data.get("total", 0)
+            if total > 0:
+                events.append({
+                    "organ": "hippo",
+                    "emoji": "🧠",
+                    "type": "memory",
+                    "summary": f"{total} memories tracked ({data.get('active', 0)} active, {data.get('archived', 0)} archived)",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_reflex(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent reflex cache activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/reflex/cache/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total_hits = data.get("total_hits", 0)
+            if total_hits > 0:
+                events.append({
+                    "organ": "reflex",
+                    "emoji": "⚡",
+                    "type": "cache_stats",
+                    "summary": f"Reflex cache: {data.get('active_entries', 0)} entries, {total_hits} hits ({data.get('hit_rate_percent', 0):.1f}% hit rate)",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_nerve(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent nerve bus activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/nerve/events?limit=5", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            for ev in data.get("events", [])[:3]:
+                events.append({
+                    "organ": "nerve",
+                    "emoji": "⚡",
+                    "type": "bus_event",
+                    "summary": f"[{ev.get('topic', '')}] {ev.get('event_type', '')}: {str(ev.get('payload', ''))[:60]}",
+                    "detail": ev,
+                    "timestamp": ev.get("timestamp"),
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_cortex(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent cortex task activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/cortex/health", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            modules = data.get("modules", {})
+            avail = [k for k, v in modules.items() if v == "available"]
+            if avail:
+                events.append({
+                    "organ": "cortex",
+                    "emoji": "🧩",
+                    "type": "cortex_status",
+                    "summary": f"Cortex modules active: {', '.join(avail)}",
+                    "detail": modules,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_sense(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent sense (OCR/ASR) activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/sense/health", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            engines = data.get("engines", {})
+            available = [k for k, v in engines.items() if isinstance(v, dict) and v.get("available")]
+            if available:
+                events.append({
+                    "organ": "sense",
+                    "emoji": "👁",
+                    "type": "sense_status",
+                    "summary": f"Sense engines active: {', '.join(available)}",
+                    "detail": engines,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_vital(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent vital metrics."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/vital/health", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            components = data.get("components", [])
+            down = [c for c in components if isinstance(c, dict) and c.get("status") == "down"]
+            if down:
+                events.append({
+                    "organ": "vital",
+                    "emoji": "📊",
+                    "type": "health_alert",
+                    "summary": f"⚠️ {len(down)} component(s) DOWN: {', '.join(c.get('name', '') for c in down)}",
+                    "detail": {"down_components": down},
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_pulse(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent pulse signal activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/pulse/signals", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            signals = data.get("signals", [])
+            active = [s for s in signals if isinstance(s, dict) and s.get("status") == "active"]
+            if active:
+                events.append({
+                    "organ": "pulse",
+                    "emoji": "💓",
+                    "type": "pulse_signals",
+                    "summary": f"{len(active)} active pulse signal(s): {', '.join(s.get('name', s.get('signal_id', ''))[:20] for s in active[:3])}",
+                    "detail": {"active_count": len(active), "total": len(signals)},
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_voice(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent voice synthesis activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/voice/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total = data.get("total_synthesized", 0)
+            if total > 0:
+                events.append({
+                    "organ": "voice",
+                    "emoji": "🎤",
+                    "type": "tts_stats",
+                    "summary": f"Voice: {total} syntheses, {data.get('total_characters', 0)} chars, backend: {data.get('preferred_backend', 'unknown')}",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_vision(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent vision generation activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/vision/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total = data.get("total_generated", 0)
+            if total > 0:
+                events.append({
+                    "organ": "vision",
+                    "emoji": "🎨",
+                    "type": "vision_stats",
+                    "summary": f"Vision: {total} images generated ({data.get('errors', 0)} errors)",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_mind(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent mind/emotion analysis activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/mind/health", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            emotion = data.get("emotion", {})
+            total = emotion.get("total_analyzed", 0)
+            if total > 0:
+                events.append({
+                    "organ": "mind",
+                    "emoji": "💭",
+                    "type": "emotion_stats",
+                    "summary": f"Mind: {total} emotions analyzed, active personality: {data.get('personality', {}).get('active', 'default')}",
+                    "detail": emotion,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_nest(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent multi-tenant activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/nest/tenants", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            tenants = data.get("tenants", [])
+            if tenants:
+                events.append({
+                    "organ": "nest",
+                    "emoji": "🏠",
+                    "type": "tenant_activity",
+                    "summary": f"Nest: {len(tenants)} tenant(s) configured",
+                    "detail": {"count": len(tenants)},
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_marrow(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent backup activity from Marrow."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/marrow/backups", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            backups = data.get("backups", [])
+            if backups:
+                latest = backups[0] if isinstance(backups[0], dict) else {}
+                events.append({
+                    "organ": "marrow",
+                    "emoji": "🦴",
+                    "type": "backup",
+                    "summary": f"Marrow: {len(backups)} backup(s), latest: {latest.get('name', 'unknown')} ({latest.get('status', '')})",
+                    "detail": {"total": len(backups), "latest": latest},
+                    "timestamp": latest.get("created_at"),
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_heredity(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent version/evolution activity from Heredity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/heredity/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            reg = data.get("registry", {})
+            total_migrations = reg.get("total_migrations", 0)
+            if total_migrations > 0:
+                events.append({
+                    "organ": "heredity",
+                    "emoji": "🔗",
+                    "type": "evolution",
+                    "summary": f"Heredity: {reg.get('total_components', 0)} components, {total_migrations} migrations",
+                    "detail": reg,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_gene(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent gene template activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/gene/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total = data.get("total_templates", 0)
+            user_count = data.get("user_count", 0)
+            if user_count > 0:
+                events.append({
+                    "organ": "gene",
+                    "emoji": "🧬",
+                    "type": "template_stats",
+                    "summary": f"Gene: {total} templates ({data.get('builtin_count', 0)} builtin, {user_count} user)",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_learn(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent learning activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/learn/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total = data.get("total_courses", 0)
+            if total > 0:
+                events.append({
+                    "organ": "learn",
+                    "emoji": "📚",
+                    "type": "learn_stats",
+                    "summary": f"Learn: {total} courses, {data.get('completed_chapters', 0)} chapters completed",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
+async def _probe_mcp(client: httpx.AsyncClient) -> list[dict]:
+    """Get recent MCP server activity."""
+    events = []
+    try:
+        r = await client.get(f"{_BASE}/api/mcp/stats", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            total = data.get("total_servers", 0)
+            connected = data.get("connected", 0)
+            if total > 0:
+                events.append({
+                    "organ": "mcp",
+                    "emoji": "🔌",
+                    "type": "mcp_stats",
+                    "summary": f"MCP: {total} servers ({connected} connected), {data.get('total_tools', 0)} tools",
+                    "detail": data,
+                })
+    except Exception:
+        pass
+    return events
+
+
 _PROBES = [
     _probe_vein,
     _probe_gland,
@@ -208,6 +554,22 @@ _PROBES = [
     _probe_link,
     _probe_limb,
     _probe_cron,
+    _probe_hippo,
+    _probe_reflex,
+    _probe_nerve,
+    _probe_cortex,
+    _probe_sense,
+    _probe_vital,
+    _probe_pulse,
+    _probe_voice,
+    _probe_vision,
+    _probe_mind,
+    _probe_nest,
+    _probe_marrow,
+    _probe_heredity,
+    _probe_gene,
+    _probe_learn,
+    _probe_mcp,
 ]
 
 
