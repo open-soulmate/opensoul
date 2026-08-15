@@ -1,5 +1,7 @@
 """OpenGene API — 基因系统：模板库管理、模板实例化。"""
 
+import time
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -23,6 +25,17 @@ class TemplateCreateRequest(BaseModel):
     tags: list[str] = []
     config: dict = {}
     variables: list[dict] = []
+
+
+class CloneRequest(BaseModel):
+    new_id: str = ""
+    new_name: str = ""
+    overrides: dict = {}
+
+
+class ImportRequest(BaseModel):
+    templates: list[dict]
+    overwrite: bool = False
 
 
 class InstantiateRequest(BaseModel):
@@ -108,6 +121,66 @@ async def instantiate_template(template_id: str, req: InstantiateRequest):
     if not result["success"]:
         raise HTTPException(404, result["error"])
     return result
+
+
+# ── Export / Import / Clone ────────────────────────────────
+
+@router.get("/templates/{template_id}/export")
+async def export_template(template_id: str):
+    """Export a single template as JSON."""
+    data = engine.export_template(template_id)
+    if not data:
+        raise HTTPException(404, "Template not found")
+    return {"template": data, "format": "opensoul-gene-v1"}
+
+
+@router.get("/export")
+async def export_all_templates(
+    category: str = Query(default=None),
+    include_builtin: bool = Query(default=True),
+):
+    """Export all templates as a JSON bundle."""
+    templates = engine.export_all(category=category, include_builtin=include_builtin)
+    return {
+        "format": "opensoul-gene-bundle-v1",
+        "exported_at": time.time(),
+        "count": len(templates),
+        "templates": templates,
+    }
+
+
+@router.post("/templates/{template_id}/clone")
+async def clone_template(template_id: str, req: CloneRequest):
+    """Clone a template with optional overrides."""
+    template, msg = engine.clone_template(
+        template_id, new_id=req.new_id, new_name=req.new_name, overrides=req.overrides
+    )
+    if not template:
+        raise HTTPException(400, msg)
+    return {
+        "message": msg,
+        "template_id": template.template_id,
+        "name": template.name,
+    }
+
+
+@router.post("/import")
+async def import_templates(req: ImportRequest):
+    """Import one or more templates from JSON."""
+    results = []
+    for data in req.templates:
+        template, msg = engine.import_template(data, overwrite=req.overwrite)
+        results.append({
+            "template_id": data.get("template_id", "?"),
+            "success": template is not None,
+            "message": msg,
+        })
+    imported = sum(1 for r in results if r["success"])
+    return {
+        "imported": imported,
+        "total": len(results),
+        "results": results,
+    }
 
 
 # ── Health ─────────────────────────────────────────────────

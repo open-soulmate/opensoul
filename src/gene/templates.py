@@ -683,6 +683,113 @@ class TemplateEngine:
             for t in sorted(results, key=lambda x: x.created_at, reverse=True)
         ]
 
+    def export_template(self, template_id: str) -> dict | None:
+        """Export a template as a JSON-serializable dict."""
+        with self._lock:
+            t = self._templates.get(template_id)
+        if not t:
+            return None
+        return {
+            "template_id": t.template_id,
+            "name": t.name,
+            "category": t.category,
+            "description": t.description,
+            "version": t.version,
+            "author": t.author,
+            "tags": t.tags,
+            "config": t.config,
+            "variables": t.variables,
+            "created_at": t.created_at,
+            "usage_count": t.usage_count,
+            "builtin": t.builtin,
+        }
+
+    def export_all(self, category: str | None = None, include_builtin: bool = True) -> list[dict]:
+        """Export all templates (optionally filtered)."""
+        with self._lock:
+            templates = list(self._templates.values())
+        if category:
+            templates = [t for t in templates if t.category == category]
+        if not include_builtin:
+            templates = [t for t in templates if not t.builtin]
+        return [
+            {
+                "template_id": t.template_id,
+                "name": t.name,
+                "category": t.category,
+                "description": t.description,
+                "version": t.version,
+                "author": t.author,
+                "tags": t.tags,
+                "config": t.config,
+                "variables": t.variables,
+                "created_at": t.created_at,
+                "usage_count": t.usage_count,
+                "builtin": t.builtin,
+            }
+            for t in sorted(templates, key=lambda x: x.created_at, reverse=True)
+        ]
+
+    def import_template(self, data: dict, overwrite: bool = False) -> tuple[Template | None, str]:
+        """Import a template from a dict. Returns (template, message)."""
+        required = ["name", "category"]
+        for field in required:
+            if field not in data:
+                return None, f"Missing required field: {field}"
+
+        tid = data.get("template_id", f"imported-{int(time.time())}")
+
+        # Check if already exists
+        with self._lock:
+            existing = self._templates.get(tid)
+        if existing and existing.builtin and not overwrite:
+            return None, f"Cannot overwrite built-in template '{tid}'"
+        if existing and not overwrite:
+            return None, f"Template '{tid}' already exists. Use overwrite=true to replace."
+
+        template = Template(
+            template_id=tid,
+            name=data["name"],
+            category=data["category"],
+            description=data.get("description", ""),
+            version=data.get("version", "1.0.0"),
+            author=data.get("author", "imported"),
+            tags=data.get("tags", []),
+            config=data.get("config", {}),
+            variables=data.get("variables", []),
+            builtin=False,  # imported templates are never builtin
+        )
+        with self._lock:
+            self._templates[tid] = template
+        self._save_template(template)
+        return template, f"Template '{tid}' imported successfully"
+
+    def clone_template(self, source_id: str, new_id: str = "", new_name: str = "", overrides: dict | None = None) -> tuple[Template | None, str]:
+        """Clone a template with optional overrides. Returns (template, message)."""
+        with self._lock:
+            source = self._templates.get(source_id)
+        if not source:
+            return None, f"Source template '{source_id}' not found"
+
+        tid = new_id or f"{source_id}-copy-{int(time.time())}"
+        name = new_name or f"{source.name} (副本)"
+
+        data = {
+            "template_id": tid,
+            "name": name,
+            "category": source.category,
+            "description": source.description,
+            "version": "1.0.0",
+            "author": "clone",
+            "tags": list(source.tags),
+            "config": copy.deepcopy(source.config),
+            "variables": copy.deepcopy(source.variables),
+        }
+        if overrides:
+            data.update(overrides)
+
+        return self.import_template(data, overwrite=True)
+
     def stats(self) -> dict:
         with self._lock:
             categories = {}
