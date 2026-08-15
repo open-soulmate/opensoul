@@ -38,6 +38,7 @@ _ORGANS = {
     "trajectory":{"label": "📊 Trajectory", "endpoint": "/api/trajectory/health","category": "system"},
     "mcp":       {"label": "🔌 MCP",        "endpoint": "/api/mcp/health",       "category": "system"},
     "learn":     {"label": "📚 Learn",      "endpoint": "/api/learn/health",     "category": "system"},
+    "plugins":   {"label": "🔌 Plugins",    "endpoint": "/api/plugins/health",   "category": "system"},
 }
 
 
