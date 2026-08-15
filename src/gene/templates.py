@@ -295,6 +295,86 @@ class TemplateEngine:
                 ],
                 builtin=True,
             ),
+            Template(
+                template_id="agent-summarizer",
+                name="文档摘要Agent",
+                category="agent",
+                description="长文档智能摘要Agent，支持多种摘要策略：要点提取、执行摘要、详细总结",
+                tags=["summarize", "document", "extraction"],
+                config={
+                    "system_prompt": "你是一个文档摘要专家。根据用户需求生成高质量摘要。支持三种模式：1)要点提取：列出关键要点 2)执行摘要：200字以内的核心总结 3)详细总结：结构化的完整摘要。",
+                    "model": "gpt-4",
+                    "temperature": 0.3,
+                    "tools": ["file_read", "knowledge_search"],
+                },
+                variables=[
+                    {"name": "summary_mode", "type": "string", "default": "executive", "description": "摘要模式 (bullets/executive/detailed)"},
+                    {"name": "max_length", "type": "number", "default": 500, "description": "最大摘要长度（字数）"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="kb-legal-docs",
+                name="法律文档知识库",
+                category="knowledge_base",
+                description="法律合同、法规文档知识库，支持条款检索和合规查询",
+                tags=["legal", "compliance", "contract"],
+                config={
+                    "chunk_size": 1024,
+                    "chunk_overlap": 128,
+                    "embedding_model": "text-embedding-3-large",
+                    "metadata_schema": {
+                        "document_type": "string",
+                        "jurisdiction": "string",
+                        "effective_date": "date",
+                        "party": "string",
+                    },
+                },
+                variables=[
+                    {"name": "jurisdiction", "type": "string", "default": "CN", "description": "法律管辖区 (CN/US/EU)"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="workflow-etl",
+                name="数据ETL流水线",
+                category="workflow",
+                description="数据抽取→清洗→转换→加载 的标准ETL流水线",
+                tags=["etl", "data", "pipeline", "transform"],
+                config={
+                    "steps": [
+                        {"name": "数据抽取", "type": "extract", "config": {"sources": ["csv", "json", "api"]}},
+                        {"name": "数据清洗", "type": "clean", "config": {"dedup": True, "null_handle": "drop"}},
+                        {"name": "数据转换", "type": "transform", "config": {"normalize": True}},
+                        {"name": "数据加载", "type": "load", "config": {"target": "knowledge_base"}},
+                    ],
+                    "trigger": {"type": "manual"},
+                },
+                variables=[
+                    {"name": "source_path", "type": "string", "default": "", "description": "数据源路径"},
+                    {"name": "target_kb", "type": "string", "default": "", "description": "目标知识库ID"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="skill-api-monitor",
+                name="API监控Skill",
+                category="skill",
+                description="定时检测API端点可用性、响应时间、状态码监控",
+                tags=["api", "monitor", "health", "devops"],
+                config={
+                    "endpoints": [],
+                    "check_interval_seconds": 300,
+                    "timeout_seconds": 10,
+                    "alert_on": ["timeout", "status_4xx", "status_5xx"],
+                },
+                variables=[
+                    {"name": "api_url", "type": "string", "default": "", "description": "监控的API地址"},
+                    {"name": "expected_status", "type": "number", "default": 200, "description": "期望的状态码"},
+                    {"name": "alert_channel", "type": "string", "default": "echo", "description": "告警通知通道"},
+                ],
+                builtin=True,
+            ),
         ]
 
         for t in builtins:
