@@ -187,6 +187,114 @@ class TemplateEngine:
                 ],
                 builtin=True,
             ),
+            Template(
+                template_id="agent-data-analyst",
+                name="数据分析Agent",
+                category="agent",
+                description="数据分析Agent，支持CSV/JSON数据探索、统计分析和可视化建议",
+                tags=["data", "analysis", "statistics", "visualization"],
+                config={
+                    "system_prompt": "你是一个数据分析专家。帮助用户探索数据、发现模式、提供统计分析和可视化建议。用清晰的中文解释分析结果。",
+                    "model": "gpt-4",
+                    "temperature": 0.3,
+                    "tools": ["file_read", "terminal", "knowledge_search"],
+                },
+                variables=[
+                    {"name": "data_source", "type": "string", "default": "", "description": "数据源路径或描述"},
+                    {"name": "analysis_focus", "type": "string", "default": "general", "description": "分析重点 (general/trend/correlation/anomaly)"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="agent-translator",
+                name="多语言翻译Agent",
+                category="agent",
+                description="专业翻译Agent，支持中英日韩多语言互译，保持术语一致性",
+                tags=["translation", "multilingual", "i18n"],
+                config={
+                    "system_prompt": "你是一个专业翻译。准确翻译内容，保持原文风格和语气。对于专业术语，首次出现时附上原文。支持中英日韩互译。",
+                    "model": "gpt-4",
+                    "temperature": 0.2,
+                    "tools": ["knowledge_search"],
+                },
+                variables=[
+                    {"name": "source_lang", "type": "string", "default": "auto", "description": "源语言 (auto/zh/en/ja/ko)"},
+                    {"name": "target_lang", "type": "string", "default": "en", "description": "目标语言"},
+                    {"name": "glossary_kb", "type": "string", "default": "", "description": "术语表知识库ID"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="workflow-monitoring-alert",
+                name="监控告警流水线",
+                category="workflow",
+                description="系统监控→阈值检测→告警通知 的自动化运维流水线",
+                tags=["monitoring", "alert", "devops", "ops"],
+                config={
+                    "steps": [
+                        {"name": "采集指标", "type": "collect", "config": {"source": "vital", "interval_seconds": 60}},
+                        {"name": "阈值检测", "type": "check", "config": {"rules": [
+                            {"metric": "cpu_percent", "threshold": 90, "operator": ">"},
+                            {"metric": "memory_percent", "threshold": 85, "operator": ">"},
+                            {"metric": "disk_percent", "threshold": 90, "operator": ">"},
+                        ]}},
+                        {"name": "发送告警", "type": "notify", "config": {"channels": ["echo"], "severity": "warning"}},
+                    ],
+                    "trigger": {"type": "interval", "interval_seconds": 300},
+                },
+                variables=[
+                    {"name": "cpu_threshold", "type": "number", "default": 90, "description": "CPU告警阈值 (%)"},
+                    {"name": "memory_threshold", "type": "number", "default": 85, "description": "内存告警阈值 (%)"},
+                    {"name": "alert_channels", "type": "list", "default": ["echo"], "description": "告警通知通道"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="workflow-backup-schedule",
+                name="定时备份流水线",
+                category="workflow",
+                description="定时备份→压缩→校验→清理旧备份 的自动化灾备流水线",
+                tags=["backup", "disaster-recovery", "schedule", "marrow"],
+                config={
+                    "steps": [
+                        {"name": "创建备份", "type": "backup", "config": {"source": "marrow", "incremental": True}},
+                        {"name": "完整性校验", "type": "verify", "config": {"checksum": "sha256"}},
+                        {"name": "清理旧备份", "type": "cleanup", "config": {"keep_days": 30, "keep_min": 5}},
+                    ],
+                    "trigger": {"type": "cron", "schedule": "0 3 * * *"},
+                },
+                variables=[
+                    {"name": "backup_dirs", "type": "list", "default": ["~/.opensoul/data"], "description": "备份目录列表"},
+                    {"name": "keep_days", "type": "number", "default": 30, "description": "保留天数"},
+                    {"name": "schedule", "type": "string", "default": "0 3 * * *", "description": "Cron表达式"},
+                ],
+                builtin=True,
+            ),
+            Template(
+                template_id="kb-personal-notes",
+                name="个人笔记知识库",
+                category="knowledge_base",
+                description="个人笔记和学习记录知识库，支持Markdown导入和语义搜索",
+                tags=["notes", "personal", "learning", "markdown"],
+                config={
+                    "chunk_size": 384,
+                    "chunk_overlap": 64,
+                    "embedding_model": "text-embedding-3-small",
+                    "metadata_schema": {
+                        "topic": "string",
+                        "date": "date",
+                        "source": "string",
+                        "tags": "list",
+                    },
+                    "auto_index": True,
+                    "supported_formats": ["markdown", "txt", "pdf"],
+                },
+                variables=[
+                    {"name": "name", "type": "string", "default": "我的笔记", "description": "知识库名称"},
+                    {"name": "auto_tag", "type": "boolean", "default": True, "description": "自动标签"},
+                ],
+                builtin=True,
+            ),
         ]
 
         for t in builtins:

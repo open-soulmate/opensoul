@@ -53,18 +53,18 @@ async def create_connector(req: ConnectorCreateRequest):
         description=req.description,
         tags=req.tags,
     )
+    push_event({
+        "organ": "link", "emoji": "🔗", "type": "connector_created",
+        "summary": f"🔌 Connector created: {connector.name} ({connector.type.value})",
+        "detail": {"connector_id": connector.connector_id, "name": connector.name, "type": connector.type.value},
+    })
+
     return {
         "connector_id": connector.connector_id,
         "name": connector.name,
         "type": connector.type.value,
         "status": connector.status.value,
     }
-
-    push_event({
-        "organ": "link", "emoji": "🔗", "type": "connector_created",
-        "summary": f"🔌 Connector created: {connector.name} ({connector.type.value})",
-        "detail": {"connector_id": connector.connector_id, "name": connector.name, "type": connector.type.value},
-    })
 
 
 @router.get("/connectors")
