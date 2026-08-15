@@ -41,6 +41,50 @@ def _ts_to_iso(ts):
         return str(ts)
 
 
+@router.get("")
+async def list_sessions(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """List recent sessions (no auth required for dashboard)."""
+    db = _get_db()
+    if not db:
+        return {"sessions": [], "total": 0}
+
+    try:
+        rows = db.execute("""
+            SELECT id, title, started_at, last_activity_at, source,
+                   message_count, input_tokens, output_tokens
+            FROM sessions
+            WHERE archived = 0
+            ORDER BY last_activity_at DESC
+            LIMIT ? OFFSET ?
+        """, (limit, offset)).fetchall()
+
+        count_row = db.execute("SELECT COUNT(*) as cnt FROM sessions WHERE archived = 0").fetchone()
+        total = count_row["cnt"] if count_row else 0
+
+        sessions = []
+        for r in rows:
+            sessions.append({
+                "id": r["id"],
+                "title": r["title"] or "Untitled",
+                "created_at": _ts_to_iso(r["started_at"]),
+                "updated_at": _ts_to_iso(r["last_activity_at"]),
+                "source": r["source"],
+                "message_count": r["message_count"] or 0,
+                "input_tokens": r["input_tokens"] or 0,
+                "output_tokens": r["output_tokens"] or 0,
+            })
+
+        return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
+    except Exception as e:
+        logger.error("list_sessions error: %s", e)
+        return {"sessions": [], "error": str(e)}
+    finally:
+        db.close()
+
+
 @router.get("/search")
 async def search_sessions(
     q: str = "",
