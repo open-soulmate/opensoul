@@ -82,6 +82,44 @@ from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
 
 
+async def _intelligence_auto_collect():
+    """Background task: periodically collect metrics from all organs for Intelligence analysis."""
+    import time as _time
+    import httpx as _httpx
+    from src.api.intelligence import intelligence as _intel, _ORGAN_ENDPOINTS
+
+    # Wait a bit for the server to fully start
+    await asyncio.sleep(10)
+
+    while True:
+        try:
+            base = "http://127.0.0.1:8090"
+            async with _httpx.AsyncClient(timeout=5.0) as client:
+                async def _collect(name: str, path: str):
+                    start = _time.time()
+                    try:
+                        r = await client.get(f"{base}{path}")
+                        elapsed_ms = (_time.time() - start) * 1000
+                        data = r.json() if r.status_code == 200 else {}
+                        _intel.record_metrics(name, {
+                            "health": "ok" if r.status_code == 200 else "error",
+                            "response_time_ms": elapsed_ms,
+                            "custom": {k: v for k, v in data.items() if k != "status"},
+                        })
+                    except Exception:
+                        elapsed_ms = (_time.time() - start) * 1000
+                        _intel.record_metrics(name, {
+                            "health": "error",
+                            "response_time_ms": elapsed_ms,
+                            "error_count": 1,
+                        })
+                await asyncio.gather(*[_collect(n, p) for n, p in _ORGAN_ENDPOINTS])
+        except Exception:
+            pass  # Never crash the background task
+
+        await asyncio.sleep(120)  # Collect every 2 minutes
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -100,9 +138,17 @@ async def lifespan(app: FastAPI):
     await collector.start()
     await alert_mgr.start()
 
+    # Intelligence auto-collect background task
+    intel_task = asyncio.create_task(_intelligence_auto_collect())
+
     yield
 
     # Shutdown
+    intel_task.cancel()
+    try:
+        await intel_task
+    except asyncio.CancelledError:
+        pass
     await alert_mgr.stop()
     await collector.stop()
     await gland_gateway.shutdown()
