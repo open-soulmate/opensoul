@@ -162,6 +162,63 @@ async def analyze_image(
     }
 
 
+# ── Video Endpoints ─────────────────────────────────────────
+
+@router.post("/analyze/video")
+async def analyze_video(
+    file: UploadFile = File(...),
+):
+    """Analyze video metadata: duration, resolution, fps, codec."""
+    if not file.content_type or not file.content_type.startswith("video/"):
+        # Accept anyway if extension looks like video
+        pass
+
+    data = await file.read()
+    try:
+        result = multimodal.analyze_video(data)
+    except Exception as e:
+        raise HTTPException(400, f"Video analysis failed: {e}")
+
+    return {
+        "duration": result.duration,
+        "width": result.width,
+        "height": result.height,
+        "fps": result.fps,
+        "codec": result.codec,
+        "file_size": result.file_size,
+        "thumbnail_path": result.thumbnail_path,
+    }
+
+
+@router.post("/video/extract-frames")
+async def extract_frames(
+    file: UploadFile = File(...),
+    interval: float = Form(default=1.0),
+    max_frames: int = Form(default=10),
+):
+    """Extract frames from video as JPEG images (base64 encoded)."""
+    import base64
+
+    data = await file.read()
+    try:
+        frames = multimodal.extract_frames(data, interval=interval, max_frames=max_frames)
+    except Exception as e:
+        raise HTTPException(400, f"Frame extraction failed: {e}")
+
+    return {
+        "frame_count": len(frames),
+        "interval": interval,
+        "frames": [
+            {
+                "index": i,
+                "size_bytes": len(f),
+                "base64": base64.b64encode(f).decode("ascii"),
+            }
+            for i, f in enumerate(frames)
+        ],
+    }
+
+
 # ── Health / Status ────────────────────────────────────────
 
 @router.get("/health")
