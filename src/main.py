@@ -68,6 +68,7 @@ from src.api.trajectory_api import router as trajectory_api_router
 from src.api.plugins_api import router as plugins_router
 from src.api.mcp import router as mcp_router
 from src.api.learn import router as learn_router
+from src.api.soma_connector import router as soma_connector_router
 from src.api.config_api import router as config_api_router
 from src.api.diagnostics import router as diagnostics_router
 from src.api.sessions_api import router as sessions_router
@@ -172,6 +173,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("mcp", "/api/mcp/health"),
     ("learn", "/api/learn/health"),
     ("diagnostics", "/api/diagnostics/health"),
+    ("soma-connector", "/api/soma/health"),
     ("event-stream", "/api/events/health"),
 ]
 
@@ -255,6 +257,7 @@ app.include_router(trajectory_api_router, prefix="/api/trajectory-v2", tags=["tr
 app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
 app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
+app.include_router(soma_connector_router, prefix="/api/soma", tags=["soma-connector"])
 app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
