@@ -1,4 +1,10 @@
+# ─────────────────────────────────────────────────────────────────
+# Open-Soulmate 全栈 Docker Compose
+# Usage: docker compose up -d
+# ─────────────────────────────────────────────────────────────────
+
 services:
+  # ── 基础设施 ──────────────────────────────────────────────
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -66,15 +72,18 @@ services:
     networks:
       - opensoul-net
 
-  api:
+  # ── 应用服务 ──────────────────────────────────────────────
+
+  # OpenSoul — 大脑（中央记忆内核）
+  opensoul:
     build:
-      context: .
+      context: ../opensoul
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${PORT:-8000}:8000"
+      - "${SOUL_PORT:-8090}:8000"
     env_file:
-      - .env
+      - ../opensoul/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-opensoul}:${POSTGRES_PASSWORD:-opensoul}@postgres:5432/${POSTGRES_DB:-opensoul}
       QDRANT_URL: http://qdrant:6333
@@ -90,8 +99,44 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - soul_data:/app/data
     networks:
       - opensoul-net
+
+  # OpenMate — 共生伙伴（Web前端）
+  openmate:
+    build:
+      context: ../openmate
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${MATE_PORT:-3002}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://opensoul:8000
+      SOUL_API_URL: http://opensoul:8000
+    depends_on:
+      opensoul:
+        condition: service_started
+    networks:
+      - opensoul-net
+
+  # ── 可选：OpenSoma 躯体分身 ────────────────────────────────
+  # Uncomment to enable distributed collection agent
+  # opensoma:
+  #   build:
+  #     context: ../opensoma
+  #     dockerfile: Dockerfile
+  #   restart: unless-stopped
+  #   environment:
+  #     SOMA_SOUL_URL: http://opensoul:8000
+  #   depends_on:
+  #     opensoul:
+  #       condition: service_started
+  #   volumes:
+  #     - soma_data:/app/data
+  #   networks:
+  #     - opensoul-net
 
 networks:
   opensoul-net:
@@ -102,3 +147,5 @@ volumes:
   qdrant_data:
   meili_data:
   redis_data:
+  soul_data:
+  # soma_data:
