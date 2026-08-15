@@ -48,19 +48,18 @@ async def create_sandbox(req: SandboxCreateRequest):
         config=req.config,
         ttl_seconds=req.ttl_seconds,
     )
+    push_event({
+        "organ": "mirror", "emoji": "🪞", "type": "sandbox_created",
+        "summary": f"🆕 Sandbox created: {sandbox.name or sandbox.sandbox_id}",
+        "detail": {"sandbox_id": sandbox.sandbox_id, "name": sandbox.name},
+    })
+
     return {
         "sandbox_id": sandbox.sandbox_id,
         "name": sandbox.name,
         "status": sandbox.status,
         "ttl_seconds": sandbox.ttl_seconds,
     }
-
-    # Emit event
-    push_event({
-        "organ": "mirror", "emoji": "🪞", "type": "sandbox_created",
-        "summary": f"🆕 Sandbox created: {sandbox.name or sandbox.sandbox_id}",
-        "detail": {"sandbox_id": sandbox.sandbox_id, "name": sandbox.name},
-    })
 
 
 @router.get("/sandboxes")
