@@ -172,8 +172,8 @@ async def validate_workflow(workflow_id: str):
 
 @router.post("/workflows/{workflow_id}/execute")
 async def execute_workflow(workflow_id: str, req: ExecuteRequest = ExecuteRequest()):
-    """Execute a workflow."""
-    execution = engine.execute(workflow_id, input_vars=req.variables)
+    """Execute a workflow with real cross-component action execution."""
+    execution = await engine.execute_async(workflow_id, input_vars=req.variables)
     if not execution:
         raise HTTPException(404, "Workflow not found")
     return _execution_dict(execution)
@@ -222,6 +222,82 @@ async def will_health():
 async def will_stats():
     """Get OpenWill statistics."""
     return engine.stats()
+
+
+@router.get("/action-types")
+async def list_action_types():
+    """List available workflow action types with their config schemas."""
+    return {
+        "action_types": [
+            {
+                "type": "http",
+                "label": "HTTP Request",
+                "description": "Make a real HTTP request to any URL",
+                "config_schema": {
+                    "url": {"type": "string", "required": True, "description": "Target URL (supports ${var} interpolation)"},
+                    "method": {"type": "string", "default": "GET", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+                    "headers": {"type": "object", "description": "Request headers"},
+                    "body": {"type": "object", "description": "Request body (for POST/PUT/PATCH)"},
+                    "timeout": {"type": "integer", "default": 30, "description": "Timeout in seconds"},
+                },
+            },
+            {
+                "type": "llm",
+                "label": "LLM Call",
+                "description": "Call an LLM via OpenGland for AI-powered processing",
+                "config_schema": {
+                    "prompt": {"type": "string", "required": True, "description": "User prompt (supports ${var})"},
+                    "system": {"type": "string", "description": "System prompt"},
+                    "model": {"type": "string", "description": "Model name (auto-selected if empty)"},
+                    "temperature": {"type": "number", "default": 0.7},
+                    "max_tokens": {"type": "integer", "default": 2048},
+                    "timeout": {"type": "integer", "default": 60},
+                },
+            },
+            {
+                "type": "notify",
+                "label": "Send Notification",
+                "description": "Send a notification via OpenEcho (webhook, email, etc.)",
+                "config_schema": {
+                    "title": {"type": "string", "description": "Notification title"},
+                    "content": {"type": "string", "required": True, "description": "Notification content"},
+                    "channel": {"type": "string", "default": "webhook", "enum": ["webhook", "email", "sms", "dingtalk", "wecom"]},
+                    "target": {"type": "string", "description": "Target address/URL"},
+                    "priority": {"type": "string", "default": "normal", "enum": ["low", "normal", "high", "urgent"]},
+                },
+            },
+            {
+                "type": "knowledge_search",
+                "label": "Knowledge Search",
+                "description": "Search the OpenSoul knowledge base",
+                "config_schema": {
+                    "query": {"type": "string", "required": True, "description": "Search query (supports ${var})"},
+                    "limit": {"type": "integer", "default": 5},
+                },
+            },
+            {
+                "type": "script",
+                "label": "Run Script",
+                "description": "Execute a shell command with safety constraints",
+                "config_schema": {
+                    "command": {"type": "string", "required": True, "description": "Shell command (supports ${var})"},
+                    "cwd": {"type": "string", "description": "Working directory"},
+                    "timeout": {"type": "integer", "default": 30},
+                },
+            },
+            {
+                "type": "organ",
+                "label": "Organ API Call",
+                "description": "Call any OpenSoul organ's API endpoint directly",
+                "config_schema": {
+                    "endpoint": {"type": "string", "required": True, "description": "API path (e.g. '/api/vein/stats')"},
+                    "method": {"type": "string", "default": "GET"},
+                    "body": {"type": "object", "description": "Request body or params"},
+                    "timeout": {"type": "integer", "default": 30},
+                },
+            },
+        ],
+    }
 
 
 # ── Helpers ────────────────────────────────────────────────────
