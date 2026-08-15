@@ -1,10 +1,10 @@
-"""OpenMarrow API — 骨髓系统：备份恢复、数据迁移。"""
+"""OpenMarrow API — 骨髓系统：备份恢复、数据迁移、定时备份。"""
 
 import os
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel
 
-from src.marrow.backup import BackupManager
+from src.marrow.backup import BackupManager, BackupScheduler
 from src.marrow.migrator import DataMigrator
 from src.nerve.event_bridge import push_event
 
@@ -12,7 +12,11 @@ router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
 backup_manager = BackupManager()
+scheduler = BackupScheduler(backup_manager)
 migrator = DataMigrator()
+
+# Start the scheduler background thread
+scheduler.start()
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -33,6 +37,19 @@ class ExportRequest(BaseModel):
     data: list[dict]
     format: str = "json"  # "json", "jsonl", "csv"
     name: str = "export"
+
+
+class ScheduleCreateRequest(BaseModel):
+    name: str
+    source_dirs: list[str]
+    interval: str = "daily"  # "hourly", "daily", "weekly"
+    interval_seconds: int | None = None  # custom interval
+    description: str = ""
+    tags: list[str] = []
+
+
+class ScheduleToggleRequest(BaseModel):
+    enabled: bool
 
 
 # ── Backup Endpoints ───────────────────────────────────────
@@ -110,6 +127,84 @@ async def restore_backup(backup_id: str, req: RestoreRequest | None = None):
     return result
 
 
+# ── Scheduled Backup Endpoints ─────────────────────────────
+
+@router.post("/schedules")
+async def create_schedule(req: ScheduleCreateRequest):
+    """Create a scheduled backup job."""
+    # Validate interval
+    valid_intervals = list(BackupScheduler.INTERVALS.keys())
+    if req.interval not in valid_intervals and not req.interval_seconds:
+        raise HTTPException(400, f"Invalid interval. Choose from: {valid_intervals} or provide interval_seconds")
+
+    # Validate source dirs
+    valid_dirs = []
+    for d in req.source_dirs:
+        expanded = os.path.expanduser(d)
+        if os.path.exists(expanded):
+            valid_dirs.append(expanded)
+    if not valid_dirs:
+        raise HTTPException(400, "No valid source directories found")
+
+    schedule = scheduler.create_schedule(
+        name=req.name,
+        source_dirs=valid_dirs,
+        interval=req.interval,
+        interval_seconds=req.interval_seconds,
+        description=req.description,
+        tags=req.tags,
+    )
+
+    push_event({
+        "organ": "marrow", "emoji": "🦴", "type": "schedule_created",
+        "summary": f"⏰ Backup schedule created: {schedule.name} ({schedule.cron_expr})",
+        "detail": {"schedule_id": schedule.schedule_id, "name": schedule.name, "interval": schedule.cron_expr},
+    })
+
+    return {
+        "schedule_id": schedule.schedule_id,
+        "name": schedule.name,
+        "cron_expr": schedule.cron_expr,
+        "interval_seconds": schedule.interval_seconds,
+        "next_run_at": schedule.next_run_at,
+        "enabled": schedule.enabled,
+    }
+
+
+@router.get("/schedules")
+async def list_schedules():
+    """List all scheduled backup jobs."""
+    return {"schedules": scheduler.list_schedules()}
+
+
+@router.put("/schedules/{schedule_id}/toggle")
+async def toggle_schedule(schedule_id: str, req: ScheduleToggleRequest):
+    """Enable or disable a scheduled backup."""
+    result = scheduler.toggle_schedule(schedule_id, req.enabled)
+    if not result:
+        raise HTTPException(404, "Schedule not found")
+    return {
+        "schedule_id": result.schedule_id,
+        "enabled": result.enabled,
+        "next_run_at": result.next_run_at,
+    }
+
+
+@router.delete("/schedules/{schedule_id}")
+async def delete_schedule(schedule_id: str):
+    """Delete a scheduled backup job."""
+    if not scheduler.delete_schedule(schedule_id):
+        raise HTTPException(404, "Schedule not found")
+    return {"status": "ok", "schedule_id": schedule_id}
+
+
+@router.post("/schedules/run-due")
+async def run_due_schedules():
+    """Manually trigger all due scheduled backups."""
+    results = scheduler.run_due_backups()
+    return {"results": results, "count": len(results)}
+
+
 # ── Data Migration Endpoints ───────────────────────────────
 
 @router.post("/export")
@@ -182,5 +277,10 @@ async def marrow_health():
         "status": "ok",
         "component": "OpenMarrow",
         "backup": backup_manager.stats(),
+        "scheduler": {
+            "active_schedules": len([s for s in scheduler.list_schedules() if s["enabled"]]),
+            "total_schedules": len(scheduler.list_schedules()),
+            "running": scheduler._running,
+        },
         "export_dir": str(migrator.export_dir),
     }
