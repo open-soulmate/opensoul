@@ -8,6 +8,7 @@ from src.immune.rate_limiter import RateLimiter, RateLimitConfig
 from src.immune.moderator import ContentModerator
 from src.immune.access_control import IPAccessControl
 from src.immune.audit import AuditLogger, AuditAction
+from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
@@ -47,6 +48,11 @@ async def moderate_text(req: ModerateRequest):
             detail=f"risk={result.risk_level}, findings={len(result.findings)}",
             risk_level=result.risk_level,
         )
+        push_event({
+            "organ": "immune", "emoji": "🛡", "type": "content_blocked",
+            "summary": f"⚠️ Content blocked: risk={result.risk_level}, {len(result.findings)} finding(s)",
+            "detail": {"risk_level": result.risk_level, "findings_count": len(result.findings)},
+        })
 
     return {
         "is_safe": result.is_safe,
@@ -119,6 +125,11 @@ async def blacklist_ip(req: IPActionRequest, request: Request):
         detail=f"blacklisted {req.ip}: {req.reason}",
         risk_level="medium",
     )
+    push_event({
+        "organ": "immune", "emoji": "🛡", "type": "ip_blacklisted",
+        "summary": f"🚫 IP blacklisted: {req.ip} — {req.reason}",
+        "detail": {"ip": req.ip, "reason": req.reason},
+    })
     return {"message": f"IP {req.ip} blacklisted", "reason": req.reason}
 
 

@@ -13,6 +13,17 @@ router = APIRouter()
 # In-memory event ring buffer (max 1000 events)
 _event_buffer: deque[dict] = deque(maxlen=1000)
 
+def push_event(event: dict) -> None:
+    """Push an event directly into the ring buffer.
+
+    Called by the event_bridge so organ actions appear in the Activity feed
+    without waiting for the next probe cycle.
+    """
+    import uuid as _uuid
+    event.setdefault("id", f"evt_{_uuid.uuid4().hex[:12]}")
+    event.setdefault("collected_at", time.time())
+    _event_buffer.append(event)
+
 _BASE = "http://127.0.0.1:8090"
 
 # ── Organ Activity Probes ──────────────────────────────────────
@@ -223,17 +234,18 @@ async def _probe_reflex(client: httpx.AsyncClient) -> list[dict]:
     """Get recent reflex cache activity."""
     events = []
     try:
-        r = await client.get(f"{_BASE}/api/reflex/cache/stats", timeout=3.0)
+        r = await client.get(f"{_BASE}/api/reflex/health", timeout=3.0)
         if r.status_code == 200:
             data = r.json()
-            total_hits = data.get("total_hits", 0)
+            cache = data.get("cache", data)
+            total_hits = cache.get("total_hits", 0)
             if total_hits > 0:
                 events.append({
                     "organ": "reflex",
                     "emoji": "⚡",
                     "type": "cache_stats",
-                    "summary": f"Reflex cache: {data.get('active_entries', 0)} entries, {total_hits} hits ({data.get('hit_rate_percent', 0):.1f}% hit rate)",
-                    "detail": data,
+                    "summary": f"Reflex cache: {cache.get('active_entries', 0)} entries, {total_hits} hits ({cache.get('hit_rate_percent', 0):.1f}% hit rate)",
+                    "detail": cache,
                 })
     except Exception:
         pass
@@ -353,7 +365,7 @@ async def _probe_voice(client: httpx.AsyncClient) -> list[dict]:
     """Get recent voice synthesis activity."""
     events = []
     try:
-        r = await client.get(f"{_BASE}/api/voice/stats", timeout=3.0)
+        r = await client.get(f"{_BASE}/api/voice/health", timeout=3.0)
         if r.status_code == 200:
             data = r.json()
             total = data.get("total_synthesized", 0)
@@ -374,7 +386,7 @@ async def _probe_vision(client: httpx.AsyncClient) -> list[dict]:
     """Get recent vision generation activity."""
     events = []
     try:
-        r = await client.get(f"{_BASE}/api/vision/stats", timeout=3.0)
+        r = await client.get(f"{_BASE}/api/vision/health", timeout=3.0)
         if r.status_code == 200:
             data = r.json()
             total = data.get("total_generated", 0)
@@ -461,7 +473,7 @@ async def _probe_heredity(client: httpx.AsyncClient) -> list[dict]:
     """Get recent version/evolution activity from Heredity."""
     events = []
     try:
-        r = await client.get(f"{_BASE}/api/heredity/stats", timeout=3.0)
+        r = await client.get(f"{_BASE}/api/heredity/health", timeout=3.0)
         if r.status_code == 200:
             data = r.json()
             reg = data.get("registry", {})
@@ -483,7 +495,7 @@ async def _probe_gene(client: httpx.AsyncClient) -> list[dict]:
     """Get recent gene template activity."""
     events = []
     try:
-        r = await client.get(f"{_BASE}/api/gene/stats", timeout=3.0)
+        r = await client.get(f"{_BASE}/api/gene/health", timeout=3.0)
         if r.status_code == 200:
             data = r.json()
             total = data.get("total_templates", 0)
@@ -609,7 +621,16 @@ async def _collect_all_events() -> list[dict]:
                 events.append(ev)
 
     # Sort by timestamp (most recent first)
-    events.sort(key=lambda e: e.get("timestamp", e.get("collected_at", 0)), reverse=True)
+    def _sort_key(e: dict) -> float:
+        ts = e.get("timestamp") or e.get("collected_at", 0)
+        if isinstance(ts, str):
+            try:
+                from datetime import datetime
+                return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            except (ValueError, AttributeError):
+                return 0.0
+        return float(ts) if ts else 0.0
+    events.sort(key=_sort_key, reverse=True)
     return events
 
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.mirror.sandbox import SandboxManager
+from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
@@ -53,6 +54,13 @@ async def create_sandbox(req: SandboxCreateRequest):
         "status": sandbox.status,
         "ttl_seconds": sandbox.ttl_seconds,
     }
+
+    # Emit event
+    push_event({
+        "organ": "mirror", "emoji": "🪞", "type": "sandbox_created",
+        "summary": f"🆕 Sandbox created: {sandbox.name or sandbox.sandbox_id}",
+        "detail": {"sandbox_id": sandbox.sandbox_id, "name": sandbox.name},
+    })
 
 
 @router.get("/sandboxes")

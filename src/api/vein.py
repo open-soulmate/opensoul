@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from src.vein.file_store import FileStore
 from src.vein.cache import CacheManager
 from src.vein.chunked import ChunkedUploader
+from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
@@ -58,6 +59,13 @@ async def upload_file(
 
     # Auto-cache for hot access
     cache.put(f"file:{meta.file_id}", data)
+
+    # Emit event
+    push_event({
+        "organ": "vein", "emoji": "🩸", "type": "file_uploaded",
+        "summary": f"📄 File uploaded: {meta.name} ({meta.size} bytes)",
+        "detail": {"file_id": meta.file_id, "name": meta.name, "size": meta.size, "mime_type": meta.mime_type},
+    })
 
     return {
         "file_id": meta.file_id,
@@ -119,6 +127,9 @@ async def download_file(file_id: str):
     cached = cache.get(f"file:{file_id}")
     if cached:
         meta = store.get_meta(file_id)
+        if meta:
+            push_event({"organ": "vein", "emoji": "🩸", "type": "file_downloaded",
+                        "summary": f"⬇️ File downloaded (cached): {meta.name}", "detail": {"file_id": file_id}})
         return StreamingResponse(
             iter([cached]),
             media_type=meta.mime_type if meta else "application/octet-stream",
@@ -145,9 +156,12 @@ async def download_file(file_id: str):
 @router.delete("/files/{file_id}")
 async def delete_file(file_id: str):
     """Delete a file and its cache entry."""
+    meta = store.get_meta(file_id)
     if not store.delete(file_id):
         raise HTTPException(status_code=404, detail="File not found")
     cache.invalidate(f"file:{file_id}")
+    push_event({"organ": "vein", "emoji": "🩸", "type": "file_deleted",
+                "summary": f"🗑️ File deleted: {meta.name if meta else file_id}", "detail": {"file_id": file_id}})
     return {"status": "ok", "file_id": file_id}
 
 

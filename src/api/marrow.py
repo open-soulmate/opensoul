@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from src.marrow.backup import BackupManager
 from src.marrow.migrator import DataMigrator
+from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
@@ -54,6 +55,13 @@ async def create_backup(req: BackupCreateRequest):
         description=req.description,
         tags=req.tags,
     )
+
+    push_event({
+        "organ": "marrow", "emoji": "🦴", "type": "backup_created",
+        "summary": f"💾 Backup created: {manifest.name} ({manifest.file_count} files)",
+        "detail": {"backup_id": manifest.backup_id, "name": manifest.name, "file_count": manifest.file_count},
+    })
+
     return {
         "backup_id": manifest.backup_id,
         "name": manifest.name,
@@ -94,6 +102,11 @@ async def restore_backup(backup_id: str, req: RestoreRequest | None = None):
     result = backup_manager.restore_backup(backup_id, target)
     if not result["success"]:
         raise HTTPException(400, result["error"])
+    push_event({
+        "organ": "marrow", "emoji": "🦴", "type": "backup_restored",
+        "summary": f"♻️ Backup restored: {backup_id}",
+        "detail": {"backup_id": backup_id, "target_dir": target},
+    })
     return result
 
 
