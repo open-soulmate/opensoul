@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from src.sense.ocr import OCREngine
+from src.sense.ocr import OCREngine, HAS_TESSERACT
 from src.sense.asr import ASREngine
 from src.sense.multimodal import MultimodalAnalyzer
 
@@ -14,6 +14,21 @@ router = APIRouter()
 ocr_engine = OCREngine()
 asr_engine = ASREngine(model_size="base")
 multimodal = MultimodalAnalyzer()
+
+# Wire up LLM gateway for OCR fallback (lazy — resolved on first use)
+_llm_gateway = None
+
+def _get_gateway():
+    """Lazy-load the Gland ModelRouter singleton."""
+    global _llm_gateway
+    if _llm_gateway is None:
+        try:
+            from src.api.gland import gateway
+            _llm_gateway = gateway
+            ocr_engine.set_llm_gateway(gateway)
+        except Exception:
+            pass
+    return _llm_gateway
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -81,6 +96,80 @@ async def ocr_languages():
     """List available OCR languages."""
     langs = ocr_engine.list_languages()
     return {"languages": langs, "default": ocr_engine.lang}
+
+
+# ── Smart OCR (Tesseract + LLM fallback) ─────────────────
+
+@router.post("/ocr/smart/image")
+async def smart_ocr_image(
+    file: UploadFile = File(...),
+    language: str = Form(default=None),
+    preprocess: bool = Form(default=True),
+):
+    """Smart OCR: try Tesseract first, fall back to LLM vision if unavailable."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+
+    _get_gateway()  # ensure LLM gateway is wired
+    data = await file.read()
+    result = await ocr_engine.smart_image_to_text(data, language=language, preprocess=preprocess)
+
+    return {
+        "text": result.text,
+        "confidence": result.confidence,
+        "language": result.language,
+        "engine": result.engine,
+        "pages": result.pages,
+    }
+
+
+@router.post("/ocr/smart/pdf")
+async def smart_ocr_pdf(
+    file: UploadFile = File(...),
+    language: str = Form(default=None),
+    max_pages: int = Form(default=20),
+):
+    """Smart PDF OCR: try Tesseract first, fall back to LLM vision."""
+    if file.content_type != "application/pdf":
+        raise HTTPException(400, "File must be a PDF")
+
+    _get_gateway()
+    data = await file.read()
+    result = await ocr_engine.smart_pdf_to_text(data, language=language, max_pages=max_pages)
+
+    return {
+        "text": result.text,
+        "confidence": result.confidence,
+        "language": result.language,
+        "engine": result.engine,
+        "pages": result.pages,
+        "total_pages": len(result.pages),
+    }
+
+
+@router.post("/ocr/llm/image")
+async def llm_ocr_image(
+    file: UploadFile = File(...),
+    language: str = Form(default=None),
+):
+    """OCR an image using LLM vision (GPT-4o, MiMo-Vision, etc.)."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+
+    gw = _get_gateway()
+    if not gw:
+        raise HTTPException(503, "LLM gateway not available — configure a vision-capable model in Gland")
+
+    data = await file.read()
+    result = await ocr_engine.image_to_text_via_llm(data, language=language)
+
+    return {
+        "text": result.text,
+        "confidence": result.confidence,
+        "language": result.language,
+        "engine": result.engine,
+        "pages": result.pages,
+    }
 
 
 # ── ASR Endpoints ──────────────────────────────────────────
@@ -224,8 +313,10 @@ async def extract_frames(
 @router.get("/health")
 async def sense_health():
     """OpenSense health check."""
-    from src.sense.ocr import HAS_TESSERACT
     from src.sense.asr import HAS_WHISPER
+
+    gw = _get_gateway()
+    has_llm_fallback = gw is not None and len(getattr(gw, 'providers', [])) > 0
 
     return {
         "status": "ok",
@@ -235,6 +326,7 @@ async def sense_health():
                 "available": HAS_TESSERACT,
                 "engine": "tesseract",
                 "languages": ocr_engine.list_languages()[:5] if HAS_TESSERACT else [],
+                "llm_fallback": has_llm_fallback,
             },
             "asr": {
                 "available": HAS_WHISPER,
