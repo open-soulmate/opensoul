@@ -32,7 +32,7 @@ async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
 
 async def get_entity(entity_id: UUID, user_id: UUID) -> dict | None:
     row = await db_pool.fetchrow(
-        "SELECT * FROM entities WHERE id = $1 AND user_id = $2", entity_id, user_id
+        "SELECT * FROM entities WHERE id = $1 AND user_id = $2", str(entity_id), str(user_id)
     )
     return _row_to_entity(row) if row else None
 
@@ -48,7 +48,7 @@ async def get_entity_with_relations(entity_id: UUID, user_id: UUID) -> dict | No
         "JOIN entities te ON r.target_id = te.id "
         "WHERE r.source_id = $1 OR r.target_id = $1 "
         "ORDER BY r.created_at",
-        entity_id,
+        str(entity_id),
     )
     entity["relations"] = [dict(r) for r in relations]
     return entity
@@ -84,7 +84,7 @@ async def update_entity(entity_id: UUID, data: EntityUpdate, user_id: UUID) -> d
         values.append(value)
         idx += 1
 
-    values.extend([entity_id, user_id])
+    values.extend([str(entity_id), str(user_id)])
     await db_pool.execute(
         f"UPDATE entities SET {', '.join(set_clauses)}, updated_at = NOW() "
         f"WHERE id = ${idx} AND user_id = ${idx + 1}",
@@ -95,6 +95,6 @@ async def update_entity(entity_id: UUID, data: EntityUpdate, user_id: UUID) -> d
 
 async def delete_entity(entity_id: UUID, user_id: UUID) -> bool:
     result = await db_pool.execute(
-        "DELETE FROM entities WHERE id = $1 AND user_id = $2", entity_id, user_id
+        "DELETE FROM entities WHERE id = $1 AND user_id = $2", str(entity_id), str(user_id)
     )
     return "DELETE 1" in result
