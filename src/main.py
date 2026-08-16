@@ -79,6 +79,7 @@ from src.api.event_stream import router as event_stream_router
 from src.api.workspace_api import router as workspace_router
 from src.api.git_api import router as git_router
 from src.api.registry import router as registry_router
+from src.api.capture import router as capture_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -228,6 +229,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("diagnostics", "/api/diagnostics/health"),
     ("soma-connector", "/api/soma/health"),
     ("event-stream", "/api/events/health"),
+    ("capture", "/api/capture/health"),
 ]
 
 
@@ -321,6 +323,7 @@ app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(event_stream_router, prefix="/api/events", tags=["event-stream"])
 app.include_router(workspace_router, prefix="/api", tags=["workspace"])
 app.include_router(git_router, prefix="/api/git", tags=["git"])
+app.include_router(capture_router, prefix="/api/capture", tags=["capture"])
 
 # Load and mount external plugins from ~/.openmate/plugins/
 load_all_plugins(app)
