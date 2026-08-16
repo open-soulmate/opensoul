@@ -206,7 +206,7 @@ async def toggle_star(knowledge_id: UUID, user_id: UUID) -> dict | None:
     """Toggle star status on a knowledge item."""
     row = await db_pool.fetchrow(
         "UPDATE knowledge SET starred = NOT COALESCE(starred, FALSE), updated_at = NOW() "
-        "WHERE id = $1 AND user_id = $2 ",
+        "WHERE id = $1 AND user_id = $2 RETURNING starred",
         knowledge_id, str(user_id),
     )
     if not row:
@@ -218,7 +218,7 @@ async def toggle_pin(knowledge_id: UUID, user_id: UUID) -> dict | None:
     """Toggle pin status on a knowledge item."""
     row = await db_pool.fetchrow(
         "UPDATE knowledge SET pinned = NOT COALESCE(pinned, FALSE), updated_at = NOW() "
-        "WHERE id = $1 AND user_id = $2 ",
+        "WHERE id = $1 AND user_id = $2 RETURNING pinned",
         knowledge_id, str(user_id),
     )
     if not row:
