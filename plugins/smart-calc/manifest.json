@@ -9,9 +9,9 @@
   "sidebar": [
     {
       "href": "/plugins/smart-calc",
-      "label": "计算器",
+      "label": "Calculator",
       "icon": "Calculator",
-      "group": "插件"
+      "group": "Plugins"
     }
   ],
   "routes": [

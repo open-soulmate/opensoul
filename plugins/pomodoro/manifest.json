@@ -9,9 +9,9 @@
   "sidebar": [
     {
       "href": "/plugins/pomodoro",
-      "label": "番茄钟",
+      "label": "Pomodoro",
       "icon": "Timer",
-      "group": "插件"
+      "group": "Plugins"
     }
   ],
   "api_prefix": "/api/plugins/pomodoro",

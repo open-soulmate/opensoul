@@ -9,9 +9,9 @@
   "sidebar": [
     {
       "href": "/plugins/quick-notes",
-      "label": "笔记",
+      "label": "Notes",
       "icon": "StickyNote",
-      "group": "插件"
+      "group": "Plugins"
     }
   ],
   "routes": [
