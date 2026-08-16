@@ -73,6 +73,7 @@ from src.api.learn import router as learn_router
 from src.api.soma_connector import router as soma_connector_router
 from src.api.config_api import router as config_api_router
 from src.api.diagnostics import router as diagnostics_router
+from src.api.admin_actions import router as admin_actions_router
 from src.api.sessions_api import router as sessions_router
 from src.api.event_stream import router as event_stream_router
 from src.api.workspace_api import router as workspace_router
@@ -313,6 +314,7 @@ app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
 app.include_router(soma_connector_router, prefix="/api/soma", tags=["soma-connector"])
 app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
+app.include_router(admin_actions_router, prefix="/api/admin", tags=["admin"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(event_stream_router, prefix="/api/events", tags=["event-stream"])
 app.include_router(workspace_router, prefix="/api", tags=["workspace"])
