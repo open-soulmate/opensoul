@@ -343,3 +343,37 @@ async def sense_health():
             },
         },
     }
+
+
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def sense_stats():
+    """Get OpenSense statistics."""
+    from src.sense.asr import HAS_WHISPER
+    gw = _get_gateway()
+    has_llm_fallback = gw is not None and len(getattr(gw, 'providers', [])) > 0
+
+    return {
+        "status": "ok",
+        "component": "OpenSense",
+        "engines": {
+            "ocr": {
+                "available": HAS_TESSERACT,
+                "engine": "tesseract",
+                "languages": ocr_engine.list_languages()[:5] if HAS_TESSERACT else [],
+                "llm_fallback": has_llm_fallback,
+            },
+            "asr": {
+                "available": HAS_WHISPER or has_llm_fallback,
+                "engine": "whisper" if HAS_WHISPER else ("llm-fallback" if has_llm_fallback else "none"),
+                "model": asr_engine.model_size,
+                "whisper_local": HAS_WHISPER,
+                "llm_fallback": has_llm_fallback,
+            },
+            "multimodal": {
+                "available": True,
+                "engine": "pillow",
+            },
+        },
+    }

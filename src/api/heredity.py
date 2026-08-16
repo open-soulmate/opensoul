@@ -85,6 +85,19 @@ class MigrationScriptRequest(BaseModel):
     transform: str = ""
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def heredity_stats():
+    """Get OpenHeredity statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenHeredity",
+        "registry": registry.get_stats(),
+        "migrations": engine.get_stats(),
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

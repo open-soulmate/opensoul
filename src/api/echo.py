@@ -127,6 +127,18 @@ async def message_history(
     return {"messages": dispatcher.history(limit=limit, channel=ch)}
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def echo_stats():
+    """Get OpenEcho statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenEcho",
+        **dispatcher.stats(),
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")
