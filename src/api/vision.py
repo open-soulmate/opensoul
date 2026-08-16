@@ -251,6 +251,21 @@ async def delete_output(filename: str):
     raise HTTPException(404, "File not found")
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def vision_stats():
+    """OpenVision detailed statistics."""
+    output_list = charts.list_outputs()
+    return {
+        "status": "ok",
+        "component": "OpenVision",
+        **charts.stats(),
+        "saved_outputs": len(output_list),
+        "output_dir": charts._output_dir,
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

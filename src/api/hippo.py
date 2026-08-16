@@ -314,3 +314,31 @@ async def run_lifecycle_check():
     """Run session lifecycle check (idle detection, expiry)."""
     result = sessions.run_lifecycle_check()
     return result
+
+
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def hippo_stats():
+    """OpenHippo detailed statistics."""
+    mem_stats = store.get_stats()
+    sess_stats = sessions.get_stats()
+    all_memories = store.search(limit=1000)
+    by_tag = {}
+    for m in all_memories:
+        for t in (m.tags or []):
+            by_tag[t] = by_tag.get(t, 0) + 1
+
+    return {
+        "status": "ok",
+        "component": "OpenHippo",
+        "memory": mem_stats,
+        "sessions": sess_stats,
+        "by_tag": by_tag,
+        "decay_config": {
+            "strategy": store.decay_engine.strategy.value,
+            "half_life_hours": store.decay_engine.half_life_hours,
+            "archive_threshold": store.decay_engine.archive_threshold,
+            "forget_threshold": store.decay_engine.forget_threshold,
+        },
+    }
