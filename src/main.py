@@ -78,6 +78,7 @@ from src.api.sessions_api import router as sessions_router
 from src.api.event_stream import router as event_stream_router
 from src.api.workspace_api import router as workspace_router
 from src.api.git_api import router as git_router
+from src.api.registry import router as registry_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -311,6 +312,7 @@ app.include_router(trajectory_api_router, prefix="/api/trajectory-v2", tags=["tr
 app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
 app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
+app.include_router(registry_router, prefix="/api/registry", tags=["registry"])
 app.include_router(soma_connector_router, prefix="/api/soma", tags=["soma-connector"])
 app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
