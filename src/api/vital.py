@@ -80,6 +80,49 @@ def _counter(name: str, value: int | float) -> str:
     return f"{name} {value}"
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+
+@router.get("/stats")
+async def vital_stats(request: Request):
+    """OpenVital aggregated statistics."""
+    collector = _get_collector(request)
+    checker = _get_checker(request)
+    alert_mgr = _get_alert_mgr(request)
+    snap = collector.snapshot
+    report = await checker.check()
+
+    return {
+        "status": "ok",
+        "component": "OpenVital",
+        "system": {
+            "cpu_percent": snap.system.cpu_percent,
+            "memory_percent": snap.system.memory_percent,
+            "memory_used_mb": snap.system.memory_used_mb,
+            "memory_total_mb": snap.system.memory_total_mb,
+            "disk_percent": snap.system.disk_percent,
+            "disk_used_gb": snap.system.disk_used_gb,
+            "disk_total_gb": snap.system.disk_total_gb,
+        },
+        "app": {
+            "request_qps": snap.app.request_qps,
+            "latency_p99_ms": snap.app.latency_p99_ms,
+            "error_rate": snap.app.error_rate,
+            "total_requests": snap.app.total_requests,
+            "total_errors": snap.app.total_errors,
+        },
+        "health": {
+            "status": report.status.value,
+            "component_count": len(report.components),
+            "healthy": sum(1 for c in report.components if c.status.value == "ok"),
+        },
+        "alerts": {
+            "total": len(alert_mgr.history),
+            "active": sum(1 for a in alert_mgr.history if not a.resolved),
+        },
+    }
+
+
 # ── Alerts ────────────────────────────────────────────────
 
 

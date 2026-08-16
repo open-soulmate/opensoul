@@ -194,6 +194,26 @@ async def build_prompt(req: BuildPromptRequest):
     return {"system_prompt": prompt}
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def mind_stats():
+    """OpenMind detailed statistics."""
+    all_personalities = personality_mgr.list_all()
+    by_tone = {}
+    for p in all_personalities:
+        by_tone[p.tone] = by_tone.get(p.tone, 0) + 1
+
+    return {
+        "status": "ok",
+        "component": "OpenMind",
+        "emotion": emotion_analyzer.stats(),
+        "personality": personality_mgr.stats(),
+        "by_tone": by_tone,
+        "active_personality": personality_mgr._active,
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

@@ -488,6 +488,38 @@ async def list_pipeline_types():
     }
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def pipeline_stats():
+    """OpenPipeline detailed statistics."""
+    items = list(_pipeline_history.values())
+    by_status = {}
+    by_type = {}
+    total_steps = 0
+    total_elapsed = 0.0
+    for p in items:
+        s = p.get("status", "unknown")
+        by_status[s] = by_status.get(s, 0) + 1
+        t = p.get("pipeline_type", "unknown")
+        by_type[t] = by_type.get(t, 0) + 1
+        total_steps += len(p.get("steps", []))
+        if p.get("elapsed_seconds"):
+            total_elapsed += p["elapsed_seconds"]
+
+    return {
+        "status": "ok",
+        "component": "OpenPipeline",
+        "total_runs": len(items),
+        "by_status": by_status,
+        "by_type": by_type,
+        "total_steps_executed": total_steps,
+        "avg_elapsed_seconds": round(total_elapsed / len(items), 2) if items else 0,
+        "available_pipelines": ["auto", "ocr", "asr", "text", "video"],
+        "connected_organs": ["vein", "sense", "immune", "soul"],
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

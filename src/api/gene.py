@@ -183,6 +183,29 @@ async def import_templates(req: ImportRequest):
     }
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def gene_stats():
+    """OpenGene detailed statistics."""
+    templates = engine.list_templates()
+    by_author = {}
+    total_usage = 0
+    for t in templates:
+        author = t.get("author", "unknown")
+        by_author[author] = by_author.get(author, 0) + 1
+        total_usage += t.get("usage_count", 0)
+
+    return {
+        "status": "ok",
+        "component": "OpenGene",
+        **engine.stats(),
+        "total_usage_count": total_usage,
+        "by_author": by_author,
+        "most_used": sorted(templates, key=lambda x: x.get("usage_count", 0), reverse=True)[:5],
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

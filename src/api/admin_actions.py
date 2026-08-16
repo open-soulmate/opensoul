@@ -183,6 +183,10 @@ async def system_overview():
             "hippo": "/api/hippo/stats",
             "immune": "/api/immune/audit/stats",
             "trajectory": "/api/trajectory/stats",
+            "vital": "/api/vital/stats",
+            "vision": "/api/vision/stats",
+            "mind": "/api/mind/stats",
+            "pipeline": "/api/pipeline/stats",
             "mirror": "/api/mirror/health",
             "echo": "/api/echo/health",
             "link": "/api/link/health",
@@ -190,6 +194,11 @@ async def system_overview():
             "sense": "/api/sense/health",
             "reflex": "/api/reflex/health",
             "heredity": "/api/heredity/health",
+            "nerve": "/api/nerve/stats",
+            "will": "/api/will/stats",
+            "limb": "/api/limb/stats",
+            "nest": "/api/nest/stats",
+            "pulse": "/api/pulse/stats",
         }
 
         for name, endpoint in stat_endpoints.items():
