@@ -26,6 +26,7 @@ def _get_gateway():
             from src.api.gland import gateway
             _llm_gateway = gateway
             ocr_engine.set_llm_gateway(gateway)
+            asr_engine.set_llm_gateway(gateway)  # Also wire ASR fallback
         except Exception:
             pass
     return _llm_gateway
@@ -191,7 +192,8 @@ async def asr_transcribe(
         pass
 
     data = await file.read()
-    result = asr_engine.transcribe(data, language=language, format=format)
+    _get_gateway()  # ensure LLM gateway is wired
+    result = await asr_engine.transcribe_async(data, language=language, format=format)
 
     return {
         "text": result.text,
@@ -329,9 +331,11 @@ async def sense_health():
                 "llm_fallback": has_llm_fallback,
             },
             "asr": {
-                "available": HAS_WHISPER,
-                "engine": "whisper",
+                "available": HAS_WHISPER or has_llm_fallback,
+                "engine": "whisper" if HAS_WHISPER else ("llm-fallback" if has_llm_fallback else "none"),
                 "model": asr_engine.model_size,
+                "whisper_local": HAS_WHISPER,
+                "llm_fallback": has_llm_fallback,
             },
             "multimodal": {
                 "available": True,
