@@ -8,6 +8,12 @@ from src.services.search import semantic_search, fulltext_search, hybrid_search
 router = APIRouter()
 
 
+@router.get("/health")
+async def search_health():
+    """Search system health check."""
+    return {"status": "ok", "component": "SearchSystem"}
+
+
 class SearchRequest(BaseModel):
     query: str
     mode: str = "hybrid"  # semantic, fulltext, hybrid

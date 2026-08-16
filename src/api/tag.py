@@ -8,6 +8,12 @@ from src.database.postgres import db_pool
 router = APIRouter()
 
 
+@router.get("/health")
+async def tag_health():
+    """Tag system health check."""
+    return {"status": "ok", "component": "TagSystem"}
+
+
 @router.post("/", response_model=TagResponse)
 async def create(data: TagCreate, user_id: UUID):
     row = await db_pool.fetchrow(

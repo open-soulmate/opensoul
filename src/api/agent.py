@@ -13,6 +13,12 @@ from src.models.knowledge import KnowledgeCreate
 router = APIRouter()
 
 
+@router.get("/health")
+async def agent_health():
+    """Agent system health check."""
+    return {"status": "ok", "component": "AgentSystem"}
+
+
 # ── Request / Response models ──────────────────────────────────────────
 
 class AgentRegisterRequest(BaseModel):

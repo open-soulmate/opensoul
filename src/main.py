@@ -232,6 +232,15 @@ _ORGAN_HEALTH_ROUTES = [
     ("event-stream", "/api/events/health"),
     ("capture", "/api/capture/health"),
     ("pipeline", "/api/pipeline/health"),
+    ("graph", "/api/graph/health"),
+    ("entity", "/api/entity/health"),
+    ("tag", "/api/tags/health"),
+    ("user", "/api/user/health"),
+    ("llm", "/api/llm/health"),
+    ("agent", "/api/agent/health"),
+    ("export", "/api/export/health"),
+    ("search", "/api/search/health"),
+    ("chat", "/api/chat/health"),
 ]
 
 
