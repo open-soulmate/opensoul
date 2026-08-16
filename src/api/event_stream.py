@@ -710,6 +710,12 @@ async def refresh_stream():
     }
 
 
+@router.get("/summary")
+async def get_summary():
+    """Get a summary of recent system activity (alias for /stream/summary)."""
+    return await get_stream_summary()
+
+
 @router.get("/health")
 async def stream_health():
     """Event stream health check."""
