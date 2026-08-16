@@ -427,6 +427,96 @@ async def cleanup_cache():
     return {"status": "ok", "removed": count}
 
 
+# ── Promote to Knowledge ───────────────────────────────────
+
+class PromoteRequest(BaseModel):
+    user_id: str = "default"
+    tags: list[str] | None = None
+
+
+@router.post("/files/{file_id}/promote")
+async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
+    """Promote a Vein file to the knowledge base.
+
+    Reads the file content from Vein and creates a knowledge entry in OpenSoul,
+    enabling RAG search, graph linking, and full-text retrieval.
+    """
+    if req is None:
+        req = PromoteRequest()
+
+    meta = store.get_meta(file_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Read file content
+    result = store.retrieve(file_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="File content not found")
+    data, _meta = result
+
+    # Try to decode as text for knowledge entry
+    content = ""
+    is_text = meta.mime_type.startswith("text/") or meta.mime_type in (
+        "application/json", "application/xml", "application/javascript",
+        "application/x-yaml", "application/yaml",
+    )
+    if is_text:
+        try:
+            content = data.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                content = data.decode("latin-1")
+            except Exception:
+                content = f"[Binary file: {meta.name}, {meta.size} bytes]"
+    else:
+        content = f"[Binary file: {meta.name}, {meta.size} bytes, type: {meta.mime_type}]"
+
+    # Build tags
+    file_tags = ["vein", "file", meta.mime_type.split("/")[-1]]
+    if req.tags:
+        file_tags.extend(req.tags)
+    if meta.tags:
+        file_tags.extend(meta.tags.split(","))
+
+    # Insert into knowledge base
+    import json
+    import time as _time
+    try:
+        from src.database.postgres import db_pool
+        await db_pool.execute(
+            """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $5)""",
+            req.user_id,
+            meta.name,
+            content[:100000],  # Cap at 100KB for knowledge
+            json.dumps(list(set(file_tags))),
+            _time.time(),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create knowledge entry: {e}")
+
+    # Push event to nerve
+    try:
+        push_event({
+            "type": "vein.promoted",
+            "file_id": file_id,
+            "filename": meta.name,
+            "user_id": req.user_id,
+            "content_length": len(content),
+        })
+    except Exception:
+        pass
+
+    return {
+        "promoted": True,
+        "file_id": file_id,
+        "filename": meta.name,
+        "user_id": req.user_id,
+        "content_length": len(content),
+        "tags": file_tags,
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")
