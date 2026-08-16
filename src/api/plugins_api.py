@@ -95,7 +95,7 @@ async def list_plugins():
 
 @router.get("/sidebar", response_model=list[SidebarEntry])
 async def get_sidebar_entries():
-    """Return sidebar entries from all enabled plugins."""
+    """Return sidebar entries from all enabled plugins (DB + file-based)."""
     await _ensure_table()
     rows = await db_pool.fetch(
         "SELECT manifest_json FROM plugins WHERE status = 'enabled'"
@@ -111,6 +111,16 @@ async def get_sidebar_entries():
                 entries.append(SidebarEntry(**item))
             except Exception:
                 logger.warning("Invalid sidebar entry in manifest: %s", item)
+
+    # Also include file-based plugins from ~/.openmate/plugins/
+    from src.plugin_loader import loaded_plugins
+    for plugin in loaded_plugins:
+        for item in plugin.get("sidebar", []):
+            try:
+                entries.append(SidebarEntry(**item))
+            except Exception:
+                pass
+
     entries.sort(key=lambda e: e.sort_order)
     return entries
 
