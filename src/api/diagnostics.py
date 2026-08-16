@@ -45,6 +45,17 @@ _ORGANS = {
     "intelligence":{"label": "🧠 Intelligence","endpoint": "/api/intelligence/health","category": "system"},
     "events":    {"label": "📡 Events",     "endpoint": "/api/events/health",    "category": "system"},
     "admin":     {"label": "⚙️ Admin",      "endpoint": "/api/admin/health",     "category": "system"},
+    # ── Core APIs with health endpoints ──
+    "graph":     {"label": "🕸 Graph",       "endpoint": "/api/graph/health",     "category": "core"},
+    "entity":    {"label": "📦 Entity",      "endpoint": "/api/entity/health",    "category": "core"},
+    "tag":       {"label": "🏷 Tag",         "endpoint": "/api/tags/health",      "category": "core"},
+    "user":      {"label": "👤 User",        "endpoint": "/api/user/health",      "category": "core"},
+    "llm":       {"label": "🤖 LLM",        "endpoint": "/api/llm/health",       "category": "core"},
+    "agent":     {"label": "🤖 Agent",       "endpoint": "/api/agent/health",     "category": "core"},
+    "export":    {"label": "📤 Export",      "endpoint": "/api/export/health",    "category": "system"},
+    "search":    {"label": "🔍 Search",      "endpoint": "/api/search/health",    "category": "core"},
+    "chat":      {"label": "💬 Chat",        "endpoint": "/api/chat/health",      "category": "core"},
+    "pipeline":  {"label": "🔄 Pipeline",    "endpoint": "/api/pipeline/health",  "category": "platform"},
 }
 
 
