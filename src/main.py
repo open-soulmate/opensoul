@@ -81,6 +81,7 @@ from src.api.git_api import router as git_router
 from src.api.registry import router as registry_router
 from src.api.capture import router as capture_router
 from src.api.pipeline import router as pipeline_router
+from src.api.topology import router as topology_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -232,6 +233,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("event-stream", "/api/events/health"),
     ("capture", "/api/capture/health"),
     ("pipeline", "/api/pipeline/health"),
+    ("topology", "/api/topology/health"),
     ("graph", "/api/graph/health"),
     ("entity", "/api/entity/health"),
     ("tag", "/api/tags/health"),
@@ -336,6 +338,7 @@ app.include_router(workspace_router, prefix="/api", tags=["workspace"])
 app.include_router(git_router, prefix="/api/git", tags=["git"])
 app.include_router(capture_router, prefix="/api/capture", tags=["capture"])
 app.include_router(pipeline_router, prefix="/api/pipeline", tags=["pipeline"])
+app.include_router(topology_router, prefix="/api/topology", tags=["topology"])
 
 # Load and mount external plugins from ~/.openmate/plugins/
 load_all_plugins(app)
