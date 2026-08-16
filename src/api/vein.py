@@ -165,6 +165,120 @@ async def delete_file(file_id: str):
     return {"status": "ok", "file_id": file_id}
 
 
+# ── Versioning Endpoints ──────────────────────────────────
+
+@router.put("/files/{file_id}/content")
+async def update_file_content(
+    file_id: str,
+    file: UploadFile = File(...),
+    change_summary: str = Form(default=""),
+):
+    """Update file content with automatic version tracking."""
+    existing = store.get_meta(file_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    data = await file.read()
+    meta = store.store(
+        data=data,
+        name=file.filename or existing.name,
+        mime_type=file.content_type or existing.mime_type,
+        tags=existing.tags.split(",") if existing.tags else [],
+        file_id=file_id,
+        change_summary=change_summary,
+    )
+
+    # Update cache
+    cache.put(f"file:{meta.file_id}", data)
+
+    push_event({
+        "organ": "vein", "emoji": "🩸", "type": "file_updated",
+        "summary": f"📝 File updated: {meta.name} (v{store.get_version_history(file_id, limit=1)[0].version_number if store.get_version_history(file_id, limit=1) else '?'})",
+        "detail": {"file_id": file_id, "name": meta.name, "size": meta.size},
+    })
+
+    return {
+        "file_id": meta.file_id,
+        "name": meta.name,
+        "content_hash": meta.content_hash,
+        "size": meta.size,
+        "version_count": len(store.get_version_history(file_id)),
+    }
+
+
+@router.get("/files/{file_id}/versions")
+async def get_version_history(
+    file_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Get version history for a file."""
+    meta = store.get_meta(file_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    versions = store.get_version_history(file_id, limit)
+    return {
+        "file_id": file_id,
+        "current_version": len(versions),
+        "versions": [
+            {
+                "version_number": v.version_number,
+                "content_hash": v.content_hash,
+                "size": v.size,
+                "change_summary": v.change_summary,
+                "created_at": v.created_at,
+            }
+            for v in versions
+        ],
+    }
+
+
+@router.get("/files/{file_id}/versions/{version_number}")
+async def get_specific_version(file_id: str, version_number: int):
+    """Get a specific version of a file."""
+    version = store.get_version(file_id, version_number)
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return {
+        "file_id": file_id,
+        "version_number": version.version_number,
+        "content_hash": version.content_hash,
+        "size": version.size,
+        "change_summary": version.change_summary,
+        "created_at": version.created_at,
+    }
+
+
+@router.post("/files/{file_id}/rollback/{version_number}")
+async def rollback_file(file_id: str, version_number: int):
+    """Rollback a file to a specific version."""
+    meta = store.rollback_to_version(file_id, version_number)
+    if not meta:
+        raise HTTPException(status_code=404, detail="File or version not found")
+
+    # Update cache with rolled back content
+    result = store.retrieve(file_id)
+    if result:
+        data, _ = result
+        cache.put(f"file:{file_id}", data)
+
+    push_event({
+        "organ": "vein", "emoji": "🩸", "type": "file_rollback",
+        "summary": f"⏪ File rolled back: {meta.name} → version {version_number}",
+        "detail": {"file_id": file_id, "version_number": version_number},
+    })
+
+    return {
+        "status": "ok",
+        "file_id": file_id,
+        "name": meta.name,
+        "content_hash": meta.content_hash,
+        "size": meta.size,
+        "rolled_back_to": version_number,
+    }
+
+
 # ── Chunked Upload Endpoints ───────────────────────────────
 
 @router.post("/upload/chunked/init")

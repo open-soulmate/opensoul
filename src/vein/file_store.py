@@ -1,7 +1,7 @@
-"""Content-addressable file storage with deduplication.
+"""Content-addressable file storage with deduplication and versioning.
 
 Stores files by SHA-256 hash. Metadata tracked in SQLite.
-Supports streaming reads and atomic writes.
+Supports streaming reads, atomic writes, and file version history.
 """
 
 import hashlib
@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from src.vein.versioning import VersionManager, FileVersion
 
 
 @dataclass
@@ -27,7 +29,7 @@ class FileMeta:
 
 
 class FileStore:
-    """Content-addressable file store with deduplication."""
+    """Content-addressable file store with deduplication and versioning."""
 
     def __init__(self, root: str | None = None, db_path: str | None = None):
         self._root = Path(root or os.path.expanduser("~/opensoul/data/vein/files"))
@@ -37,6 +39,7 @@ class FileStore:
         self._db = sqlite3.connect(db, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._init_db()
+        self._versions = VersionManager(self._db)
 
     def _init_db(self):
         self._db.executescript("""
@@ -64,6 +67,7 @@ class FileStore:
         mime_type: str = "application/octet-stream",
         tags: list[str] | None = None,
         file_id: str | None = None,
+        change_summary: str = "",
     ) -> FileMeta:
         """Store a file with deduplication. Returns metadata."""
         content_hash = hashlib.sha256(data).hexdigest()
@@ -71,6 +75,9 @@ class FileStore:
         now = time.time()
         fid = file_id or hashlib.md5(f"{name}{now}{content_hash[:8]}".encode()).hexdigest()[:16]
         tag_str = ",".join(tags) if tags else ""
+
+        # Check if this is an update to an existing file
+        existing_meta = self.get_meta(fid) if file_id else None
 
         # Dedup: if content hash exists, just increment ref_count
         existing = self._db.execute(
@@ -84,6 +91,11 @@ class FileStore:
                 (fid, name, content_hash, size, mime_type, tag_str, now),
             )
             self._db.commit()
+
+            # Record version if updating existing file with different content
+            if existing_meta and existing_meta.content_hash != content_hash:
+                self._versions.record_version(fid, content_hash, size, change_summary or "File updated")
+
             return FileMeta(fid, name, content_hash, size, mime_type, tag_str, now, 1)
 
         # Store the actual blob
@@ -97,6 +109,11 @@ class FileStore:
             (fid, name, content_hash, size, mime_type, tag_str, now),
         )
         self._db.commit()
+
+        # Record version if updating existing file
+        if existing_meta:
+            self._versions.record_version(fid, content_hash, size, change_summary or "File updated")
+
         return FileMeta(fid, name, content_hash, size, mime_type, tag_str, now, 1)
 
     def retrieve(self, file_id: str) -> tuple[bytes, FileMeta] | None:
@@ -188,7 +205,62 @@ class FileStore:
             "unique_blobs": unique,
             "disk_usage_bytes": disk_usage,
             "dedup_savings_bytes": size - disk_usage if size > disk_usage else 0,
+            "versioning": self._versions.stats(),
         }
+
+    # ── Versioning Operations ────────────────────────────────
+
+    def record_version(
+        self,
+        file_id: str,
+        content_hash: str,
+        size: int,
+        change_summary: str = "",
+    ) -> FileVersion | None:
+        """Record a new version when file content changes."""
+        meta = self.get_meta(file_id)
+        if not meta:
+            return None
+        return self._versions.record_version(file_id, content_hash, size, change_summary)
+
+    def get_version_history(self, file_id: str, limit: int = 50) -> list[FileVersion]:
+        """Get version history for a file."""
+        return self._versions.get_history(file_id, limit)
+
+    def get_version(self, file_id: str, version_number: int) -> FileVersion | None:
+        """Get a specific version of a file."""
+        return self._versions.get_version(file_id, version_number)
+
+    def rollback_to_version(self, file_id: str, version_number: int) -> FileMeta | None:
+        """Rollback a file to a specific version."""
+        version = self._versions.get_version(file_id, version_number)
+        if not version:
+            return None
+
+        meta = self.get_meta(file_id)
+        if not meta:
+            return None
+
+        # Check if the version's content blob exists
+        blob_path = self._blob_path(version.content_hash)
+        if not blob_path.exists():
+            return None
+
+        # Update file metadata to point to the old content
+        now = time.time()
+        self._db.execute(
+            "UPDATE files SET content_hash = ?, size = ?, created_at = ? WHERE file_id = ?",
+            (version.content_hash, version.size, now, file_id),
+        )
+        self._db.commit()
+
+        # Record the rollback as a new version
+        self._versions.record_version(
+            file_id, version.content_hash, version.size,
+            f"Rollback to version {version_number}",
+        )
+
+        return self.get_meta(file_id)
 
     def _blob_path(self, content_hash: str) -> Path:
         # Shard by first 2 chars for filesystem balance
