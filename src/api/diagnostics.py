@@ -39,6 +39,12 @@ _ORGANS = {
     "mcp":       {"label": "🔌 MCP",        "endpoint": "/api/mcp/health",       "category": "system"},
     "learn":     {"label": "📚 Learn",      "endpoint": "/api/learn/health",     "category": "system"},
     "plugins":   {"label": "🔌 Plugins",    "endpoint": "/api/plugins/health",   "category": "system"},
+    # ── Newer organs added post-initial build ──
+    "soma":      {"label": "🤖 Soma",       "endpoint": "/api/soma/health",      "category": "core"},
+    "capture":   {"label": "📸 Capture",    "endpoint": "/api/capture/health",   "category": "platform"},
+    "intelligence":{"label": "🧠 Intelligence","endpoint": "/api/intelligence/health","category": "system"},
+    "events":    {"label": "📡 Events",     "endpoint": "/api/events/health",    "category": "system"},
+    "admin":     {"label": "⚙️ Admin",      "endpoint": "/api/admin/health",     "category": "system"},
 }
 
 
