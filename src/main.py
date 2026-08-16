@@ -80,6 +80,7 @@ from src.api.git_api import router as git_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
+from src.plugin_loader import load_all_plugins
 
 
 async def _intelligence_auto_collect():
@@ -316,6 +317,9 @@ app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(event_stream_router, prefix="/api/events", tags=["event-stream"])
 app.include_router(workspace_router, prefix="/api", tags=["workspace"])
 app.include_router(git_router, prefix="/api/git", tags=["git"])
+
+# Load and mount external plugins from ~/.openmate/plugins/
+load_all_plugins(app)
 
 
 if __name__ == "__main__":
