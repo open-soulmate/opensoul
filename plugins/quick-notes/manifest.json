@@ -1,0 +1,41 @@
+{
+  "id": "quick-notes",
+  "name": "Quick Notes",
+  "version": "1.0.0",
+  "description": "快速笔记插件 — Markdown编辑、标签分类、一键入库知识库",
+  "icon": "StickyNote",
+  "type": "feature",
+  "author": "OpenSoul Team",
+  "sidebar": [
+    {
+      "href": "/plugins/quick-notes",
+      "label": "笔记",
+      "icon": "StickyNote",
+      "group": "插件"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/plugins/quick-notes",
+      "component": "QuickNotesPage"
+    }
+  ],
+  "api_prefix": "/api/plugins/quick-notes",
+  "endpoints": [
+    { "method": "GET", "path": "/notes", "description": "列出所有笔记" },
+    { "method": "POST", "path": "/notes", "description": "创建笔记" },
+    { "method": "GET", "path": "/notes/{id}", "description": "获取笔记详情" },
+    { "method": "PUT", "path": "/notes/{id}", "description": "更新笔记" },
+    { "method": "DELETE", "path": "/notes/{id}", "description": "删除笔记" },
+    { "method": "POST", "path": "/notes/{id}/promote", "description": "推送到知识库" },
+    { "method": "GET", "path": "/tags", "description": "获取所有标签" },
+    { "method": "GET", "path": "/health", "description": "健康检查" }
+  ],
+  "permissions": ["notes.read", "notes.write"],
+  "dependencies": [],
+  "config": {
+    "max_notes": 1000,
+    "auto_save_seconds": 30,
+    "default_tags": ["todo", "idea", "reference"]
+  }
+}
