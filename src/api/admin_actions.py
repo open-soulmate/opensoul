@@ -183,6 +183,13 @@ async def system_overview():
             "hippo": "/api/hippo/stats",
             "immune": "/api/immune/audit/stats",
             "trajectory": "/api/trajectory/stats",
+            "mirror": "/api/mirror/health",
+            "echo": "/api/echo/health",
+            "link": "/api/link/health",
+            "marrow": "/api/marrow/health",
+            "sense": "/api/sense/health",
+            "reflex": "/api/reflex/health",
+            "heredity": "/api/heredity/health",
         }
 
         for name, endpoint in stat_endpoints.items():
@@ -215,6 +222,17 @@ async def export_config():
             "vital": "/api/vital/health",
             "nerve": "/api/nerve/health",
             "immune": "/api/immune/health",
+            "vein": "/api/vein/health",
+            "sense": "/api/sense/health",
+            "marrow": "/api/marrow/health",
+            "echo": "/api/echo/health",
+            "mirror": "/api/mirror/health",
+            "link": "/api/link/health",
+            "hippo": "/api/hippo/health",
+            "reflex": "/api/reflex/health",
+            "heredity": "/api/heredity/health",
+            "will": "/api/will/health",
+            "cortex": "/api/cortex/health",
         }
 
         for name, endpoint in health_endpoints.items():
@@ -244,6 +262,79 @@ async def export_config():
         pass
 
     return config
+
+
+# ── System Report ──────────────────────────────────────────
+
+@router.get("/report")
+async def system_report():
+    """Generate a comprehensive system report with all component statuses, stats, and recent events."""
+    report = {
+        "generated_at": time.time(),
+        "platform": "Open-Soulmate",
+        "version": "1.0.0",
+        "health": {},
+        "components": {},
+        "recent_events": [],
+        "summary": {},
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # 1. Overall health
+        try:
+            res = await client.get(f"{_BASE}/api/health/all")
+            if res.status_code == 200:
+                report["health"] = res.json()
+        except Exception:
+            report["health"] = {"status": "error"}
+
+        # 2. Component details from registry
+        try:
+            res = await client.get(f"{_BASE}/api/registry/components")
+            if res.status_code == 200:
+                report["components"] = res.json()
+        except Exception:
+            pass
+
+        # 3. Recent events
+        try:
+            res = await client.get(f"{_BASE}/api/events/summary")
+            if res.status_code == 200:
+                report["recent_events"] = res.json()
+        except Exception:
+            pass
+
+        # 4. Key stats
+        stats = {}
+        stat_endpoints = {
+            "vein": "/api/vein/stats",
+            "gland": "/api/gland/usage",
+            "gene": "/api/gene/stats",
+            "immune": "/api/immune/audit/stats",
+            "trajectory": "/api/trajectory/stats",
+            "heredity": "/api/heredity/health",
+        }
+        for name, endpoint in stat_endpoints.items():
+            try:
+                res = await client.get(f"{_BASE}{endpoint}")
+                if res.status_code == 200:
+                    stats[name] = res.json()
+            except Exception:
+                pass
+        report["stats"] = stats
+
+    # 5. Summary
+    healthy = int(report["health"].get("healthy", 0) or 0)
+    total = int(report["health"].get("total", 0) or 0)
+    report["summary"] = {
+        "health_status": report["health"].get("status", "unknown"),
+        "healthy_organs": healthy,
+        "total_organs": total,
+        "health_percentage": round(healthy / total * 100, 1) if total > 0 else 0,
+        "total_components": report["components"].get("total", 0),
+    }
+
+    return report
 
 
 # ── Health ──────────────────────────────────────────────────
