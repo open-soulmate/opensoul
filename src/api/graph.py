@@ -9,6 +9,12 @@ from src.services.entity import list_entities, get_entity_with_relations
 router = APIRouter()
 
 
+@router.get("/health")
+async def graph_health():
+    """OpenGraph health check."""
+    return {"status": "ok", "component": "OpenGraph", "module": "knowledge-graph"}
+
+
 def _resolve_user_id(user_id: str) -> UUID:
     """Convert user_id to UUID — accept both UUID strings and plain usernames."""
     try:

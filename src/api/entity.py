@@ -8,6 +8,12 @@ from src.services import entity as entity_service
 router = APIRouter()
 
 
+@router.get("/health")
+async def entity_health():
+    """Entity system health check."""
+    return {"status": "ok", "component": "EntitySystem"}
+
+
 def _resolve_user_id(user_id: str) -> UUID:
     """Convert user_id to UUID — accept both UUID strings and plain usernames."""
     try:

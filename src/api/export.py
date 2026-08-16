@@ -8,6 +8,12 @@ from src.database.postgres import db_pool
 router = APIRouter()
 
 
+@router.get("/health")
+async def export_health():
+    """Export system health check."""
+    return {"status": "ok", "component": "ExportSystem"}
+
+
 @router.get("/json")
 async def export_json(user_id: UUID):
     """Export all user data as JSON."""

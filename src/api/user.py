@@ -9,6 +9,12 @@ from src.services.permission import add_role
 
 router = APIRouter()
 
+
+@router.get("/health")
+async def user_health():
+    """User system health check."""
+    return {"status": "ok", "component": "UserSystem"}
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 
 

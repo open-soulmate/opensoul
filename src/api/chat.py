@@ -12,6 +12,12 @@ from src.services.search import semantic_search
 router = APIRouter()
 
 
+@router.get("/health")
+async def chat_health():
+    """Chat system health check."""
+    return {"status": "ok", "component": "ChatSystem"}
+
+
 class ChatRequest(BaseModel):
     question: str
     top_k: int = 5

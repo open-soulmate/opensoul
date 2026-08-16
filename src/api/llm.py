@@ -8,6 +8,12 @@ from src.config import settings
 router = APIRouter()
 
 
+@router.get("/health")
+async def llm_health():
+    """LLM proxy health check."""
+    return {"status": "ok", "component": "LLMProxy"}
+
+
 class LLMRequest(BaseModel):
     messages: list[dict]
     model: str | None = None
