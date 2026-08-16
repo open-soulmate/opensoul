@@ -166,6 +166,18 @@ async def cleanup_expired():
     return {"cleaned": count}
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def mirror_stats():
+    """Get OpenMirror statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenMirror",
+        **manager.stats(),
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

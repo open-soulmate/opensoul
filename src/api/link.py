@@ -194,6 +194,18 @@ async def get_events(
     return {"events": manager.get_events(connector_id=connector_id, limit=limit)}
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def link_stats():
+    """Get OpenLink statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenLink",
+        **manager.stats(),
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

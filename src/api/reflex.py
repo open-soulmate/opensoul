@@ -35,6 +35,18 @@ class CacheUpdateRequest(BaseModel):
     importance: float | None = None
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def reflex_stats():
+    """Get OpenReflex statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenReflex",
+        "cache": cache.get_stats(),
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")

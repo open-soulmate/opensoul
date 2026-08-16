@@ -268,6 +268,24 @@ async def list_exports():
     return {"exports": migrator.list_exports()}
 
 
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def marrow_stats():
+    """Get OpenMarrow statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenMarrow",
+        "backup": backup_manager.stats(),
+        "scheduler": {
+            "active_schedules": len([s for s in scheduler.list_schedules() if s["enabled"]]),
+            "total_schedules": len(scheduler.list_schedules()),
+            "running": scheduler._running,
+        },
+        "export_dir": str(migrator.export_dir),
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")
