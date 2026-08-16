@@ -235,3 +235,18 @@ async def set_budget(body: BudgetUpdate):
     _ensure_bootstrapped()
     gateway.token_meter.set_budget(body.limit)
     return {"status": "ok", "budget_limit": body.limit or "unlimited"}
+
+
+# ── Stats ──────────────────────────────────────────────────
+
+@router.get("/stats")
+async def gland_stats():
+    """Get OpenGland statistics."""
+    _ensure_bootstrapped()
+    return {
+        "status": "ok",
+        "component": "OpenGland",
+        **gateway.token_meter.summary(),
+        "providers": gateway.list_providers(),
+        "keys": gateway.key_manager.status(),
+    }

@@ -220,3 +220,16 @@ async def immune_health():
             "audit": audit.stats(),
         },
     }
+
+
+@router.get("/stats")
+async def immune_stats():
+    """Get OpenImmune statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenImmune",
+        "rate_limiter": rate_limiter.stats(),
+        "moderator": {"patterns": len(moderator.patterns)},
+        "access_control": ip_control.stats(),
+        "audit": audit.stats(),
+    }

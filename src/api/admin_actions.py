@@ -178,10 +178,10 @@ async def system_overview():
         # Stats from key components
         stat_endpoints = {
             "vein": "/api/vein/stats",
-            "gland": "/api/gland/usage",
+            "gland": "/api/gland/stats",
             "gene": "/api/gene/stats",
             "hippo": "/api/hippo/stats",
-            "immune": "/api/immune/audit/stats",
+            "immune": "/api/immune/stats",
             "trajectory": "/api/trajectory/stats",
             "vital": "/api/vital/stats",
             "vision": "/api/vision/stats",
@@ -199,6 +199,8 @@ async def system_overview():
             "limb": "/api/limb/stats",
             "nest": "/api/nest/stats",
             "pulse": "/api/pulse/stats",
+            "cortex": "/api/cortex/stats",
+            "voice": "/api/voice/stats",
         }
 
         for name, endpoint in stat_endpoints.items():
@@ -317,11 +319,13 @@ async def system_report():
         stats = {}
         stat_endpoints = {
             "vein": "/api/vein/stats",
-            "gland": "/api/gland/usage",
+            "gland": "/api/gland/stats",
             "gene": "/api/gene/stats",
-            "immune": "/api/immune/audit/stats",
+            "immune": "/api/immune/stats",
             "trajectory": "/api/trajectory/stats",
-            "heredity": "/api/heredity/health",
+            "heredity": "/api/heredity/stats",
+            "cortex": "/api/cortex/stats",
+            "voice": "/api/voice/stats",
         }
         for name, endpoint in stat_endpoints.items():
             try:
