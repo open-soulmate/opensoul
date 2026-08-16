@@ -56,6 +56,7 @@ _ORGANS = {
     "search":    {"label": "🔍 Search",      "endpoint": "/api/search/health",    "category": "core"},
     "chat":      {"label": "💬 Chat",        "endpoint": "/api/chat/health",      "category": "core"},
     "pipeline":  {"label": "🔄 Pipeline",    "endpoint": "/api/pipeline/health",  "category": "platform"},
+    "topology":  {"label": "🗺 Topology",    "endpoint": "/api/topology/health",  "category": "system"},
 }
 
 
