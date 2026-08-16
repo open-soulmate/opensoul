@@ -274,3 +274,14 @@ async def voice_health():
         **engine.stats(),
         **profiles.stats(),
     }
+
+
+@router.get("/stats")
+async def voice_stats():
+    """Get OpenVoice statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenVoice",
+        "engine": engine.stats(),
+        "profiles": profiles.stats(),
+    }

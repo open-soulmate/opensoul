@@ -1,11 +1,22 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import time as _time
 
 from src.cortex.task_planner import TaskPlanner
 from src.cortex.multi_agent import MultiAgent
 from src.cortex.chain_of_thought import ChainOfThought
 
 router = APIRouter()
+
+# ── Usage counters ─────────────────────────────────────────
+_usage = {
+    "plan_calls": 0,
+    "agent_calls": 0,
+    "think_calls": 0,
+    "total_calls": 0,
+    "errors": 0,
+    "last_activity": None,
+}
 
 
 @router.get("/health")
@@ -19,6 +30,24 @@ async def cortex_health():
             "multi_agent": "available",
             "chain_of_thought": "available",
         },
+    }
+
+
+@router.get("/stats")
+async def cortex_stats():
+    """Get OpenCortex usage statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenCortex",
+        "modules": {
+            "task_planner": "available",
+            "multi_agent": "available",
+            "chain_of_thought": "available",
+            "graphrag": "available",
+            "recommendation": "available",
+            "quality": "available",
+        },
+        "usage": _usage,
     }
 
 
@@ -41,6 +70,9 @@ async def plan(req: PlanRequest):
     try:
         planner = TaskPlanner()
         tasks = await planner.plan(req.goal)
+        _usage["plan_calls"] += 1
+        _usage["total_calls"] += 1
+        _usage["last_activity"] = _time.time()
         return {
             "goal": req.goal,
             "tasks": [
@@ -54,8 +86,10 @@ async def plan(req: PlanRequest):
             ],
         }
     except ValueError as e:
+        _usage["errors"] += 1
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        _usage["errors"] += 1
         raise HTTPException(status_code=502, detail=f"Planning failed: {e}")
 
 
@@ -65,10 +99,15 @@ async def agent(req: AgentRequest):
     try:
         pipeline = MultiAgent()
         result = await pipeline.run(req.topic)
+        _usage["agent_calls"] += 1
+        _usage["total_calls"] += 1
+        _usage["last_activity"] = _time.time()
         return {"topic": req.topic, **result}
     except ValueError as e:
+        _usage["errors"] += 1
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        _usage["errors"] += 1
         raise HTTPException(status_code=502, detail=f"Agent pipeline failed: {e}")
 
 
@@ -78,8 +117,13 @@ async def think(req: ThinkRequest):
     try:
         cot = ChainOfThought()
         result = await cot.think(req.question, req.context)
+        _usage["think_calls"] += 1
+        _usage["total_calls"] += 1
+        _usage["last_activity"] = _time.time()
         return result
     except ValueError as e:
+        _usage["errors"] += 1
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        _usage["errors"] += 1
         raise HTTPException(status_code=502, detail=f"Reasoning failed: {e}")
