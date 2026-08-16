@@ -1,11 +1,20 @@
-"""System Event Stream — aggregates recent activity from all organs into a unified timeline."""
+"""System Event Stream — aggregates recent activity from all organs into a unified timeline.
+
+Features:
+- Polling endpoint: GET /stream
+- **Real-time SSE**: GET /sse (Server-Sent Events for live push)
+- Event buffer with deduplication
+- Per-organ filtering
+"""
 
 import asyncio
+import json
 import time
 import uuid
 from datetime import datetime, timezone
 from collections import deque
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 import httpx
 
 router = APIRouter()
@@ -13,8 +22,26 @@ router = APIRouter()
 # In-memory event ring buffer (max 1000 events)
 _event_buffer: deque[dict] = deque(maxlen=1000)
 
+# ── SSE subscriber management ──────────────────────────────────
+# Each subscriber is an asyncio.Queue that receives events in real-time
+_sse_subscribers: dict[str, asyncio.Queue] = {}
+_sse_lock = asyncio.Lock()
+
+
+async def _broadcast_event(event: dict) -> None:
+    """Broadcast an event to all SSE subscribers."""
+    dead = []
+    for sid, queue in _sse_subscribers.items():
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            dead.append(sid)
+    for sid in dead:
+        _sse_subscribers.pop(sid, None)
+
+
 def push_event(event: dict) -> None:
-    """Push an event directly into the ring buffer.
+    """Push an event directly into the ring buffer AND broadcast to SSE subscribers.
 
     Called by the event_bridge so organ actions appear in the Activity feed
     without waiting for the next probe cycle.
@@ -23,6 +50,14 @@ def push_event(event: dict) -> None:
     event.setdefault("id", f"evt_{_uuid.uuid4().hex[:12]}")
     event.setdefault("collected_at", time.time())
     _event_buffer.append(event)
+
+    # Schedule broadcast to SSE subscribers (non-blocking)
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_broadcast_event(event))
+    except RuntimeError:
+        pass  # No event loop running (e.g. during tests)
 
 _BASE = "http://127.0.0.1:8090"
 
@@ -724,4 +759,78 @@ async def stream_health():
         "component": "EventStream",
         "buffer_size": len(_event_buffer),
         "probes_configured": len(_PROBES),
+        "sse_subscribers": len(_sse_subscribers),
+    }
+
+
+# ── Server-Sent Events (SSE) ─────────────────────────────────
+
+async def _sse_generator(subscriber_id: str, organ_filter: str | None = None):
+    """Generate SSE events for a connected client."""
+    queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+    _sse_subscribers[subscriber_id] = queue
+
+    try:
+        # Send initial connection event
+        yield f"event: connected\ndata: {json.dumps({'subscriber_id': subscriber_id, 'timestamp': time.time()})}\n\n"
+
+        # Send current buffer as initial state
+        recent = list(_event_buffer)[-20:]
+        if organ_filter:
+            recent = [e for e in recent if e.get("organ") == organ_filter]
+        for ev in recent:
+            yield f"event: message\ndata: {json.dumps(ev, ensure_ascii=False, default=str)}\n\n"
+
+        # Stream live events
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30)
+                if organ_filter and event.get("organ") != organ_filter:
+                    continue
+                yield f"event: message\ndata: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+            except asyncio.TimeoutError:
+                # Send keepalive ping every 30s
+                yield f": keepalive {time.time()}\n\n"
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _sse_subscribers.pop(subscriber_id, None)
+
+
+@router.get("/sse")
+async def sse_stream(
+    organ: str = Query(default=None, description="Filter events by organ name"),
+):
+    """Real-time event stream using Server-Sent Events (SSE).
+
+    Connect to this endpoint to receive live events as they happen.
+    Events are pushed immediately when organs report activity.
+
+    Usage:
+      const es = new EventSource('/api/events/sse');
+      es.addEventListener('message', (e) => console.log(JSON.parse(e.data)));
+      es.addEventListener('connected', (e) => console.log('SSE connected'));
+    """
+    subscriber_id = f"sse_{uuid.uuid4().hex[:8]}"
+    return StreamingResponse(
+        _sse_generator(subscriber_id, organ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # nginx passthrough
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@router.get("/sse/clients")
+async def list_sse_clients():
+    """List active SSE connections."""
+    return {
+        "clients": [
+            {"subscriber_id": sid, "queue_size": q.qsize()}
+            for sid, q in _sse_subscribers.items()
+        ],
+        "total": len(_sse_subscribers),
     }
