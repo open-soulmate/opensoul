@@ -17,6 +17,10 @@ from fastapi import APIRouter, Depends
 from src.api.user import get_current_user
 
 router = APIRouter()
+
+@router.get("/health")
+async def health():
+    return {"status": "ok", "component": "OpenSkills"}
 logger = logging.getLogger(__name__)
 
 # Shared skills directory - all agents read from here
