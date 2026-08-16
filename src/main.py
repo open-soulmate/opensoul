@@ -244,6 +244,12 @@ _ORGAN_HEALTH_ROUTES = [
     ("export", "/api/export/health"),
     ("search", "/api/search/health"),
     ("chat", "/api/chat/health"),
+    ("workspace", "/api/workspace/health"),
+    ("workflow", "/api/workflow/health"),
+    ("collab", "/api/collab/health"),
+    ("marketplace", "/api/marketplace/health"),
+    ("skills", "/api/skills/health"),
+    ("knowledge", "/api/knowledge/health"),
 ]
 
 
