@@ -79,23 +79,39 @@ class FileStore:
         # Check if this is an update to an existing file
         existing_meta = self.get_meta(fid) if file_id else None
 
-        # Dedup: if content hash exists, just increment ref_count
-        existing = self._db.execute(
+        if existing_meta:
+            # UPDATE existing file
+            # Store the new blob if content changed
+            if existing_meta.content_hash != content_hash:
+                blob_path = self._blob_path(content_hash)
+                blob_path.parent.mkdir(parents=True, exist_ok=True)
+                blob_path.write_bytes(data)
+
+                # Record version
+                self._versions.record_version(fid, content_hash, size, change_summary or "File updated")
+
+            # Update the existing record
+            self._db.execute(
+                "UPDATE files SET name = ?, content_hash = ?, size = ?, mime_type = ?, tags = ?, created_at = ? "
+                "WHERE file_id = ?",
+                (name, content_hash, size, mime_type, tag_str, now, fid),
+            )
+            self._db.commit()
+            return FileMeta(fid, name, content_hash, size, mime_type, tag_str, now, 1)
+
+        # NEW file — check for dedup by content hash
+        existing_hash = self._db.execute(
             "SELECT file_id FROM files WHERE content_hash = ?", (content_hash,)
         ).fetchone()
 
-        if existing:
+        if existing_hash:
+            # Content already exists, just add a new reference
             self._db.execute(
                 "INSERT INTO files (file_id, name, content_hash, size, mime_type, tags, created_at, ref_count) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
                 (fid, name, content_hash, size, mime_type, tag_str, now),
             )
             self._db.commit()
-
-            # Record version if updating existing file with different content
-            if existing_meta and existing_meta.content_hash != content_hash:
-                self._versions.record_version(fid, content_hash, size, change_summary or "File updated")
-
             return FileMeta(fid, name, content_hash, size, mime_type, tag_str, now, 1)
 
         # Store the actual blob
@@ -109,11 +125,6 @@ class FileStore:
             (fid, name, content_hash, size, mime_type, tag_str, now),
         )
         self._db.commit()
-
-        # Record version if updating existing file
-        if existing_meta:
-            self._versions.record_version(fid, content_hash, size, change_summary or "File updated")
-
         return FileMeta(fid, name, content_hash, size, mime_type, tag_str, now, 1)
 
     def retrieve(self, file_id: str) -> tuple[bytes, FileMeta] | None:
