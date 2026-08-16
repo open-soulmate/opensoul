@@ -367,6 +367,20 @@ COMPONENT_MANIFESTS = [
         "version": "0.1.0",
         "phase": "四期",
     },
+    {
+        "id": "capture",
+        "name": "OpenCapture",
+        "emoji": "📸",
+        "category": "platform",
+        "layer": "采集接入",
+        "description": "浏览器扩展页面/选中文本采集，支持去重、知识库提升",
+        "api_prefix": "/api/capture",
+        "health_endpoint": "/api/capture/health",
+        "capabilities": ["page-capture", "selection-capture", "dedup", "promote-to-kb"],
+        "dependencies": ["soul"],
+        "version": "0.1.0",
+        "phase": "二期",
+    },
 ]
 
 
