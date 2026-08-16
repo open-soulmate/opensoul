@@ -381,6 +381,20 @@ COMPONENT_MANIFESTS = [
         "version": "0.1.0",
         "phase": "二期",
     },
+    {
+        "id": "pipeline",
+        "name": "OpenPipeline",
+        "emoji": "🔄",
+        "category": "platform",
+        "layer": "智能流水线",
+        "description": "跨组件智能流水线：文件上传→安全扫描→内容提取→知识入库，一键自动化处理",
+        "api_prefix": "/api/pipeline",
+        "health_endpoint": "/api/pipeline/health",
+        "capabilities": ["auto-pipeline", "ocr-pipeline", "asr-pipeline", "text-pipeline", "batch-import"],
+        "dependencies": ["vein", "sense", "immune", "soul"],
+        "version": "0.1.0",
+        "phase": "二期",
+    },
 ]
 
 
