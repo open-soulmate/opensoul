@@ -1,0 +1,24 @@
+{
+  "id": "pomodoro",
+  "name": "Pomodoro Timer",
+  "version": "1.0.0",
+  "description": "番茄工作法计时器 — 专注工作、定时休息、统计分析",
+  "icon": "Timer",
+  "type": "feature",
+  "author": "OpenSoul Team",
+  "sidebar": [
+    {
+      "href": "/plugins/pomodoro",
+      "label": "番茄钟",
+      "icon": "Timer",
+      "group": "插件"
+    }
+  ],
+  "api_prefix": "/api/plugins/pomodoro",
+  "config": {
+    "work_minutes": 25,
+    "short_break_minutes": 5,
+    "long_break_minutes": 15,
+    "long_break_interval": 4
+  }
+}

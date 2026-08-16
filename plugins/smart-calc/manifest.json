@@ -1,0 +1,37 @@
+{
+  "id": "smart-calc",
+  "name": "Smart Calculator",
+  "version": "1.0.0",
+  "description": "智能计算器插件 — 支持数学表达式求解、单位转换、汇率查询",
+  "icon": "Calculator",
+  "type": "feature",
+  "author": "OpenSoul Team",
+  "sidebar": [
+    {
+      "href": "/plugins/smart-calc",
+      "label": "计算器",
+      "icon": "Calculator",
+      "group": "插件"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/plugins/smart-calc",
+      "component": "SmartCalcPage"
+    }
+  ],
+  "api_prefix": "/api/plugins/smart-calc",
+  "endpoints": [
+    { "method": "POST", "path": "/calculate", "description": "数学表达式求解" },
+    { "method": "POST", "path": "/convert", "description": "单位转换" },
+    { "method": "GET", "path": "/history", "description": "计算历史" },
+    { "method": "GET", "path": "/health", "description": "健康检查" }
+  ],
+  "permissions": ["calc.execute"],
+  "dependencies": [],
+  "config": {
+    "precision": 10,
+    "max_history": 100,
+    "enable_currency": false
+  }
+}
