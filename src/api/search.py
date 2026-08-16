@@ -176,13 +176,138 @@ async def _search_courses(query: str, limit: int) -> list[dict]:
         return []
 
 
+async def _search_trajectory(query: str, limit: int) -> list[dict]:
+    """Search trajectory sessions and events."""
+    try:
+        from src.trajectory.store import TrajectoryStore
+        store = TrajectoryStore()
+        query_lower = query.lower()
+        matches = []
+
+        # Search sessions by task description
+        sessions = await store.list_sessions(limit=50)
+        for s in sessions:
+            if query_lower in s.task_description.lower() or query_lower in s.agent_id.lower():
+                matches.append({
+                    "source": "trajectory",
+                    "icon": "📊",
+                    "title": s.task_description or f"Session {s.id[:8]}",
+                    "snippet": f"Agent: {s.agent_id} · Events: {s.total_events} · Tokens: {s.total_tokens}",
+                    "session_id": s.id,
+                    "status": s.status,
+                })
+                if len(matches) >= limit:
+                    break
+
+        # Search events by content
+        if len(matches) < limit:
+            events = await store.search_events(keyword=query, limit=limit - len(matches))
+            for ev in events:
+                matches.append({
+                    "source": "trajectory",
+                    "icon": "📋",
+                    "title": f"[{ev.event_type}] {ev.content[:80]}",
+                    "snippet": f"Agent: {ev.agent_id} · Tokens: {ev.token_usage}",
+                    "session_id": ev.session_id,
+                    "event_id": ev.id,
+                })
+
+        return matches[:limit]
+    except Exception:
+        return []
+
+
+async def _search_cron_jobs(query: str, limit: int) -> list[dict]:
+    """Search cron/scheduled jobs."""
+    try:
+        from src.database.postgres import db_pool
+        query_lower = query.lower()
+        rows = await db_pool.fetch(
+            "SELECT * FROM cron_jobs ORDER BY created_at DESC LIMIT 200"
+        )
+        matches = []
+        for row in rows:
+            d = dict(row)
+            name = (d.get("name") or "").lower()
+            prompt = (d.get("prompt") or "").lower()
+            schedule = (d.get("schedule") or "").lower()
+            if query_lower in name or query_lower in prompt or query_lower in schedule:
+                matches.append({
+                    "source": "cron",
+                    "icon": "⏰",
+                    "title": d.get("name", "Unnamed Job"),
+                    "snippet": f"Schedule: {d.get('schedule', '?')} · {'Enabled' if d.get('enabled') else 'Disabled'}",
+                    "job_id": d.get("id"),
+                    "enabled": d.get("enabled"),
+                })
+                if len(matches) >= limit:
+                    break
+        return matches
+    except Exception:
+        return []
+
+
+async def _search_gene_templates(query: str, limit: int) -> list[dict]:
+    """Search gene templates."""
+    try:
+        from src.gene.templates import TemplateEngine
+        engine = TemplateEngine()
+        query_lower = query.lower()
+        matches = []
+        for tpl in engine.list_templates():
+            name = tpl.get("name", "").lower()
+            desc = tpl.get("description", "").lower()
+            category = tpl.get("category", "").lower()
+            if query_lower in name or query_lower in desc or query_lower in category:
+                matches.append({
+                    "source": "gene",
+                    "icon": "🧬",
+                    "title": tpl.get("name", "Template"),
+                    "snippet": f"{tpl.get('description', '')[:100]} · [{tpl.get('category', '')}]",
+                    "template_id": tpl.get("template_id"),
+                    "category": tpl.get("category"),
+                })
+                if len(matches) >= limit:
+                    break
+        return matches
+    except Exception:
+        return []
+
+
+async def _search_echo_messages(query: str, limit: int) -> list[dict]:
+    """Search echo message history."""
+    try:
+        from src.echo.dispatcher import MessageDispatcher
+        dispatcher = MessageDispatcher()
+        query_lower = query.lower()
+        matches = []
+        for msg in dispatcher.history(limit=200):
+            title = msg.get("title", "").lower()
+            content = msg.get("content", "").lower()
+            channel = msg.get("channel", "").lower()
+            if query_lower in title or query_lower in content or query_lower in channel:
+                matches.append({
+                    "source": "echo",
+                    "icon": "🔊",
+                    "title": msg.get("title", "Message"),
+                    "snippet": f"Channel: {msg.get('channel', '?')} · Status: {msg.get('status', '?')}",
+                    "msg_id": msg.get("msg_id"),
+                    "channel": msg.get("channel"),
+                })
+                if len(matches) >= limit:
+                    break
+        return matches
+    except Exception:
+        return []
+
+
 @router.get("/unified")
 async def unified_search(
     q: str = Query(..., description="Search query"),
-    sources: str = Query("all", description="Comma-separated sources: knowledge,files,events,agents,courses,all"),
+    sources: str = Query("all", description="Comma-separated sources: knowledge,files,events,agents,courses,trajectory,cron,gene,echo,all"),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Unified search across all subsystems: knowledge, files, events, agents, courses.
+    """Unified search across all subsystems: knowledge, files, events, agents, courses, trajectory, cron, gene, echo.
 
     Returns results grouped by source with relevance ranking.
     """
@@ -200,6 +325,14 @@ async def unified_search(
         tasks["agents"] = _search_agents(q, limit)
     if search_all or "courses" in source_list:
         tasks["courses"] = _search_courses(q, limit)
+    if search_all or "trajectory" in source_list:
+        tasks["trajectory"] = _search_trajectory(q, limit)
+    if search_all or "cron" in source_list:
+        tasks["cron"] = _search_cron_jobs(q, limit)
+    if search_all or "gene" in source_list:
+        tasks["gene"] = _search_gene_templates(q, limit)
+    if search_all or "echo" in source_list:
+        tasks["echo"] = _search_echo_messages(q, limit)
 
     # Run all searches in parallel
     results_list = await asyncio.gather(*tasks.values(), return_exceptions=True)
