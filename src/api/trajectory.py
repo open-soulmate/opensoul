@@ -275,3 +275,29 @@ async def list_event_types():
             for et in EventType
         ]
     }
+
+
+# ── Analytics ──────────────────────────────────────────────
+
+@router.get("/analytics/tools")
+async def tool_analytics(limit: int = Query(default=50, ge=1, le=200)):
+    """Get tool usage frequency and success rate analytics."""
+    return await trajectory_store.get_tool_analytics(limit=limit)
+
+
+@router.get("/analytics/agents")
+async def agent_analytics(limit: int = Query(default=50, ge=1, le=200)):
+    """Get per-agent performance analytics."""
+    return await trajectory_store.get_agent_analytics(limit=limit)
+
+
+@router.get("/analytics/event-types")
+async def event_type_analytics():
+    """Get event type distribution analytics."""
+    return await trajectory_store.get_event_type_analytics()
+
+
+@router.get("/analytics/tokens")
+async def token_analytics(days: int = Query(default=30, ge=1, le=365)):
+    """Get token usage over time (daily breakdown)."""
+    return await trajectory_store.get_token_analytics(days=days)

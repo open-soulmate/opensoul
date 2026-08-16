@@ -339,6 +339,146 @@ class TrajectoryStore:
             "total_tokens": tokens["total"] if tokens else 0,
         }
 
+    # ── Analytics ──────────────────────────────────────────────
+
+    async def get_tool_analytics(self, limit: int = 50) -> dict:
+        """Get tool usage frequency and success rate analytics."""
+        await self.ensure_tables()
+
+        # Tool usage frequency
+        tool_rows = await db_pool.fetch("""
+            SELECT
+                COALESCE(json_extract(metadata_json, '$.tool_name'), 'unknown') as tool_name,
+                COUNT(*) as usage_count,
+                SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+                AVG(duration_ms) as avg_duration_ms,
+                SUM(token_usage) as total_tokens
+            FROM trajectory_events
+            WHERE event_type IN ('tool_call', 'tool_result')
+            GROUP BY tool_name
+            ORDER BY usage_count DESC
+            LIMIT ?
+        """, limit)
+
+        tools = []
+        for row in tool_rows:
+            usage = row["usage_count"] or 0
+            success = row["success_count"] or 0
+            tools.append({
+                "tool_name": row["tool_name"],
+                "usage_count": usage,
+                "success_count": success,
+                "error_count": row["error_count"] or 0,
+                "success_rate": round(success / usage * 100, 1) if usage > 0 else 0,
+                "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
+                "total_tokens": row["total_tokens"] or 0,
+            })
+
+        return {"tools": tools, "total_tools": len(tools)}
+
+    async def get_agent_analytics(self, limit: int = 50) -> dict:
+        """Get per-agent performance analytics."""
+        await self.ensure_tables()
+
+        agent_rows = await db_pool.fetch("""
+            SELECT
+                agent_id,
+                COUNT(*) as event_count,
+                SUM(token_usage) as total_tokens,
+                SUM(duration_ms) as total_duration_ms,
+                AVG(duration_ms) as avg_duration_ms,
+                SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count
+            FROM trajectory_events
+            WHERE agent_id != ''
+            GROUP BY agent_id
+            ORDER BY event_count DESC
+            LIMIT ?
+        """, limit)
+
+        agents = []
+        for row in agent_rows:
+            events = row["event_count"] or 0
+            success = row["success_count"] or 0
+            agents.append({
+                "agent_id": row["agent_id"],
+                "event_count": events,
+                "total_tokens": row["total_tokens"] or 0,
+                "total_duration_ms": round(row["total_duration_ms"] or 0, 1),
+                "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
+                "success_count": success,
+                "error_count": row["error_count"] or 0,
+                "success_rate": round(success / events * 100, 1) if events > 0 else 0,
+            })
+
+        return {"agents": agents, "total_agents": len(agents)}
+
+    async def get_event_type_analytics(self) -> dict:
+        """Get event type distribution analytics."""
+        await self.ensure_tables()
+
+        type_rows = await db_pool.fetch("""
+            SELECT
+                event_type,
+                COUNT(*) as count,
+                SUM(token_usage) as total_tokens,
+                AVG(duration_ms) as avg_duration_ms
+            FROM trajectory_events
+            GROUP BY event_type
+            ORDER BY count DESC
+        """)
+
+        types = []
+        for row in type_rows:
+            types.append({
+                "event_type": row["event_type"],
+                "count": row["count"] or 0,
+                "total_tokens": row["total_tokens"] or 0,
+                "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
+            })
+
+        return {"event_types": types}
+
+    async def get_token_analytics(self, days: int = 30) -> dict:
+        """Get token usage over time (daily breakdown)."""
+        await self.ensure_tables()
+
+        daily_rows = await db_pool.fetch("""
+            SELECT
+                DATE(created_at) as day,
+                SUM(token_usage) as tokens,
+                COUNT(*) as events
+            FROM trajectory_events
+            WHERE created_at >= datetime('now', ?)
+            GROUP BY DATE(created_at)
+            ORDER BY day DESC
+            LIMIT ?
+        """, f"-{days} days", days)
+
+        daily = []
+        for row in daily_rows:
+            daily.append({
+                "day": row["day"],
+                "tokens": row["tokens"] or 0,
+                "events": row["events"] or 0,
+            })
+
+        # Summary
+        total_tokens = sum(d["tokens"] for d in daily)
+        total_events = sum(d["events"] for d in daily)
+        avg_daily = round(total_tokens / len(daily), 0) if daily else 0
+
+        return {
+            "daily": daily,
+            "summary": {
+                "total_tokens": total_tokens,
+                "total_events": total_events,
+                "avg_daily_tokens": avg_daily,
+                "days_tracked": len(daily),
+            },
+        }
+
     # ── Internal helpers ─────────────────────────────────────
 
     def _row_to_session(self, row) -> TrajectorySession:
