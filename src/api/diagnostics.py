@@ -57,6 +57,10 @@ _ORGANS = {
     "chat":      {"label": "💬 Chat",        "endpoint": "/api/chat/health",      "category": "core"},
     "pipeline":  {"label": "🔄 Pipeline",    "endpoint": "/api/pipeline/health",  "category": "platform"},
     "topology":  {"label": "🗺 Topology",    "endpoint": "/api/topology/health",  "category": "system"},
+    "workspace": {"label": "📂 Workspace", "endpoint": "/api/workspace/health", "category": "system"},
+    "workflow":  {"label": "⚙️ Workflow",  "endpoint": "/api/workflow/health",  "category": "system"},
+    "collab":    {"label": "🤝 Collab",    "endpoint": "/api/collab/health",    "category": "system"},
+    "marketplace": {"label": "🛒 Marketplace", "endpoint": "/api/marketplace/health", "category": "system"},
 }
 
 

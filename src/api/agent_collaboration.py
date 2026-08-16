@@ -14,6 +14,10 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+@router.get("/health")
+async def health():
+    return {"status": "ok", "component": "OpenNerve"}
+
 DB_PATH = Path.home() / "opensoul" / "data" / "agent_collaboration.db"
 
 # In-memory WebSocket connection registry

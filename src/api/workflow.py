@@ -9,6 +9,10 @@ from src.middleware.auth import get_current_user, require_role
 
 router = APIRouter()
 
+@router.get("/health")
+async def health():
+    return {"status": "ok", "component": "OpenWorkflow"}
+
 
 # ── Models ─────────────────────────────────────────────────────────────
 

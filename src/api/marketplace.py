@@ -18,6 +18,10 @@ from src.api.user import get_current_user
 DB_PATH = Path("data/opensoul.db")
 
 router = APIRouter()
+
+@router.get("/health")
+async def health():
+    return {"status": "ok", "component": "OpenMarketplace"}
 logger = logging.getLogger(__name__)
 
 # Built-in skill sources

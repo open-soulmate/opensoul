@@ -82,6 +82,7 @@ from src.api.registry import router as registry_router
 from src.api.capture import router as capture_router
 from src.api.pipeline import router as pipeline_router
 from src.api.topology import router as topology_router
+from src.api.workflow import router as workflow_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -339,6 +340,7 @@ app.include_router(git_router, prefix="/api/git", tags=["git"])
 app.include_router(capture_router, prefix="/api/capture", tags=["capture"])
 app.include_router(pipeline_router, prefix="/api/pipeline", tags=["pipeline"])
 app.include_router(topology_router, prefix="/api/topology", tags=["topology"])
+app.include_router(workflow_router, prefix="/api/workflow", tags=["workflow"])
 
 # Load and mount external plugins from ~/.openmate/plugins/
 load_all_plugins(app)

@@ -10,6 +10,10 @@ from src.services.extraction import extract_text_from_file
 
 router = APIRouter()
 
+@router.get("/health")
+async def health():
+    return {"status": "ok", "component": "OpenKnowledge"}
+
 # Supported file types for upload
 SUPPORTED_TYPES = {
     "application/pdf": "pdf",

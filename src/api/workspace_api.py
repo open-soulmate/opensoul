@@ -14,6 +14,10 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+@router.get("/workspace/health")
+async def health():
+    return {"status": "ok", "component": "OpenWorkspace"}
+
 # ── Safety ───────────────────────────────────────────────────────
 ALLOWED_ROOTS = [
     Path.home(),
