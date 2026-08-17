@@ -13,21 +13,106 @@ from fastapi import APIRouter
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# ── Organ registry (subset of most important organs) ──────────
+# ── Organ registry — ALL 25+ organs ──────────────────────────
 _CORE_ORGANS = [
+    # Core brain
     ("soul", "/api/health"),
     ("cortex", "/api/cortex/health"),
+    ("cortex-enhanced", "/api/cortex/enhanced/health"),
+    # Nervous system
     ("nerve", "/api/nerve/health"),
+    # Circulatory
     ("vein", "/api/vein/health"),
+    # Sensory
     ("sense", "/api/sense/health"),
+    # Will / automation
     ("will", "/api/will/health"),
-    ("immune", "/api/immune/health"),
+    # Vital signs
     ("vital", "/api/vital/health"),
+    # Model gateway
     ("gland", "/api/gland/health"),
+    # Security
+    ("immune", "/api/immune/health"),
+    # Backup / disaster recovery
+    ("marrow", "/api/marrow/health"),
+    # Templates
     ("gene", "/api/gene/health"),
+    # Messaging
     ("echo", "/api/echo/health"),
+    # Sandbox
     ("mirror", "/api/mirror/health"),
+    # Integration gateway
     ("link", "/api/link/health"),
+    # Phase 4 organs
+    ("hippo", "/api/hippo/health"),
+    ("reflex", "/api/reflex/health"),
+    ("heredity", "/api/heredity/health"),
+    ("nest", "/api/nest/health"),
+    ("pulse", "/api/pulse/health"),
+    ("limb", "/api/limb/health"),
+    ("voice", "/api/voice/health"),
+    ("vision", "/api/vision/health"),
+    ("mind", "/api/mind/health"),
+    # Intelligence / analytics
+    ("intelligence", "/api/intelligence/health"),
+    # Trajectory tracking
+    ("trajectory", "/api/trajectory/health"),
+    # MCP protocol
+    ("mcp", "/api/mcp/health"),
+    # Learning
+    ("learn", "/api/learn/health"),
+    # Diagnostics
+    ("diagnostics", "/api/diagnostics/health"),
+    # Soma connector
+    ("soma-connector", "/api/soma/health"),
+    # Event stream
+    ("event-stream", "/api/events/health"),
+    # Capture / data ingestion
+    ("capture", "/api/capture/health"),
+    # Pipeline
+    ("pipeline", "/api/pipeline/health"),
+    # Topology
+    ("topology", "/api/topology/health"),
+    # Graph
+    ("graph", "/api/graph/health"),
+    # Entity
+    ("entity", "/api/entity/health"),
+    # Tags
+    ("tag", "/api/tags/health"),
+    # User
+    ("user", "/api/user/health"),
+    # LLM
+    ("llm", "/api/llm/health"),
+    # Agent
+    ("agent", "/api/agent/health"),
+    # Export
+    ("export", "/api/export/health"),
+    # Search
+    ("search", "/api/search/health"),
+    # Chat
+    ("chat", "/api/chat/health"),
+    # Workspace
+    ("workspace", "/api/workspace/health"),
+    # Workflow
+    ("workflow", "/api/workflow/health"),
+    # Collaboration
+    ("collab", "/api/collab/health"),
+    # Marketplace
+    ("marketplace", "/api/marketplace/health"),
+    # Skills
+    ("skills", "/api/skills/health"),
+    # Notifications
+    ("notifications", "/api/notifications/health"),
+    # Knowledge
+    ("knowledge", "/api/knowledge/health"),
+    # Healer
+    ("healer", "/api/healer/health"),
+    # Timeline
+    ("timeline", "/api/timeline/health"),
+    # Benchmark
+    ("benchmark", "/api/benchmark/health"),
+    # System overview
+    ("system-overview", "/api/system/health"),
 ]
 
 
@@ -37,7 +122,7 @@ async def _check_organs() -> dict:
     base = "http://127.0.0.1:8090"
     results = {}
 
-    async with httpx.AsyncClient(timeout=3.0) as client:
+    async with httpx.AsyncClient(timeout=5.0) as client:
         async def _check(name: str, path: str):
             try:
                 r = await client.get(f"{base}{path}")
