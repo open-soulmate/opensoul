@@ -1,9 +1,17 @@
-"""Metrics collector — 系统 / 应用 / 业务指标采集。"""
+"""Metrics collector — 系统 / 应用 / 业务指标采集。
+
+Features:
+- Periodic system/app/biz metric collection (default 10s)
+- Ring-buffer history (default 720 entries ≈ 2 hours @ 10s interval)
+- Time-series query: GET /api/vital/history?minutes=60
+"""
 
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from collections import deque
+from dataclasses import dataclass, field, asdict
+from typing import Any
 
 import psutil
 
@@ -48,9 +56,9 @@ class MetricsSnapshot:
 
 
 class MetricsCollector:
-    """定时采集系统 / 应用 / 业务指标。"""
+    """定时采集系统 / 应用 / 业务指标，带历史环形缓冲。"""
 
-    def __init__(self, interval: float = 10.0) -> None:
+    def __init__(self, interval: float = 10.0, history_max: int = 720) -> None:
         self._interval = interval
         self._snapshot = MetricsSnapshot()
         self._task: asyncio.Task | None = None
@@ -60,6 +68,9 @@ class MetricsCollector:
         self._error_count = 0
         self._latencies: list[float] = []
         self._window_start = time.monotonic()
+
+        # Ring-buffer history (default 720 entries ≈ 2 hours @ 10s)
+        self._history: deque[dict[str, Any]] = deque(maxlen=history_max)
 
     @property
     def snapshot(self) -> MetricsSnapshot:
@@ -92,9 +103,49 @@ class MetricsCollector:
         while True:
             try:
                 self._snapshot = await self._collect()
+                self._record_history()
             except Exception:
                 logger.exception("Failed to collect metrics")
             await asyncio.sleep(self._interval)
+
+    def _record_history(self) -> None:
+        """Append current snapshot to the ring buffer."""
+        snap = self._snapshot
+        entry = {
+            "ts": snap.ts,
+            "cpu": round(snap.system.cpu_percent, 1),
+            "mem": round(snap.system.memory_percent, 1),
+            "mem_mb": round(snap.system.memory_used_mb, 0),
+            "disk": round(snap.system.disk_percent, 1),
+            "qps": round(snap.app.request_qps, 2),
+            "p99": round(snap.app.latency_p99_ms, 1),
+            "err_rate": round(snap.app.error_rate, 4),
+            "requests": snap.app.total_requests,
+            "errors": snap.app.total_errors,
+            "knowledge": snap.biz.knowledge_entries,
+        }
+        self._history.append(entry)
+
+    def get_history(self, minutes: int = 60) -> list[dict[str, Any]]:
+        """Return history entries within the last N minutes."""
+        cutoff = time.time() - (minutes * 60)
+        return [e for e in self._history if e["ts"] >= cutoff]
+
+    def get_history_summary(self) -> dict[str, Any]:
+        """Return aggregated summary of recent history."""
+        if not self._history:
+            return {"entries": 0}
+        recent = list(self._history)
+        cpus = [e["cpu"] for e in recent]
+        mems = [e["mem"] for e in recent]
+        qps_list = [e["qps"] for e in recent]
+        return {
+            "entries": len(recent),
+            "span_minutes": round((recent[-1]["ts"] - recent[0]["ts"]) / 60, 1) if len(recent) > 1 else 0,
+            "cpu": {"min": min(cpus), "max": max(cpus), "avg": round(sum(cpus) / len(cpus), 1)},
+            "memory": {"min": min(mems), "max": max(mems), "avg": round(sum(mems) / len(mems), 1)},
+            "qps": {"min": min(qps_list), "max": max(qps_list), "avg": round(sum(qps_list) / len(qps_list), 2)},
+        }
 
     async def _collect(self) -> MetricsSnapshot:
         snap = MetricsSnapshot()
