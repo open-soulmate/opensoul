@@ -78,6 +78,21 @@ async def create_backup(req: BackupCreateRequest):
         "summary": f"💾 Backup created: {manifest.name} ({manifest.file_count} files)",
         "detail": {"backup_id": manifest.backup_id, "name": manifest.name, "file_count": manifest.file_count},
     })
+    # Push notification for backup completion
+    try:
+        from src.api.notifications import push_notification
+        push_notification(
+            source="marrow",
+            title=f"💾 Backup Complete: {manifest.name}",
+            body=f"{manifest.file_count} files, {manifest.size_bytes} bytes",
+            level="success",
+            organ="marrow",
+            emoji="🦴",
+            action_url="/marrow",
+            metadata={"backup_id": manifest.backup_id, "file_count": manifest.file_count, "size_bytes": manifest.size_bytes},
+        )
+    except Exception:
+        pass
 
     return {
         "backup_id": manifest.backup_id,

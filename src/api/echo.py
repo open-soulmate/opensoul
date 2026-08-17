@@ -112,6 +112,109 @@ async def list_channels():
     return {"channels": dispatcher.list_channels()}
 
 
+# ── Channel Health Monitoring ────────────────────────────────
+
+import time as _time
+import urllib.request
+import urllib.error
+
+_channel_health: dict[str, dict] = {}
+
+
+def _test_channel_health(channel: str, config: dict) -> dict:
+    """Test if a channel endpoint is reachable."""
+    start = _time.time()
+    result = {
+        "channel": channel,
+        "status": "unknown",
+        "latency_ms": 0,
+        "last_check": _time.time(),
+        "error": "",
+    }
+    try:
+        if channel == "console":
+            result["status"] = "ok"
+            result["latency_ms"] = 0.1
+            return result
+
+        endpoint = config.get("endpoint", "")
+        if not endpoint:
+            result["status"] = "unconfigured"
+            result["error"] = "No endpoint configured"
+            return result
+
+        # For webhook-based channels, try a HEAD/GET to the endpoint
+        if channel in ("webhook", "dingtalk", "feishu", "wechat_work"):
+            req = urllib.request.Request(endpoint, method="HEAD")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result["status"] = "ok"
+        elif channel == "telegram":
+            token = config.get("token", "")
+            if token:
+                url = f"https://api.telegram.org/bot{token}/getMe"
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    result["status"] = "ok"
+            else:
+                result["status"] = "unconfigured"
+                result["error"] = "No bot token"
+        elif channel == "email":
+            import smtplib
+            smtp_host = config.get("endpoint", "")
+            port = int(config.get("extra", {}).get("smtp_port", 587))
+            if smtp_host:
+                with smtplib.SMTP(smtp_host, port, timeout=5) as server:
+                    result["status"] = "ok"
+            else:
+                result["status"] = "unconfigured"
+        else:
+            result["status"] = "ok"
+            result["error"] = "No health check for this channel type"
+
+        result["latency_ms"] = round((_time.time() - start) * 1000, 1)
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = str(e)[:200]
+        result["latency_ms"] = round((_time.time() - start) * 1000, 1)
+    return result
+
+
+@router.get("/channels/health")
+async def channels_health():
+    """Test health of all configured channels."""
+    global _channel_health
+    results = []
+    for ch_info in dispatcher.list_channels():
+        ch_name = ch_info["channel"]
+        # Get full config from dispatcher
+        config = {
+            "endpoint": ch_info.get("has_endpoint", False),
+            "token": ch_info.get("has_token", False),
+            "enabled": ch_info.get("enabled", False),
+        }
+        # Get actual config from dispatcher internals
+        for _ch, _cfg in dispatcher._channels.items():
+            if _ch.value == ch_name:
+                config = {
+                    "endpoint": _cfg.endpoint,
+                    "token": _cfg.token,
+                    "enabled": _cfg.enabled,
+                    "extra": _cfg.extra,
+                }
+                break
+
+        health = _test_channel_health(ch_name, config)
+        results.append(health)
+        _channel_health[ch_name] = health
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    return {
+        "status": "ok" if ok_count == len(results) else "degraded",
+        "channels": results,
+        "healthy": ok_count,
+        "total": len(results),
+    }
+
+
 # ── History ────────────────────────────────────────────────
 
 @router.get("/history")
@@ -146,12 +249,28 @@ async def echo_stats():
 
 @router.get("/health")
 async def echo_health():
-    """OpenEcho health check."""
+    """OpenEcho health check — includes channel connectivity status."""
+    # Quick channel health check
+    ch_health = {"ok": 0, "total": 0, "degraded": []}
+    for ch_info in dispatcher.list_channels():
+        ch_health["total"] += 1
+        if ch_info["enabled"]:
+            if ch_info["channel"] == "console":
+                ch_health["ok"] += 1
+            elif ch_info["has_endpoint"]:
+                ch_health["ok"] += 1  # assume ok until tested
+            else:
+                ch_health["degraded"].append(ch_info["channel"])
+        else:
+            ch_health["degraded"].append(ch_info["channel"])
+
+    overall = "ok" if ch_health["ok"] == ch_health["total"] else "degraded"
     return {
-        "status": "ok",
+        "status": overall,
         "component": "OpenEcho",
         **dispatcher.stats(),
         "templates": template_engine.stats(),
+        "channel_health": ch_health,
     }
 
 
