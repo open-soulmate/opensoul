@@ -36,6 +36,7 @@ _TOPOLOGY_NODES = [
     {"id": "mind",       "name": "OpenMind",       "category": "organ",     "layer": "人格调节层",   "emoji": "💭", "endpoint": "/api/mind/health"},
     {"id": "capture",    "name": "OpenCapture",    "category": "service",   "layer": "浏览器采集",   "emoji": "📸", "endpoint": "/api/capture/health"},
     {"id": "pipeline",   "name": "OpenPipeline",   "category": "service",   "layer": "跨组件流水线", "emoji": "🔀", "endpoint": "/api/pipeline/health"},
+    {"id": "healer",     "name": "OpenHealer",     "category": "system",    "layer": "自愈系统",     "emoji": "💊", "endpoint": "/api/healer/health"},
     {"id": "intelligence","name": "OpenIntelligence","category": "system",  "layer": "智能分析",     "emoji": "🔍", "endpoint": "/api/intelligence/health"},
     {"id": "trajectory", "name": "OpenTrajectory", "category": "system",    "layer": "全链路追踪",   "emoji": "📈", "endpoint": "/api/trajectory/health"},
 ]
@@ -48,6 +49,7 @@ _EDGES = [
     ("nerve", "link"), ("nerve", "limb"), ("nerve", "will"),
     ("gland", "sense"), ("gland", "will"), ("gland", "reflex"), ("gland", "mind"),
     ("vein", "pipeline"), ("sense", "pipeline"), ("immune", "pipeline"), ("soul", "pipeline"),
+    ("healer", "nerve"), ("healer", "echo"), ("healer", "immune"),
 ]
 
 

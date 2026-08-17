@@ -62,6 +62,7 @@ _ORGANS = {
     "collab":    {"label": "🤝 Collab",    "endpoint": "/api/collab/health",    "category": "system"},
     "marketplace": {"label": "🛒 Marketplace", "endpoint": "/api/marketplace/health", "category": "system"},
     "notifications": {"label": "🔔 Notifications", "endpoint": "/api/notifications/health", "category": "system"},
+    "healer":      {"label": "💊 Healer",      "endpoint": "/api/healer/health",     "category": "system"},
 }
 
 

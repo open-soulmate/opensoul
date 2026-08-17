@@ -395,6 +395,20 @@ COMPONENT_MANIFESTS = [
         "version": "0.1.0",
         "phase": "二期",
     },
+    {
+        "id": "healer",
+        "name": "OpenHealer",
+        "emoji": "💊",
+        "category": "system",
+        "layer": "自愈系统",
+        "description": "器官自动诊断、故障归因、自我修复、告警通知",
+        "api_prefix": "/api/healer",
+        "health_endpoint": "/api/healer/health",
+        "capabilities": ["auto-diagnosis", "self-healing", "failure-attribution", "recovery", "notification"],
+        "dependencies": ["nerve", "echo"],
+        "version": "0.1.0",
+        "phase": "二期",
+    },
 ]
 
 
