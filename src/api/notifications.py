@@ -66,7 +66,7 @@ def _seed_from_events():
     """Pull recent events from the event buffer and convert to notifications."""
     try:
         from src.api.event_stream import _event_buffer
-        for evt in list(_event_buffer)[:20]:
+        for evt in list(_event_buffer)[:30]:
             organ = evt.get("organ", "system")
             emoji = evt.get("emoji", "🔔")
             summary = evt.get("summary", "")
@@ -78,11 +78,19 @@ def _seed_from_events():
             evt_id = evt.get("id", "")
             if evt_id in existing_ids:
                 continue
+            # Map event types to notification levels
+            level = "info"
+            if evt_type in ("error", "alert", "content_blocked", "ip_blacklisted", "component_error"):
+                level = "error"
+            elif evt_type in ("warning", "rate_limited"):
+                level = "warning"
+            elif evt_type in ("backup_created", "file_uploaded", "component_registered"):
+                level = "success"
             _add_notification(
                 source="event_stream",
                 title=f"{emoji} {organ.upper()}",
                 body=summary,
-                level="info" if evt_type != "error" else "error",
+                level=level,
                 organ=organ,
                 emoji=emoji,
                 action_url=f"/{organ}",
@@ -90,6 +98,42 @@ def _seed_from_events():
             )
     except Exception:
         pass
+
+
+def _seed_from_vital():
+    """Pull recent vital alerts and convert to notifications."""
+    try:
+        from src.vital.alert import AlertManager
+        # Try to get alerts from the alert manager
+        from src.vital.collector import MetricsCollector
+        collector = MetricsCollector()
+        checker = __import__("src.vital.health", fromlist=["HealthChecker"]).HealthChecker()
+        # Check component health
+        results = checker.check_all()
+        for comp in results:
+            if comp.get("status") == "error":
+                name = comp.get("name", "unknown")
+                existing_titles = {n.get("title") for n in _notifications}
+                title = f"⚠️ VITAL: {name} 健康检查失败"
+                if title not in existing_titles:
+                    _add_notification(
+                        source="vital",
+                        title=title,
+                        body=f"组件 {name} 健康检查返回错误状态",
+                        level="error",
+                        organ="vital",
+                        emoji="📊",
+                        action_url="/vital",
+                        metadata={"component": name, "check_type": "health"},
+                    )
+    except Exception:
+        pass
+
+
+def _seed_all():
+    """Seed notifications from all sources."""
+    _seed_from_events()
+    _seed_from_vital()
 
 
 # ── API Endpoints ─────────────────────────────────────────────
@@ -104,7 +148,7 @@ async def get_recent_notifications(
     """Get recent notifications, optionally filtered."""
     # Seed from events on first call
     if not _notifications:
-        _seed_from_events()
+        _seed_all()
 
     results = _notifications
     if unread_only:
