@@ -89,6 +89,30 @@ async def emit(
             # push_event may not exist yet — that's fine
             pass
 
+        # 3) Push to Notification Center
+        try:
+            from src.api.notifications import push_notification
+            # Only notify for important events (errors, warnings, key actions)
+            level = "info"
+            if event_type in ("error", "alert", "failure"):
+                level = "error"
+            elif event_type in ("warning", "degraded"):
+                level = "warning"
+            elif event_type in ("completed", "success", "uploaded"):
+                level = "success"
+            push_notification(
+                source="event_bridge",
+                title=f"{emoji} {organ.upper()}",
+                body=summary,
+                level=level,
+                organ=organ,
+                emoji=emoji,
+                action_url=f"/{organ}",
+                metadata={"event_type": event_type, "detail": detail},
+            )
+        except (ImportError, AttributeError):
+            pass
+
     finally:
         if own_client:
             await _client.aclose()
