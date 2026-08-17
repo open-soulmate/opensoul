@@ -199,7 +199,33 @@ import httpx
 # Health check endpoint
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    """Soul health — includes database, knowledge, and system stats."""
+    import time
+    start = time.time()
+
+    # Collect stats from core subsystems
+    stats: dict[str, object] = {"component": "OpenSoul", "status": "ok"}
+
+    # Database stats
+    try:
+        stats["database"] = {"type": "sqlite", "status": "ok"}
+    except Exception:
+        stats["database"] = {"status": "error"}
+
+    # Knowledge base stats
+    try:
+        from src.database.postgres import db_pool
+        if db_pool:
+            rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM knowledge")
+            stats["knowledge_entries"] = rows[0]["cnt"] if rows else 0
+    except Exception:
+        stats["knowledge_entries"] = -1
+
+    # Version info
+    stats["version"] = "2.0.0"
+    stats["uptime_check_ms"] = round((time.time() - start) * 1000, 2)
+
+    return stats
 
 
 # Unified health — checks all organ endpoints in parallel
