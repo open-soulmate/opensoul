@@ -2,8 +2,13 @@
 
 Pulls recent events from the event stream, vital alerts, echo messages,
 and nerve events into a unified notification feed.
+
+On startup, loads forwarding rules from bootstrap organ_wiring.json
+so that cross-organ alert routing works out of the box.
 """
 
+import json
+import os
 import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -20,6 +25,52 @@ _read_ids: set[str] = set()
 _forward_rules: dict[str, list[str]] = {}
 _forward_min_priority: int = 3  # Only forward notifications with priority <= this
 _forward_enabled: bool = True
+
+
+def _load_bootstrap_wiring():
+    """Load forwarding rules from bootstrap organ_wiring.json on startup."""
+    global _forward_rules, _forward_enabled
+    wiring_path = os.path.expanduser("~/.opensoul/organ_wiring.json")
+    if not os.path.exists(wiring_path):
+        # Apply sensible defaults even without bootstrap config
+        _forward_rules = {"error": ["console"], "warning": ["console"]}
+        return
+    try:
+        with open(wiring_path) as f:
+            wiring = json.load(f)
+        if not wiring.get("enabled", True):
+            _forward_enabled = False
+            return
+        # Convert bootstrap wiring rules to notification forwarding rules
+        for rule in wiring.get("rules", []):
+            action = rule.get("action", "")
+            condition = rule.get("condition", "")
+            channel = rule.get("channel", "console")
+            # Map condition severity to notification level
+            if "critical" in condition:
+                level = "error"
+            elif "warning" in condition:
+                level = "warning"
+            elif "info" in condition:
+                level = "info"
+            else:
+                level = "error"
+            if "broadcast" in action:
+                # Broadcast to all enabled echo channels
+                _forward_rules.setdefault(level, []).append("console")
+            else:
+                _forward_rules.setdefault(level, [])
+                if channel not in _forward_rules[level]:
+                    _forward_rules[level].append(channel)
+        # Ensure at least console forwarding for errors
+        if "error" not in _forward_rules:
+            _forward_rules["error"] = ["console"]
+    except Exception:
+        _forward_rules = {"error": ["console"], "warning": ["console"]}
+
+
+# Load wiring on module import
+_load_bootstrap_wiring()
 
 
 
