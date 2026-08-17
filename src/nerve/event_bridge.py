@@ -89,6 +89,24 @@ async def emit(
             # push_event may not exist yet — that's fine
             pass
 
+        # 2b) Record to persistent timeline
+        try:
+            from src.timeline.store import TimelineStore
+            if not hasattr(emit, "_timeline"):
+                emit._timeline = TimelineStore()  # type: ignore[attr-defined]
+            emit._timeline.record({
+                "id": f"evt_{int(time.time()*1000)}_{organ}_{event_type}",
+                "organ": organ,
+                "emoji": emoji,
+                "type": event_type,
+                "summary": summary,
+                "detail": detail or {},
+                "timestamp": time.time(),
+                "collected_at": time.time(),
+            })
+        except Exception:
+            pass
+
         # 3) Push to Notification Center
         try:
             from src.api.notifications import push_notification
@@ -132,6 +150,15 @@ def push_event(event: dict[str, Any]) -> None:
         event.setdefault("collected_at", time.time())
         _event_buffer.append(event)
     except ImportError:
+        pass
+
+    # Also record to persistent timeline
+    try:
+        from src.timeline.store import TimelineStore
+        if not hasattr(push_event, "_timeline"):
+            push_event._timeline = TimelineStore()  # type: ignore[attr-defined]
+        push_event._timeline.record(event)  # type: ignore[attr-defined]
+    except Exception:
         pass
 
     # Also publish to Nerve bus (fire-and-forget)
