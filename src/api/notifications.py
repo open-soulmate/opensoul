@@ -5,7 +5,8 @@ and nerve events into a unified notification feed.
 """
 
 import time
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -13,6 +14,13 @@ router = APIRouter()
 _notifications: list[dict] = []
 _MAX_NOTIFICATIONS = 500
 _read_ids: set[str] = set()
+# ── Echo Forwarding Rules ────────────────────────────────────
+# Maps notification levels to echo channels for auto-forwarding.
+# e.g. {"error": ["dingtalk", "telegram"], "warning": ["webhook"]}
+_forward_rules: dict[str, list[str]] = {}
+_forward_min_priority: int = 3  # Only forward notifications with priority <= this
+_forward_enabled: bool = True
+
 
 
 def _add_notification(
@@ -43,7 +51,41 @@ def _add_notification(
     # Trim to max
     while len(_notifications) > _MAX_NOTIFICATIONS:
         _notifications.pop()
+
+    # Auto-forward to Echo channels if rules match
+    _auto_forward_to_echo(notif)
     return notif
+
+
+def _auto_forward_to_echo(notif: dict) -> None:
+    """Forward notification to Echo channels based on forwarding rules."""
+    if not _forward_enabled:
+        return
+    level = notif.get("level", "info")
+    channels = _forward_rules.get(level, [])
+    if not channels:
+        return
+    try:
+        from src.echo.dispatcher import MessageDispatcher, Channel
+        from src.api.echo import dispatcher
+        emoji = notif.get("emoji", "🔔")
+        title = f"{emoji} [{level.upper()}] {notif.get('title', '')}"
+        body = notif.get("body", "")
+        source = notif.get("source", "unknown")
+        content = f"{body}\n\nSource: {source} | Time: {time.strftime('%H:%M:%S')}"
+        for ch_name in channels:
+            try:
+                channel = Channel(ch_name)
+                dispatcher.send(
+                    channel=channel,
+                    title=title,
+                    content=content,
+                    priority=notif.get("metadata", {}).get("priority", 5),
+                )
+            except (ValueError, Exception):
+                pass  # Skip invalid or failed channels
+    except Exception:
+        pass  # Non-fatal — don't break notifications if Echo is down
 
 
 def push_notification(
@@ -202,6 +244,15 @@ async def dismiss_notification(notif_id: str):
     return {"success": len(_notifications) < before}
 
 
+class ForwardRuleRequest(BaseModel):
+    level: str  # "error", "warning", "info", "success"
+    channels: list[str]  # e.g. ["dingtalk", "telegram"]
+
+
+class ForwardNotificationRequest(BaseModel):
+    channel: str  # echo channel to forward to
+
+
 @router.delete("/")
 async def clear_all():
     """Clear all notifications."""
@@ -252,4 +303,96 @@ async def notifications_stats():
         "unread": sum(1 for n in _notifications if not n.get("read")),
         "by_level": levels,
         "by_organ": organs,
+    }
+
+
+# ── Echo Forwarding Endpoints ──────────────────────────────
+
+@router.get("/forward/rules")
+async def get_forward_rules():
+    """Get current notification-to-Echo forwarding rules."""
+    return {
+        "enabled": _forward_enabled,
+        "rules": _forward_rules,
+        "min_priority": _forward_min_priority,
+    }
+
+
+@router.put("/forward/rules")
+async def set_forward_rule(req: ForwardRuleRequest):
+    """Set forwarding rule: which notification level → which Echo channels."""
+    valid_levels = {"info", "warning", "error", "success"}
+    if req.level not in valid_levels:
+        raise HTTPException(400, f"Invalid level. Valid: {valid_levels}")
+    from src.echo.dispatcher import Channel
+    valid_channels = {c.value for c in Channel}
+    for ch in req.channels:
+        if ch not in valid_channels:
+            raise HTTPException(400, f"Invalid channel '{ch}'. Valid: {valid_channels}")
+    _forward_rules[req.level] = req.channels
+    return {"success": True, "level": req.level, "channels": req.channels}
+
+
+@router.delete("/forward/rules/{level}")
+async def delete_forward_rule(level: str):
+    """Remove forwarding rule for a notification level."""
+    removed = _forward_rules.pop(level, None)
+    return {"success": removed is not None, "level": level}
+
+
+@router.put("/forward/enabled")
+async def set_forward_enabled(enabled: bool = Query(...)):
+    """Enable or disable Echo forwarding globally."""
+    global _forward_enabled
+    _forward_enabled = enabled
+    return {"enabled": _forward_enabled}
+
+
+@router.post("/{notif_id}/forward")
+async def forward_notification(notif_id: str, req: ForwardNotificationRequest):
+    """Manually forward a specific notification to an Echo channel."""
+    notif = next((n for n in _notifications if n["id"] == notif_id), None)
+    if not notif:
+        raise HTTPException(404, "Notification not found")
+
+    from src.echo.dispatcher import Channel
+    try:
+        channel = Channel(req.channel)
+    except ValueError:
+        raise HTTPException(400, f"Invalid channel. Valid: {[c.value for c in Channel]}")
+
+    from src.api.echo import dispatcher
+    emoji = notif.get("emoji", "🔔")
+    level = notif.get("level", "info")
+    title = f"{emoji} [{level.upper()}] {notif.get('title', '')}"
+    body = notif.get("body", "")
+    source = notif.get("source", "unknown")
+    content = f"{body}\n\nSource: {source} | Time: {time.strftime('%H:%M:%S')}"
+
+    result = dispatcher.send(channel=channel, title=title, content=content)
+
+    return {
+        "success": result.success,
+        "msg_id": result.msg_id,
+        "channel": result.channel,
+        "error": result.error,
+    }
+
+
+@router.post("/forward/test")
+async def test_forward():
+    """Send a test notification that will be forwarded if rules are configured."""
+    notif = _add_notification(
+        source="forward_test",
+        title="🔔 Echo Forward Test",
+        body="This is a test of the notification → Echo forwarding bridge.",
+        level="error",  # Use error level to trigger forwarding
+        organ="system",
+        emoji="🔔",
+        metadata={"priority": 1},
+    )
+    return {
+        "notification": notif,
+        "forward_rules": _forward_rules,
+        "forward_enabled": _forward_enabled,
     }
