@@ -1,15 +1,17 @@
-"""OpenMirror API — 镜像系统：沙箱测试环境管理。"""
+"""OpenMirror API — 镜像系统：沙箱测试环境管理、沙箱模板。"""
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.mirror.sandbox import SandboxManager
+from src.mirror.templates import SandboxTemplateEngine
 from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
 manager = SandboxManager()
+template_engine = SandboxTemplateEngine()
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -175,6 +177,7 @@ async def mirror_stats():
         "status": "ok",
         "component": "OpenMirror",
         **manager.stats(),
+        "templates": template_engine.stats(),
     }
 
 
@@ -187,4 +190,126 @@ async def mirror_health():
         "status": "ok",
         "component": "OpenMirror",
         **manager.stats(),
+        "templates": template_engine.stats(),
+    }
+
+
+# ── Sandbox Template Schemas ───────────────────────────────
+
+class SandboxTemplateCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    icon: str = "🧪"
+    config: dict = {}
+    variables: dict = {}
+    tags: list[str] = []
+    category: str = "custom"
+
+
+class SandboxFromTemplateRequest(BaseModel):
+    template_id: str
+    name: str = ""  # override name
+    variables: dict = {}  # override variables
+
+
+# ── Sandbox Template Endpoints ─────────────────────────────
+
+@router.get("/templates")
+async def list_sandbox_templates(category: str = Query(default=None)):
+    """List all sandbox templates."""
+    return {"templates": template_engine.list_templates(category=category)}
+
+
+@router.get("/templates/{template_id}")
+async def get_sandbox_template(template_id: str):
+    """Get a specific sandbox template."""
+    tpl = template_engine.get(template_id)
+    if not tpl:
+        raise HTTPException(404, "Template not found")
+    return {
+        "template_id": tpl.template_id,
+        "name": tpl.name,
+        "description": tpl.description,
+        "icon": tpl.icon,
+        "config": tpl.config,
+        "variables": tpl.variables,
+        "tags": tpl.tags,
+        "category": tpl.category,
+        "usage_count": tpl.usage_count,
+        "created_at": tpl.created_at,
+    }
+
+
+@router.post("/templates")
+async def create_sandbox_template(req: SandboxTemplateCreateRequest):
+    """Create a new sandbox template."""
+    tpl = template_engine.create(
+        name=req.name,
+        description=req.description,
+        icon=req.icon,
+        config=req.config,
+        variables=req.variables,
+        tags=req.tags,
+        category=req.category,
+    )
+    push_event({
+        "organ": "mirror", "emoji": "🪞", "type": "sandbox_template_created",
+        "summary": f"📋 Sandbox template created: {tpl.name}",
+        "detail": {"template_id": tpl.template_id, "name": tpl.name},
+    })
+    return {
+        "template_id": tpl.template_id,
+        "name": tpl.name,
+    }
+
+
+@router.delete("/templates/{template_id}")
+async def delete_sandbox_template(template_id: str):
+    """Delete a sandbox template."""
+    if not template_engine.delete(template_id):
+        raise HTTPException(404, "Template not found")
+    return {"message": "deleted", "template_id": template_id}
+
+
+@router.post("/templates/{template_id}/instantiate")
+async def create_sandbox_from_template(template_id: str, req: SandboxFromTemplateRequest):
+    """Create a sandbox from a template with optional overrides."""
+    instance = template_engine.instantiate(template_id, overrides=req.variables)
+    if not instance:
+        raise HTTPException(404, "Template not found")
+
+    # Override name if provided
+    if req.name:
+        instance["name"] = req.name
+
+    # Create the sandbox
+    sandbox = manager.create(
+        name=instance["name"],
+        description=instance["description"],
+        tags=instance["tags"],
+        config=instance["config"],
+        ttl_seconds=instance["ttl_seconds"],
+    )
+
+    # Set template variables as sandbox variables
+    for k, v in instance["variables"].items():
+        if v:  # only set non-empty values
+            manager.set_variable(sandbox.sandbox_id, k, v)
+
+    push_event({
+        "organ": "mirror", "emoji": "🪞", "type": "sandbox_from_template",
+        "summary": f"🆕 Sandbox created from template: {instance['name']}",
+        "detail": {
+            "sandbox_id": sandbox.sandbox_id,
+            "template_id": template_id,
+            "name": sandbox.name,
+        },
+    })
+
+    return {
+        "sandbox_id": sandbox.sandbox_id,
+        "name": sandbox.name,
+        "status": sandbox.status,
+        "template_id": template_id,
+        "variables": instance["variables"],
     }
