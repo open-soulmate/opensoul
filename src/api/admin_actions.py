@@ -209,6 +209,7 @@ async def system_overview():
             "search": "/api/search/stats",
             "capture": "/api/capture/stats",
             "workflow": "/api/workflow/stats",
+            "healer": "/api/healer/stats",
         }
 
         for name, endpoint in stat_endpoints.items():
