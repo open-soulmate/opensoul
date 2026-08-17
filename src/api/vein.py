@@ -679,6 +679,131 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
     }
 
 
+class BatchAutoProcessRequest(BaseModel):
+    user_id: str = "default"
+    language: str | None = None
+    auto_promote: bool = True
+    mime_filter: list[str] | None = None  # e.g. ["image/", "application/pdf"] to only process images and PDFs
+    limit: int = 50
+
+
+@router.post("/auto-process/batch")
+async def batch_auto_process(req: BatchAutoProcessRequest):
+    """Batch auto-process all eligible files through Sense (OCR/ASR).
+
+    Processes files that match the mime_filter criteria.
+    Returns summary of all processing results.
+    """
+    # Get all files
+    all_files = store.list_files(limit=req.limit, offset=0)
+
+    # Filter by mime type if specified
+    eligible = []
+    for f in all_files:
+        if req.mime_filter:
+            if any(f.mime_type.lower().startswith(prefix) for prefix in req.mime_filter):
+                eligible.append(f)
+        else:
+            # Default: process images, PDFs, and audio
+            mime = f.mime_type.lower()
+            if (mime.startswith("image/") or mime == "application/pdf" or
+                mime.startswith("audio/")):
+                eligible.append(f)
+
+    results = []
+    for f in eligible:
+        try:
+            # Retrieve file content
+            file_result = store.retrieve(f.file_id)
+            if not file_result:
+                results.append({"file_id": f.file_id, "filename": f.name, "status": "error", "error": "File content not found"})
+                continue
+
+            data, _meta = file_result
+            mime = f.mime_type.lower()
+            filename = f.name.lower()
+
+            extracted_text = ""
+            engine_used = "none"
+            processing_type = "unknown"
+
+            if mime.startswith("image/"):
+                from src.sense.ocr import OCREngine
+                ocr = OCREngine()
+                ocr_result = ocr.image_to_text(data, lang=req.language)
+                extracted_text = ocr_result.text
+                engine_used = ocr_result.engine
+                processing_type = "ocr"
+            elif mime == "application/pdf":
+                from src.sense.ocr import OCREngine
+                ocr = OCREngine()
+                ocr_result = await ocr.smart_pdf_to_text(data, language=req.language, max_pages=20)
+                extracted_text = ocr_result.text
+                engine_used = ocr_result.engine
+                processing_type = "pdf_ocr"
+            elif mime.startswith("audio/"):
+                from src.sense.asr import ASREngine
+                asr = ASREngine()
+                fmt = "wav"
+                if "mp3" in mime or "mpeg" in mime: fmt = "mp3"
+                elif "ogg" in mime: fmt = "ogg"
+                elif "flac" in mime: fmt = "flac"
+                asr_result = await asr.transcribe_async(data, language=req.language, format=fmt)
+                extracted_text = asr_result.text
+                engine_used = asr_result.engine
+                processing_type = "asr"
+
+            promoted = False
+            if req.auto_promote and extracted_text.strip():
+                try:
+                    import json
+                    import time as _time
+                    from src.database.postgres import db_pool
+                    tags = ["auto-processed", "batch", processing_type]
+                    await db_pool.execute(
+                        """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
+                           VALUES ($1, $2, $3, $4, $5, $5)""",
+                        req.user_id,
+                        f"[{processing_type.upper()}] {f.name}",
+                        extracted_text[:100000],
+                        json.dumps(tags),
+                        _time.time(),
+                    )
+                    promoted = True
+                except Exception:
+                    pass
+
+            results.append({
+                "file_id": f.file_id,
+                "filename": f.name,
+                "status": "ok",
+                "processing_type": processing_type,
+                "engine": engine_used,
+                "text_length": len(extracted_text),
+                "promoted": promoted,
+            })
+        except Exception as e:
+            results.append({"file_id": f.file_id, "filename": f.name, "status": "error", "error": str(e)})
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    promoted_count = sum(1 for r in results if r.get("promoted"))
+
+    push_event({
+        "organ": "vein", "emoji": "🩸", "type": "batch_auto_processed",
+        "summary": f"🔍 Batch auto-processed: {ok_count}/{len(results)} files",
+        "detail": {"total": len(results), "ok": ok_count, "promoted": promoted_count},
+    })
+
+    return {
+        "status": "ok",
+        "total_files": len(all_files),
+        "eligible_files": len(eligible),
+        "processed": ok_count,
+        "promoted": promoted_count,
+        "results": results,
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")
