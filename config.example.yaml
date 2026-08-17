@@ -70,6 +70,7 @@ organs:
   trajectory: { enabled: true }
   mcp:        { enabled: true }
   learn:      { enabled: true }
+  benchmark:  { enabled: true }
 
 # ── Gland (Model Gateway) ───────────────────────────────────
 gland:
