@@ -117,27 +117,43 @@ _CORE_ORGANS = [
 
 
 async def _check_organs() -> dict:
-    """Check health of core organs in parallel."""
+    """Check health of all organs in parallel, tracking response times."""
     import httpx
+    import time as _time
     base = "http://127.0.0.1:8090"
     results = {}
+    timings = {}
 
     async with httpx.AsyncClient(timeout=5.0) as client:
         async def _check(name: str, path: str):
+            start = _time.time()
             try:
                 r = await client.get(f"{base}{path}")
+                elapsed_ms = round((_time.time() - start) * 1000, 1)
+                timings[name] = elapsed_ms
                 results[name] = "ok" if r.status_code == 200 else "error"
             except Exception:
+                elapsed_ms = round((_time.time() - start) * 1000, 1)
+                timings[name] = elapsed_ms
                 results[name] = "error"
 
         await asyncio.gather(*[_check(n, p) for n, p in _CORE_ORGANS])
 
     ok = sum(1 for v in results.values() if v == "ok")
+    error_count = len(results) - ok
+    avg_ms = round(sum(timings.values()) / max(len(timings), 1), 1)
+    slowest = sorted(timings.items(), key=lambda x: x[1], reverse=True)[:5]
+
     return {
         "organs": results,
         "healthy_count": ok,
+        "error_count": error_count,
         "total_count": len(results),
         "status": "ok" if ok == len(results) else "degraded" if ok > len(results) // 2 else "critical",
+        "latency": {
+            "avg_ms": avg_ms,
+            "slowest": [{"organ": name, "ms": ms} for name, ms in slowest],
+        },
     }
 
 
