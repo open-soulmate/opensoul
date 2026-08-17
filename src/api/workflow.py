@@ -14,6 +14,26 @@ async def health():
     return {"status": "ok", "component": "OpenWorkflow"}
 
 
+@router.get("/stats")
+async def workflow_stats():
+    """Get workflow statistics."""
+    try:
+        total = await db_pool.fetchval("SELECT COUNT(*) FROM workflow_tasks") or 0
+        active = await db_pool.fetchval("SELECT COUNT(*) FROM workflow_tasks WHERE status = 'active'") or 0
+        by_type = await db_pool.fetch(
+            "SELECT task_type, COUNT(*) as cnt FROM workflow_tasks GROUP BY task_type ORDER BY cnt DESC"
+        )
+        return {
+            "status": "ok",
+            "component": "OpenWorkflow",
+            "total_tasks": total,
+            "active_tasks": active,
+            "by_type": {r["task_type"]: r["cnt"] for r in (by_type or [])},
+        }
+    except Exception:
+        return {"status": "ok", "component": "OpenWorkflow", "total_tasks": 0, "active_tasks": 0, "by_type": {}}
+
+
 # ── Models ─────────────────────────────────────────────────────────────
 
 class WorkflowTaskCreate(BaseModel):

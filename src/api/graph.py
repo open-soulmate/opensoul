@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query
 from src.models.entity import RelationCreate, RelationResponse, GraphData
 from src.services.graph import create_relation, get_graph, list_relations
 from src.services.entity import list_entities, get_entity_with_relations
+from src.database.postgres import db_pool
 
 router = APIRouter()
 
@@ -13,6 +14,26 @@ router = APIRouter()
 async def graph_health():
     """OpenGraph health check."""
     return {"status": "ok", "component": "OpenGraph", "module": "knowledge-graph"}
+
+
+@router.get("/stats")
+async def graph_stats():
+    """Get knowledge graph statistics."""
+    try:
+        entities = await db_pool.fetchval("SELECT COUNT(*) FROM entities") or 0
+        relations = await db_pool.fetchval("SELECT COUNT(*) FROM relations") or 0
+        by_type = await db_pool.fetch(
+            "SELECT entity_type, COUNT(*) as cnt FROM entities GROUP BY entity_type ORDER BY cnt DESC LIMIT 10"
+        )
+        return {
+            "status": "ok",
+            "component": "OpenGraph",
+            "total_entities": entities,
+            "total_relations": relations,
+            "by_type": {r["entity_type"]: r["cnt"] for r in (by_type or [])},
+        }
+    except Exception:
+        return {"status": "ok", "component": "OpenGraph", "total_entities": 0, "total_relations": 0, "by_type": {}}
 
 
 def _resolve_user_id(user_id: str) -> UUID:

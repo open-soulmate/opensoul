@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.models.entity import EntityCreate, EntityUpdate, EntityResponse
 from src.services import entity as entity_service
+from src.database.postgres import db_pool
 
 router = APIRouter()
 
@@ -12,6 +13,24 @@ router = APIRouter()
 async def entity_health():
     """Entity system health check."""
     return {"status": "ok", "component": "EntitySystem"}
+
+
+@router.get("/stats")
+async def entity_stats():
+    """Get entity system statistics."""
+    try:
+        total = await db_pool.fetchval("SELECT COUNT(*) FROM entities") or 0
+        by_type = await db_pool.fetch(
+            "SELECT entity_type, COUNT(*) as cnt FROM entities GROUP BY entity_type ORDER BY cnt DESC LIMIT 10"
+        )
+        return {
+            "status": "ok",
+            "component": "EntitySystem",
+            "total_entities": total,
+            "by_type": {r["entity_type"]: r["cnt"] for r in (by_type or [])},
+        }
+    except Exception:
+        return {"status": "ok", "component": "EntitySystem", "total_entities": 0, "by_type": {}}
 
 
 def _resolve_user_id(user_id: str) -> UUID:

@@ -97,6 +97,29 @@ async def capture_health():
     }
 
 
+@router.get("/stats")
+async def capture_stats():
+    """Get capture statistics."""
+    await _ensure_table()
+    try:
+        total = await db_pool.fetchval("SELECT COUNT(*) FROM captures") or 0
+        pages = await db_pool.fetchval("SELECT COUNT(*) FROM captures WHERE capture_type = 'page'") or 0
+        selections = await db_pool.fetchval("SELECT COUNT(*) FROM captures WHERE capture_type = 'selection'") or 0
+        recent = await db_pool.fetchval(
+            "SELECT COUNT(*) FROM captures WHERE created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')"
+        ) or 0
+        return {
+            "status": "ok",
+            "component": "OpenCapture",
+            "total_captures": total,
+            "page_captures": pages,
+            "selection_captures": selections,
+            "recent_24h": recent,
+        }
+    except Exception:
+        return {"status": "ok", "component": "OpenCapture", "total_captures": 0, "page_captures": 0, "selection_captures": 0, "recent_24h": 0}
+
+
 @router.post("/page", response_model=CaptureResponse)
 async def capture_page(req: PageCapture):
     """Capture a full page from the browser extension."""
