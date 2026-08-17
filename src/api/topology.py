@@ -58,6 +58,22 @@ async def health():
     return {"status": "ok", "component": "OpenTopology", "nodes": len(_TOPOLOGY_NODES), "edges": len(_EDGES)}
 
 
+@router.get("/stats")
+async def topology_stats():
+    """Get topology statistics."""
+    categories = {}
+    for node in _TOPOLOGY_NODES:
+        cat = node["category"]
+        categories[cat] = categories.get(cat, 0) + 1
+    return {
+        "status": "ok",
+        "component": "OpenTopology",
+        "total_nodes": len(_TOPOLOGY_NODES),
+        "total_edges": len(_EDGES),
+        "by_category": categories,
+    }
+
+
 @router.get("/graph")
 async def get_topology_graph():
     """Return full topology graph with real-time health status."""

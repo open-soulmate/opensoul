@@ -415,3 +415,13 @@ async def soma_health():
         "component": "OpenSomaConnector",
         "registry": registry.stats(),
     }
+
+
+@router.get("/stats")
+async def soma_stats():
+    """Get Soma connector statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenSomaConnector",
+        **registry.stats(),
+    }

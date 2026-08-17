@@ -176,6 +176,15 @@ async def system_overview():
         "gland": gland,
     }
 
+from src.system.bootstrap import SystemBootstrap
+from pydantic import BaseModel
+
+bootstrap = SystemBootstrap()
+
+
+class BootstrapRequest(BaseModel):
+    force: bool = False
+
 
 @router.get("/quick")
 async def system_quick_status():
@@ -192,3 +201,45 @@ async def system_quick_status():
         "version": "2.0.0",
         "timestamp": time.time(),
     }
+
+
+# ── Bootstrap Endpoints ─────────────────────────────────────
+
+@router.get("/bootstrap/status")
+async def bootstrap_status():
+    """Get current bootstrap state — has the system been initialized?"""
+    return {
+        "status": "ok",
+        "component": "OpenSystem",
+        **bootstrap.state,
+    }
+
+
+@router.post("/bootstrap/run")
+async def run_bootstrap(req: BootstrapRequest = None):
+    """Run system bootstrap — auto-configure default cross-organ integrations.
+
+    Sets up:
+    - OpenMarrow: daily backup schedule for data directory
+    - OpenPulse: health check signal every 60s
+    - OpenImmune: default rate-limit configuration
+    - Vital→Echo: alert notification wiring
+    - OpenGene: verify default templates exist
+
+    Idempotent — safe to call multiple times. Use force=true to re-run.
+    """
+    force = req.force if req else False
+    result = bootstrap.run_bootstrap(force=force)
+
+    # Emit event to Nerve bus
+    try:
+        from src.nerve.event_bridge import push_event
+        push_event({
+            "organ": "system", "emoji": "🚀", "type": "bootstrap",
+            "summary": f"🔧 System bootstrap: {result['status']}",
+            "detail": result,
+        })
+    except Exception:
+        pass
+
+    return result

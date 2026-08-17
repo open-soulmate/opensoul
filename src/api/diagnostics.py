@@ -255,3 +255,14 @@ async def config_diff():
 async def diagnostics_health():
     """Diagnostics module health check."""
     return {"status": "ok", "component": "OpenDiagnostics"}
+
+
+@router.get("/stats")
+async def diagnostics_stats():
+    """Get diagnostics statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenDiagnostics",
+        "total_organs": len(_ORGANS),
+        "categories": list(set(v["category"] for v in _ORGANS.values())),
+    }

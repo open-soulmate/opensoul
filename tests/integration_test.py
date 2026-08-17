@@ -371,6 +371,11 @@ def run_tests(base_url: str, verbose: bool = False) -> TestSuite:
     if verbose: print("🔐 Admin")
     check_endpoint(suite, base_url, "admin", "GET", "/api/admin/report")
 
+    # ── System Bootstrap ─────────────────────────────────────
+    if verbose: print("🚀 System Bootstrap")
+    check_endpoint(suite, base_url, "bootstrap", "GET", "/api/system/bootstrap/status")
+    check_endpoint(suite, base_url, "bootstrap", "POST", "/api/system/bootstrap/run")
+
     suite.end_time = time.time()
     return suite
 
