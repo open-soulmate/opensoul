@@ -517,6 +517,168 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
     }
 
 
+# ── Auto-Process (Vein → Sense → Knowledge) ───────────────
+
+class AutoProcessRequest(BaseModel):
+    user_id: str = "default"
+    language: str | None = None
+    auto_promote: bool = True  # auto-promote OCR/ASR results to knowledge base
+
+
+@router.post("/files/{file_id}/auto-process")
+async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None):
+    """Auto-detect file type and process through Sense (OCR/ASR), then promote to knowledge.
+
+    Pipeline: Vein (storage) → Sense (OCR/ASR) → Soul (knowledge base)
+    Supported:
+      - Images (png, jpg, gif, webp, bmp, tiff) → Smart OCR
+      - PDFs → Smart PDF OCR
+      - Audio (wav, mp3, ogg, flac, webm, m4a) → ASR transcription
+    """
+    if req is None:
+        req = AutoProcessRequest()
+
+    meta = store.get_meta(file_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Retrieve file content
+    result = store.retrieve(file_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="File content not found")
+    data, _meta = result
+
+    mime = meta.mime_type.lower()
+    filename = meta.name.lower()
+
+    # Determine processing route
+    image_types = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+    pdf_types = {"application/pdf"}
+    audio_types = {"audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/ogg",
+                   "audio/flac", "audio/webm", "audio/mp4", "audio/x-m4a"}
+
+    extracted_text = ""
+    engine_used = "none"
+    processing_type = "unknown"
+
+    try:
+        if mime in image_types or any(filename.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff")):
+            # Route to OCR
+            from src.sense.ocr import OCREngine
+            from src.api.sense import _get_gateway as _get_sense_gw
+            _get_sense_gw()
+            ocr = OCREngine()
+            ocr_result = await ocr.smart_image_to_text(data, language=req.language)
+            extracted_text = ocr_result.text
+            engine_used = ocr_result.engine
+            processing_type = "ocr"
+
+        elif mime in pdf_types or filename.endswith(".pdf"):
+            # Route to PDF OCR
+            from src.sense.ocr import OCREngine
+            from src.api.sense import _get_gateway as _get_sense_gw
+            _get_sense_gw()
+            ocr = OCREngine()
+            ocr_result = await ocr.smart_pdf_to_text(data, language=req.language, max_pages=30)
+            extracted_text = ocr_result.text
+            engine_used = ocr_result.engine
+            processing_type = "pdf_ocr"
+
+        elif mime in audio_types or any(filename.endswith(ext) for ext in (".wav", ".mp3", ".ogg", ".flac", ".webm", ".m4a")):
+            # Route to ASR
+            from src.sense.asr import ASREngine
+            from src.api.sense import _get_gateway as _get_sense_gw
+            _get_sense_gw()
+            asr = ASREngine()
+            fmt = "wav"
+            if filename.endswith(".mp3") or "mp3" in mime or "mpeg" in mime:
+                fmt = "mp3"
+            elif filename.endswith(".ogg") or "ogg" in mime:
+                fmt = "ogg"
+            elif filename.endswith(".flac") or "flac" in mime:
+                fmt = "flac"
+            elif filename.endswith(".m4a") or "m4a" in mime:
+                fmt = "m4a"
+            asr_result = await asr.transcribe_async(data, language=req.language, format=fmt)
+            extracted_text = asr_result.text
+            engine_used = asr_result.engine
+            processing_type = "asr"
+
+        else:
+            # Unsupported type — try OCR as fallback for unknown image-like types
+            if mime.startswith("image/"):
+                from src.sense.ocr import OCREngine
+                ocr = OCREngine()
+                ocr_result = ocr.image_to_text(data, lang=req.language)
+                extracted_text = ocr_result.text
+                engine_used = ocr_result.engine
+                processing_type = "ocr_fallback"
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type for auto-processing: {mime}. Supported: images, PDFs, audio."
+                )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+    if not extracted_text or not extracted_text.strip():
+        return {
+            "status": "no_text_extracted",
+            "file_id": file_id,
+            "processing_type": processing_type,
+            "engine": engine_used,
+            "text_length": 0,
+        }
+
+    # Auto-promote to knowledge base if requested
+    promoted = False
+    knowledge_id = None
+    if req.auto_promote and extracted_text.strip():
+        try:
+            import json
+            import time as _time
+            from src.database.postgres import db_pool
+            tags = ["auto-processed", processing_type, engine_used, meta.mime_type.split("/")[-1]]
+            if meta.tags:
+                tags.extend(meta.tags.split(","))
+            await db_pool.execute(
+                """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $5)""",
+                req.user_id,
+                f"[{processing_type.upper()}] {meta.name}",
+                extracted_text[:100000],
+                json.dumps(list(set(tags))),
+                _time.time(),
+            )
+            promoted = True
+        except Exception:
+            pass  # non-fatal
+
+    # Emit event
+    push_event({
+        "organ": "vein", "emoji": "🩸", "type": "file_auto_processed",
+        "summary": f"🔍 Auto-processed: {meta.name} via {processing_type} ({engine_used})",
+        "detail": {
+            "file_id": file_id, "processing_type": processing_type,
+            "engine": engine_used, "text_length": len(extracted_text), "promoted": promoted,
+        },
+    })
+
+    return {
+        "status": "ok",
+        "file_id": file_id,
+        "filename": meta.name,
+        "processing_type": processing_type,
+        "engine": engine_used,
+        "text_length": len(extracted_text),
+        "text_preview": extracted_text[:500],
+        "promoted_to_knowledge": promoted,
+    }
+
+
 # ── Health ─────────────────────────────────────────────────
 
 @router.get("/health")
