@@ -1,6 +1,6 @@
-"""OpenVital API — 健康检查 / 指标 / 告警接口。"""
+"""OpenVital API — 健康检查 / 指标 / 告警 / 历史时序数据接口。"""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 router = APIRouter()
 
@@ -143,3 +143,33 @@ async def alerts(request: Request):
             for a in alert_mgr.history
         ]
     }
+
+
+# ── Metrics History (time-series ring buffer) ─────────────
+
+
+@router.get("/history")
+async def metrics_history(
+    request: Request,
+    minutes: int = Query(default=60, ge=1, le=720, description="History window in minutes"),
+):
+    """Return time-series metrics history for the last N minutes.
+
+    Each entry contains: ts, cpu, mem, mem_mb, disk, qps, p99, err_rate,
+    requests, errors, knowledge.
+    """
+    collector = _get_collector(request)
+    entries = collector.get_history(minutes)
+    return {
+        "entries": len(entries),
+        "minutes": minutes,
+        "interval_seconds": 10,
+        "data": entries,
+    }
+
+
+@router.get("/history/summary")
+async def metrics_history_summary(request: Request):
+    """Return aggregated min/max/avg summary of recent metrics history."""
+    collector = _get_collector(request)
+    return collector.get_history_summary()
