@@ -1,4 +1,5 @@
 import os
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from src.config import settings
+
+logger = logging.getLogger(__name__)
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
 from src.database.meilisearch import meili_client
@@ -153,9 +156,24 @@ async def lifespan(app: FastAPI):
     # Intelligence auto-collect background task
     intel_task = asyncio.create_task(_intelligence_auto_collect())
 
+    # Auto-bootstrap on first boot (non-blocking)
+    async def _auto_bootstrap():
+        await asyncio.sleep(5)  # Wait for all organs to be ready
+        try:
+            from src.system.bootstrap import SystemBootstrap
+            bs = SystemBootstrap()
+            if not bs.is_bootstrapped:
+                result = bs.run_bootstrap()
+                logger.info("Auto-bootstrap result: %s", result.get("status"))
+        except Exception as e:
+            logger.warning("Auto-bootstrap failed: %s", e)
+
+    bootstrap_task = asyncio.create_task(_auto_bootstrap())
+
     yield
 
     # Shutdown
+    bootstrap_task.cancel()
     intel_task.cancel()
     try:
         await intel_task

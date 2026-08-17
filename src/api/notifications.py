@@ -233,3 +233,23 @@ async def health():
         "total_notifications": len(_notifications),
         "unread_count": sum(1 for n in _notifications if not n.get("read")),
     }
+
+
+@router.get("/stats")
+async def notifications_stats():
+    """Get notification statistics."""
+    levels = {}
+    organs = {}
+    for n in _notifications:
+        level = n.get("level", "info")
+        levels[level] = levels.get(level, 0) + 1
+        organ = n.get("organ", "system")
+        organs[organ] = organs.get(organ, 0) + 1
+    return {
+        "status": "ok",
+        "component": "OpenNotifications",
+        "total": len(_notifications),
+        "unread": sum(1 for n in _notifications if not n.get("read")),
+        "by_level": levels,
+        "by_organ": organs,
+    }

@@ -36,6 +36,18 @@ async def health():
     }
 
 
+@router.get("/stats")
+async def intelligence_stats():
+    """Get Intelligence statistics."""
+    return {
+        "status": "ok",
+        "component": "OpenIntelligence",
+        "tracked_components": len(intelligence._component_metrics),
+        "total_insights": len(intelligence._insights),
+        "insight_types": list(set(str(i.insight_type.value) if hasattr(i, "insight_type") else "" for i in intelligence._insights)),
+    }
+
+
 # ── System Summary ─────────────────────────────────────────
 
 @router.get("/summary")

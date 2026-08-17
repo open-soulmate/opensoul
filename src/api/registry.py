@@ -602,3 +602,32 @@ async def search_components(
 
     results.sort(key=lambda x: x["relevance_score"], reverse=True)
     return {"query": q, "results": results}
+
+
+@router.get("/health")
+async def registry_health():
+    """Component registry health check."""
+    return {
+        "status": "ok",
+        "component": "OpenRegistry",
+        "total_components": len(COMPONENT_MANIFESTS),
+    }
+
+
+@router.get("/stats")
+async def registry_stats():
+    """Get component registry statistics."""
+    categories = {}
+    phases = {}
+    for comp in COMPONENT_MANIFESTS:
+        cat = comp.get("category", "unknown")
+        categories[cat] = categories.get(cat, 0) + 1
+        phase = comp.get("phase", "unknown")
+        phases[phase] = phases.get(phase, 0) + 1
+    return {
+        "status": "ok",
+        "component": "OpenRegistry",
+        "total_components": len(COMPONENT_MANIFESTS),
+        "by_category": categories,
+        "by_phase": phases,
+    }
