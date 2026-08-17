@@ -87,6 +87,7 @@ from src.api.notifications import router as notifications_router
 from src.api.healer import router as healer_router
 from src.api.timeline import router as timeline_router
 from src.api.benchmark import router as benchmark_router
+from src.api.system_overview import router as system_overview_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -284,6 +285,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("healer", "/api/healer/health"),
     ("timeline", "/api/timeline/health"),
     ("benchmark", "/api/benchmark/health"),
+    ("system-overview", "/api/system/health"),
 ]
 
 
@@ -385,6 +387,7 @@ app.include_router(workflow_router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(healer_router, prefix="/api/healer", tags=["healer"])
 app.include_router(timeline_router, prefix="/api/timeline", tags=["timeline"])
 app.include_router(benchmark_router, prefix="/api/benchmark", tags=["benchmark"])
+app.include_router(system_overview_router, prefix="/api/system", tags=["system-overview"])
 
 # Load and mount external plugins from ~/.openmate/plugins/
 load_all_plugins(app)
