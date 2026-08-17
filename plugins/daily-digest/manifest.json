@@ -1,0 +1,25 @@
+{
+  "id": "daily-digest",
+  "name": "Daily Digest",
+  "version": "1.0.0",
+  "description": "每日摘要 — 跨器官数据聚合、系统健康趋势、活动热力图、每日洞察报告",
+  "icon": "Newspaper",
+  "type": "feature",
+  "author": "OpenSoul Team",
+  "sidebar": [
+    {
+      "href": "/plugins/daily-digest",
+      "label": "Daily Digest",
+      "icon": "Newspaper",
+      "group": "PLUGINS"
+    }
+  ],
+  "api_prefix": "/api/plugins/daily-digest",
+  "config": {
+    "auto_generate_hour": 8,
+    "retention_days": 90,
+    "include_organs": true,
+    "include_timeline": true,
+    "include_metrics": true
+  }
+}
