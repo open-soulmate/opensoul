@@ -83,6 +83,7 @@ from src.api.capture import router as capture_router
 from src.api.pipeline import router as pipeline_router
 from src.api.topology import router as topology_router
 from src.api.workflow import router as workflow_router
+from src.api.notifications import router as notifications_router
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
 from src.vital.alert import AlertManager
@@ -341,6 +342,7 @@ app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnos
 app.include_router(admin_actions_router, prefix="/api/admin", tags=["admin"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["sessions"])
 app.include_router(event_stream_router, prefix="/api/events", tags=["event-stream"])
+app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(workspace_router, prefix="/api", tags=["workspace"])
 app.include_router(git_router, prefix="/api/git", tags=["git"])
 app.include_router(capture_router, prefix="/api/capture", tags=["capture"])

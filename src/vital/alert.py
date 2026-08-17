@@ -140,6 +140,27 @@ class AlertManager:
         return new_alerts
 
     async def _notify(self, record: AlertRecord) -> None:
+        # Push to Notification Center
+        try:
+            from src.api.notifications import push_notification
+            emoji = "🔴" if record.severity == "critical" else "🟡" if record.severity == "warning" else "🔵"
+            push_notification(
+                source="vital",
+                title=f"{emoji} 系统告警: {record.rule_name}",
+                body=record.message,
+                level="error" if record.severity == "critical" else "warning",
+                organ="vital",
+                emoji=emoji,
+                action_url="/vital",
+                metadata={
+                    "rule": record.rule_name,
+                    "value": record.value,
+                    "threshold": record.threshold,
+                },
+            )
+        except (ImportError, AttributeError):
+            pass
+
         if settings.alert_webhook_url:
             await self._send_webhook(record)
 
