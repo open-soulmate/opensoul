@@ -1,0 +1,44 @@
+{
+  "id": "bookmarks",
+  "name": "Bookmark Manager",
+  "version": "1.0.0",
+  "description": "书签管理器 — 收藏网页、标签分类、全文搜索、一键入库知识库",
+  "icon": "Bookmark",
+  "type": "feature",
+  "author": "OpenSoul Team",
+  "sidebar": [
+    {
+      "href": "/plugins/bookmarks",
+      "label": "Bookmarks",
+      "icon": "Bookmark",
+      "group": "Plugins"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/plugins/bookmarks",
+      "component": "BookmarksPage"
+    }
+  ],
+  "api_prefix": "/api/plugins/bookmarks",
+  "endpoints": [
+    { "method": "GET", "path": "/bookmarks", "description": "列出所有书签" },
+    { "method": "POST", "path": "/bookmarks", "description": "创建书签" },
+    { "method": "GET", "path": "/bookmarks/{id}", "description": "获取书签详情" },
+    { "method": "PUT", "path": "/bookmarks/{id}", "description": "更新书签" },
+    { "method": "DELETE", "path": "/bookmarks/{id}", "description": "删除书签" },
+    { "method": "POST", "path": "/bookmarks/{id}/promote", "description": "推送到知识库" },
+    { "method": "GET", "path": "/collections", "description": "获取所有收藏夹" },
+    { "method": "POST", "path": "/collections", "description": "创建收藏夹" },
+    { "method": "GET", "path": "/tags", "description": "获取所有标签" },
+    { "method": "GET", "path": "/stats", "description": "统计信息" },
+    { "method": "GET", "path": "/health", "description": "健康检查" }
+  ],
+  "permissions": ["bookmarks.read", "bookmarks.write"],
+  "dependencies": [],
+  "config": {
+    "max_bookmarks": 5000,
+    "auto_fetch_meta": true,
+    "default_collection": "Uncategorized"
+  }
+}
