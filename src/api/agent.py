@@ -19,6 +19,24 @@ async def agent_health():
     return {"status": "ok", "component": "AgentSystem"}
 
 
+@router.get("/stats")
+async def agent_stats():
+    """Get agent system statistics."""
+    try:
+        total = await db_pool.fetchval("SELECT COUNT(*) FROM agents") or 0
+        by_type = await db_pool.fetch(
+            "SELECT agent_type, COUNT(*) as cnt FROM agents GROUP BY agent_type ORDER BY cnt DESC"
+        )
+        return {
+            "status": "ok",
+            "component": "AgentSystem",
+            "total_agents": total,
+            "by_type": {r["agent_type"]: r["cnt"] for r in (by_type or [])},
+        }
+    except Exception:
+        return {"status": "ok", "component": "AgentSystem", "total_agents": 0, "by_type": {}}
+
+
 # ── Request / Response models ──────────────────────────────────────────
 
 class AgentRegisterRequest(BaseModel):

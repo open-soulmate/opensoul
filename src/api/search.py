@@ -14,6 +14,22 @@ async def search_health():
     return {"status": "ok", "component": "SearchSystem"}
 
 
+@router.get("/stats")
+async def search_stats():
+    """Get search system statistics."""
+    from src.database.postgres import db_pool
+    try:
+        knowledge_count = await db_pool.fetchval("SELECT COUNT(*) FROM knowledge") or 0
+        return {
+            "status": "ok",
+            "component": "SearchSystem",
+            "searchable_entries": knowledge_count,
+            "modes": ["semantic", "fulltext", "hybrid"],
+        }
+    except Exception:
+        return {"status": "ok", "component": "SearchSystem", "searchable_entries": 0, "modes": ["semantic", "fulltext", "hybrid"]}
+
+
 class SearchRequest(BaseModel):
     query: str
     mode: str = "hybrid"  # semantic, fulltext, hybrid

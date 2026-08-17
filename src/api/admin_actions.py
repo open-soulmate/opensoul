@@ -201,6 +201,14 @@ async def system_overview():
             "pulse": "/api/pulse/stats",
             "cortex": "/api/cortex/stats",
             "voice": "/api/voice/stats",
+            # New stats endpoints
+            "knowledge": "/api/knowledge/stats",
+            "agent": "/api/agent/stats",
+            "graph": "/api/graph/stats",
+            "entity": "/api/entity/stats",
+            "search": "/api/search/stats",
+            "capture": "/api/capture/stats",
+            "workflow": "/api/workflow/stats",
         }
 
         for name, endpoint in stat_endpoints.items():

@@ -7,12 +7,36 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from src.models.knowledge import KnowledgeCreate, KnowledgeUpdate, KnowledgeResponse
 from src.services import knowledge as knowledge_service
 from src.services.extraction import extract_text_from_file
+from src.database.postgres import db_pool
 
 router = APIRouter()
 
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "OpenKnowledge"}
+
+
+@router.get("/stats")
+async def knowledge_stats():
+    """Get knowledge base statistics."""
+    try:
+        total = await db_pool.fetchval("SELECT COUNT(*) FROM knowledge") or 0
+        recent = await db_pool.fetchval(
+            "SELECT COUNT(*) FROM knowledge WHERE created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')"
+        ) or 0
+        by_user = await db_pool.fetch(
+            "SELECT user_id, COUNT(*) as cnt FROM knowledge GROUP BY user_id ORDER BY cnt DESC LIMIT 10"
+        )
+        return {
+            "status": "ok",
+            "component": "OpenKnowledge",
+            "total_entries": total,
+            "recent_24h": recent,
+            "top_users": [{"user_id": r["user_id"], "count": r["cnt"]} for r in (by_user or [])],
+        }
+    except Exception:
+        return {"status": "ok", "component": "OpenKnowledge", "total_entries": 0, "recent_24h": 0, "top_users": []}
+
 
 # Supported file types for upload
 SUPPORTED_TYPES = {
