@@ -168,6 +168,22 @@ async def receive_webhook(connector_id: str, request: Request):
         "detail": {"connector_id": connector_id, "source_ip": source_ip, "method": request.method},
     })
 
+    # Also push to notification center for immediate visibility
+    try:
+        from src.api.notifications import push_notification
+        push_notification(
+            source="link",
+            title=f"🔗 Webhook: {connector.name}",
+            body=f"Received from {source_ip} ({request.method})",
+            level="info",
+            organ="link",
+            emoji="🔗",
+            action_url="/link",
+            metadata={"connector_id": connector_id, "source_ip": source_ip, "event_id": event.event_id},
+        )
+    except Exception:
+        pass  # Non-fatal
+
     return {"received": True, "event_id": event.event_id}
 
 

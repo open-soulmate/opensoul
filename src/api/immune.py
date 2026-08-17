@@ -53,6 +53,22 @@ async def moderate_text(req: ModerateRequest):
             "summary": f"⚠️ Content blocked: risk={result.risk_level}, {len(result.findings)} finding(s)",
             "detail": {"risk_level": result.risk_level, "findings_count": len(result.findings)},
         })
+        # Push notification for high-risk content
+        if result.risk_level in ("high", "critical"):
+            try:
+                from src.api.notifications import push_notification
+                push_notification(
+                    source="immune",
+                    title=f"🛡 Content Blocked: {result.risk_level}",
+                    body=f"{len(result.findings)} sensitive data finding(s) detected",
+                    level="warning" if result.risk_level == "high" else "error",
+                    organ="immune",
+                    emoji="🛡",
+                    action_url="/immune",
+                    metadata={"risk_level": result.risk_level, "findings_count": len(result.findings)},
+                )
+            except Exception:
+                pass
 
     return {
         "is_safe": result.is_safe,
@@ -130,6 +146,21 @@ async def blacklist_ip(req: IPActionRequest, request: Request):
         "summary": f"🚫 IP blacklisted: {req.ip} — {req.reason}",
         "detail": {"ip": req.ip, "reason": req.reason},
     })
+    # Push notification for IP blacklist events
+    try:
+        from src.api.notifications import push_notification
+        push_notification(
+            source="immune",
+            title=f"🚫 IP Blacklisted: {req.ip}",
+            body=req.reason or "No reason provided",
+            level="warning",
+            organ="immune",
+            emoji="🛡",
+            action_url="/immune",
+            metadata={"ip": req.ip, "reason": req.reason, "ttl_seconds": req.ttl_seconds},
+        )
+    except Exception:
+        pass
     return {"message": f"IP {req.ip} blacklisted", "reason": req.reason}
 
 
