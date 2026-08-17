@@ -1,0 +1,152 @@
+# Open-Soulmate Configuration
+# Copy to ~/.openmate/config.yaml and customize
+# Docs: https://github.com/open-soulmate
+
+version: "2.0"
+
+# ── Model Configuration ──────────────────────────────────────
+models:
+  default: "mimo-v2.5-pro"       # Default model for chat
+  coding: "mimo-v2.5-pro"        # Model for code tasks
+  vision: "gpt-4o"               # Model for image understanding
+  fallback: "qwen-72b"           # Fallback when primary fails
+
+# ── Agent Configuration ──────────────────────────────────────
+agents:
+  - id: "hermes"
+    model: "default"
+    tools: ["*"]
+  - id: "mimo"
+    model: "coding"
+    tools: ["file_read", "file_write", "code_exec"]
+  - id: "bidding-agent"
+    model: "default"
+    tools: ["knowledge_search", "doc_generate", "doc_review"]
+
+# ── Plugin Configuration ─────────────────────────────────────
+plugins:
+  - id: "bookmarks"
+    enabled: true
+  - id: "snippets"
+    enabled: true
+  - id: "pomodoro"
+    enabled: true
+
+# ── Organ Configuration ──────────────────────────────────────
+# Each organ can be enabled/disabled independently
+organs:
+  # Core (一期)
+  soul:     { enabled: true }
+  cortex:   { enabled: true }
+  nerve:    { enabled: true }
+  vein:     { enabled: true }
+  soma:     { enabled: true }
+  sense:    { enabled: true }
+  will:     { enabled: true }
+  mate:     { enabled: true }
+
+  # Platform (二期)
+  immune:   { enabled: true }
+  vital:    { enabled: true }
+  marrow:   { enabled: true }
+  gland:    { enabled: true }
+  gene:     { enabled: true }
+  echo:     { enabled: true }
+  mirror:   { enabled: true }
+  link:     { enabled: true }
+
+  # Advanced (四期)
+  hippo:    { enabled: true }
+  reflex:   { enabled: true }
+  heredity: { enabled: true }
+  nest:     { enabled: true }
+  pulse:    { enabled: true }
+  limb:     { enabled: true }
+  voice:    { enabled: true }
+  vision:   { enabled: true }
+  mind:     { enabled: true }
+
+  # System
+  trajectory: { enabled: true }
+  mcp:        { enabled: true }
+  learn:      { enabled: true }
+
+# ── Gland (Model Gateway) ───────────────────────────────────
+gland:
+  providers:
+    - name: "openai"
+      api_key: "${OPENAI_API_KEY}"
+      base_url: "https://api.openai.com/v1"
+      models: ["gpt-4o", "gpt-4o-mini"]
+    - name: "mimo"
+      api_key: "${MIMO_API_KEY}"
+      base_url: "https://api.xiaomi.com/v1"
+      models: ["mimo-v2.5-pro", "mimo-v2.5"]
+    - name: "deepseek"
+      api_key: "${DEEPSEEK_API_KEY}"
+      base_url: "https://api.deepseek.com/v1"
+      models: ["deepseek-chat", "deepseek-coder"]
+  budget:
+    monthly_limit: 1000000  # tokens
+    alert_threshold: 0.8
+
+# ── Nerve (Event Bus) ───────────────────────────────────────
+nerve:
+  mode: "internal"  # internal | nats
+  # nats_url: "nats://localhost:4222"
+
+# ── Vein (File Storage) ────────────────────────────────────
+vein:
+  max_file_size_mb: 100
+  cache_size_mb: 256
+  cache_ttl_seconds: 3600
+  auto_process: true  # Auto OCR/ASR on upload
+
+# ── Sense (Multimodal) ─────────────────────────────────────
+sense:
+  ocr:
+    engine: "tesseract"  # tesseract | llm | smart
+    languages: ["chi_sim", "eng"]
+  asr:
+    model_size: "base"  # tiny | base | small | medium | large
+    # whisper_local: false
+
+# ── Echo (Notifications) ───────────────────────────────────
+echo:
+  channels:
+    - channel: "webhook"
+      enabled: false
+      endpoint: ""
+    - channel: "dingtalk"
+      enabled: false
+      endpoint: ""
+      token: ""
+    - channel: "email"
+      enabled: false
+      endpoint: ""
+      extra: { smtp_host: "", smtp_port: 587 }
+
+# ── Immune (Security) ──────────────────────────────────────
+immune:
+  rate_limit:
+    requests_per_minute: 60
+    requests_per_hour: 1000
+    burst_size: 20
+  content_moderation:
+    enabled: true
+
+# ── Marrow (Backup) ────────────────────────────────────────
+marrow:
+  backup_dir: "~/.opensoul/backups"
+  auto_backup:
+    enabled: false
+    interval: "daily"
+    keep_count: 7
+
+# ── Pulse (Scheduler) ──────────────────────────────────────
+pulse:
+  signals: []
+  # Example:
+  # - name: "health-check"
+  #   interval_ms: 30000
+  #   enabled: true
