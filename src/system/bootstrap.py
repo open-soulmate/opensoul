@@ -121,10 +121,8 @@ class SystemBootstrap:
     def _setup_marrow_backup(self) -> dict:
         """Create default backup schedule for the data directory."""
         try:
-            from src.marrow.backup import BackupManager, BackupScheduler
-            manager = BackupManager()
-            scheduler = BackupScheduler(manager)
-            scheduler.start()
+            # Use the same singleton instances as the API
+            from src.api.marrow import backup_manager, scheduler
 
             # Check if schedule already exists
             existing = scheduler.list_schedules()
@@ -155,8 +153,7 @@ class SystemBootstrap:
     def _setup_pulse_health(self) -> dict:
         """Create default pulse signals for health monitoring."""
         try:
-            from src.pulse.timer import PulseEngine
-            engine = PulseEngine()
+            from src.api.pulse import engine
 
             signals_created = []
 
@@ -185,13 +182,8 @@ class SystemBootstrap:
     def _setup_immune_config(self) -> dict:
         """Setup default immune rate-limit configuration."""
         try:
-            from src.immune.rate_limiter import RateLimiter
-            from src.immune.moderator import ContentModerator
-
-            # Rate limiter is auto-configured with defaults
-            limiter = RateLimiter()
-            moderator = ContentModerator()
-
+            # Immune is auto-configured with defaults from the API module
+            from src.api.immune import router as _  # ensure module loaded
             return {
                 "success": True,
                 "rate_limit": {
