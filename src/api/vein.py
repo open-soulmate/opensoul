@@ -481,17 +481,38 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
     # Insert into knowledge base
     import json
     import time as _time
+    import uuid as _uuid
     try:
         from src.database.postgres import db_pool
+        knowledge_id = str(_uuid.uuid4())
         await db_pool.execute(
-            """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $5)""",
+            """INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+            knowledge_id,
             req.user_id,
             meta.name,
             content[:100000],  # Cap at 100KB for knowledge
-            json.dumps(list(set(file_tags))),
+            f"vein://{file_id}",
+            meta.mime_type,
+            json.dumps({"tags": list(set(file_tags)), "vein_file_id": file_id}),
+            _time.time(),
             _time.time(),
         )
+        # Add tags to knowledge_tags table
+        for tag_name in set(file_tags):
+            tag_id = str(_uuid.uuid4())
+            await db_pool.execute(
+                "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                tag_id, tag_name, req.user_id,
+            )
+            tag = await db_pool.fetchrow(
+                "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, req.user_id
+            )
+            if tag:
+                await db_pool.execute(
+                    "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    knowledge_id, tag["id"],
+                )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create knowledge entry: {e}")
 
@@ -640,19 +661,39 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
         try:
             import json
             import time as _time
+            import uuid as _uuid
             from src.database.postgres import db_pool
             tags = ["auto-processed", processing_type, engine_used, meta.mime_type.split("/")[-1]]
             if meta.tags:
                 tags.extend(meta.tags.split(","))
+            knowledge_id = str(_uuid.uuid4())
             await db_pool.execute(
-                """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $5)""",
+                """INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata, created_at, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                knowledge_id,
                 req.user_id,
                 f"[{processing_type.upper()}] {meta.name}",
                 extracted_text[:100000],
-                json.dumps(list(set(tags))),
+                f"vein://{file_id}",
+                meta.mime_type,
+                json.dumps({"tags": list(set(tags)), "processing_type": processing_type, "engine": engine_used}),
                 _time.time(),
             )
+            # Add tags to knowledge_tags table
+            for tag_name in set(tags):
+                tag_id = str(_uuid.uuid4())
+                await db_pool.execute(
+                    "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                    tag_id, tag_name, req.user_id,
+                )
+                tag = await db_pool.fetchrow(
+                    "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, req.user_id
+                )
+                if tag:
+                    await db_pool.execute(
+                        "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                        knowledge_id, tag["id"],
+                    )
             promoted = True
         except Exception:
             pass  # non-fatal
@@ -758,17 +799,38 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                 try:
                     import json
                     import time as _time
+                    import uuid as _uuid
                     from src.database.postgres import db_pool
                     tags = ["auto-processed", "batch", processing_type]
+                    kid = str(_uuid.uuid4())
                     await db_pool.execute(
-                        """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
-                           VALUES ($1, $2, $3, $4, $5, $5)""",
+                        """INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata, created_at, updated_at)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                        kid,
                         req.user_id,
                         f"[{processing_type.upper()}] {f.name}",
                         extracted_text[:100000],
-                        json.dumps(tags),
+                        f"vein://{f.file_id}",
+                        f.mime_type,
+                        json.dumps({"tags": tags, "batch": True}),
+                        _time.time(),
                         _time.time(),
                     )
+                    # Add tags to knowledge_tags table
+                    for tag_name in set(tags):
+                        tag_id = str(_uuid.uuid4())
+                        await db_pool.execute(
+                            "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                            tag_id, tag_name, req.user_id,
+                        )
+                        tag_row = await db_pool.fetchrow(
+                            "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, req.user_id
+                        )
+                        if tag_row:
+                            await db_pool.execute(
+                                "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                                kid, tag_row["id"],
+                            )
                     promoted = True
                 except Exception:
                     pass

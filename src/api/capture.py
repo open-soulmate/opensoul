@@ -5,6 +5,7 @@ and stores them in the knowledge base via OpenSoul.
 """
 
 import time
+import json
 import hashlib
 import logging
 from fastapi import APIRouter, HTTPException
@@ -268,15 +269,37 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
 
     # Insert into knowledge base
     try:
+        import uuid as _uuid
+        knowledge_id = str(_uuid.uuid4())
+        tags = ["capture", capture["capture_type"], "browser"]
         await db_pool.execute(
-            """INSERT INTO knowledge (user_id, title, content, tags, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $5)""",
+            """INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+            knowledge_id,
             user_id,
             capture["title"] or f"Captured from {capture['url']}",
             capture["content"],
-            f'["capture","{capture["capture_type"]}","browser"]',
+            f"capture://{capture_id}",
+            "text/html",
+            json.dumps({"tags": tags, "url": capture["url"], "capture_type": capture["capture_type"]}),
+            time.time(),
             time.time(),
         )
+        # Add tags to knowledge_tags table
+        for tag_name in tags:
+            tag_id = str(_uuid.uuid4())
+            await db_pool.execute(
+                "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                tag_id, tag_name, user_id,
+            )
+            tag_row = await db_pool.fetchrow(
+                "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, user_id
+            )
+            if tag_row:
+                await db_pool.execute(
+                    "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    knowledge_id, tag_row["id"],
+                )
     except Exception as e:
         # Fallback: table might not exist or schema differs
         logger.warning(f"Could not promote to knowledge: {e}")
