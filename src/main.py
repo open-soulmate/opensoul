@@ -60,6 +60,7 @@ from src.api.marrow import router as marrow_router
 from src.api.mcp import router as mcp_router
 from src.api.mind import router as mind_router
 from src.api.mirror import router as mirror_router
+from src.api.metrics_api import router as metrics_router
 from src.api.nerve import router as nerve_router
 from src.api.nest import router as nest_router
 from src.api.notifications import router as notifications_router
@@ -91,6 +92,7 @@ from src.api.will import router as will_router
 from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
 from src.api.ws_chat import router as ws_router
+from src.middleware.metrics_middleware import MetricsMiddleware
 from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
@@ -173,6 +175,52 @@ async def lifespan(app: FastAPI):
     # Intelligence auto-collect background task
     intel_task = asyncio.create_task(_intelligence_auto_collect())
 
+    # Metrics organ health poller
+    async def _metrics_organ_poller():
+        """Periodically poll organ health and feed to Prometheus metrics."""
+        from src.api.metrics_api import record_organ_health
+
+        import httpx as _mhttpx
+
+        _METRIC_ORGANS = {
+            "cortex": "/api/cortex/health",
+            "nerve": "/api/nerve/health",
+            "vein": "/api/vein/health",
+            "sense": "/api/sense/health",
+            "will": "/api/will/health",
+            "immune": "/api/immune/health",
+            "vital": "/api/vital/health",
+            "marrow": "/api/marrow/health",
+            "gland": "/api/gland/health",
+            "gene": "/api/gene/health",
+            "echo": "/api/echo/health",
+            "mirror": "/api/mirror/health",
+            "link": "/api/link/health",
+            "hippo": "/api/hippo/health",
+            "reflex": "/api/reflex/health",
+            "heredity": "/api/heredity/health",
+            "pulse": "/api/pulse/health",
+            "nest": "/api/nest/health",
+            "limb": "/api/limb/health",
+            "voice": "/api/voice/health",
+            "vision": "/api/vision/health",
+            "mind": "/api/mind/health",
+        }
+
+        await asyncio.sleep(10)  # Wait for organs to be ready
+        async with _mhttpx.AsyncClient(timeout=3.0) as client:
+            while True:
+                for organ, endpoint in _METRIC_ORGANS.items():
+                    try:
+                        r = await client.get(f"http://127.0.0.1:8090{endpoint}")
+                        ok = r.status_code == 200
+                        record_organ_health(organ, ok)
+                    except Exception:
+                        record_organ_health(organ, False)
+                await asyncio.sleep(60)  # Poll every 60s
+
+    metrics_task = asyncio.create_task(_metrics_organ_poller())
+
     # Auto-bootstrap on first boot (non-blocking)
     async def _auto_bootstrap():
         await asyncio.sleep(5)  # Wait for all organs to be ready
@@ -193,6 +241,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     bootstrap_task.cancel()
     intel_task.cancel()
+    metrics_task.cancel()
     try:
         await intel_task
     except asyncio.CancelledError:
@@ -218,6 +267,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Metrics middleware — tracks request count, latency, errors
+app.add_middleware(MetricsMiddleware)
 
 # Static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -444,6 +496,7 @@ app.include_router(healer_router, prefix="/api/healer", tags=["healer"])
 app.include_router(timeline_router, prefix="/api/timeline", tags=["timeline"])
 app.include_router(benchmark_router, prefix="/api/benchmark", tags=["benchmark"])
 app.include_router(system_overview_router, prefix="/api/system", tags=["system-overview"])
+app.include_router(metrics_router, tags=["metrics"])
 
 # Load and mount external plugins from ~/.openmate/plugins/
 load_all_plugins(app)
