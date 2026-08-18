@@ -1,11 +1,15 @@
 """OpenNerve API — 神经系统：事件总线、消息分发、节点管理。"""
 
 import time
+import asyncio
+import json
+import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -21,6 +25,7 @@ class EventBus:
         self._events: list[dict[str, Any]] = []
         self._nodes: dict[str, dict[str, Any]] = {}
         self._max_events = 5000
+        self._stream_queues: dict[str, asyncio.Queue] = {}
 
     def publish(self, topic: str, data: dict[str, Any], source: str = "") -> dict[str, Any]:
         event = {
@@ -42,7 +47,27 @@ class EventBus:
         self._events.append(event)
         if len(self._events) > self._max_events:
             self._events = self._events[-self._max_events :]
+        # Fan out to any active SSE stream subscribers
+        for q in self._stream_queues.values():
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                pass  # drop if subscriber is too slow
         return event
+    def register_stream(self) -> tuple[str, asyncio.Queue]:
+        """Register a new SSE stream subscriber. Returns (stream_id, queue)."""
+        stream_id = str(uuid.uuid4())
+        q: asyncio.Queue = asyncio.Queue(maxsize=256)
+        self._stream_queues[stream_id] = q
+        return stream_id, q
+
+    def unregister_stream(self, stream_id: str) -> None:
+        """Remove an SSE stream subscriber."""
+        self._stream_queues.pop(stream_id, None)
+
+    @property
+    def active_streams(self) -> int:
+        return len(self._stream_queues)
 
     def subscribe(
         self, subscriber_id: str, topic_pattern: str, callback_url: str = ""
@@ -254,4 +279,86 @@ async def nerve_health():
 @router.get("/stats")
 async def nerve_stats():
     """Get OpenNerve statistics."""
-    return bus.stats()
+    stats = bus.stats()
+    stats["active_streams"] = bus.active_streams
+    return stats
+
+
+# ── Real-Time Event Streaming (StreamEvents) ─────────────────
+
+
+class StreamEventRequest(BaseModel):
+    """Single event upload via the streaming endpoint."""
+    id: str = ""
+    source: str = ""
+    event_type: str = ""
+    timestamp_ms: int = 0
+    payload: str = ""
+    tags: dict[str, str] = Field(default_factory=dict)
+
+
+@router.post("/stream/upload")
+async def stream_upload(req: StreamEventRequest):
+    """Upload a single event in real-time (StreamEvents HTTP equivalent).
+
+    Unlike batch upload via /publish, this endpoint is designed for
+    low-latency single-event delivery. The event is immediately
+    published to the bus AND forwarded to any active SSE subscribers.
+    """
+    data = {
+        "id": req.id,
+        "source": req.source,
+        "event_type": req.event_type,
+        "timestamp_ms": req.timestamp_ms,
+        "payload": req.payload,
+        "tags": req.tags,
+    }
+    topic = f"soma.{req.event_type}" if req.event_type else "soma.events"
+    event = bus.publish(topic, data, source=f"stream:{req.source}")
+    return {"status": "accepted", "event_id": event["id"], "topic": topic}
+
+
+@router.get("/stream")
+async def stream_events(
+    topic: str = Query(default="*"),
+):
+    """SSE endpoint for real-time event streaming.
+
+    Clients connect and receive events as they are published to the bus.
+    This implements the StreamEvents RPC from soul.proto over HTTP SSE.
+
+    Usage:
+        curl -N http://localhost:8090/api/nerve/stream
+        curl -N http://localhost:8090/api/nerve/stream?topic=soma.*
+    """
+    stream_id, queue = bus.register_stream()
+
+    async def event_generator():
+        try:
+            # Send initial connection event
+            yield f"data: {json.dumps({'type': 'connected', 'stream_id': stream_id, 'topic': topic})}\n\n"
+
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    # Filter by topic if specified
+                    if topic != "*" and not bus._topic_matches(topic, event.get("topic", "")):
+                        continue
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive ping every 30s
+                    yield f": ping {datetime.now(UTC).isoformat()}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            bus.unregister_stream(stream_id)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
