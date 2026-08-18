@@ -71,6 +71,7 @@ from src.api.sense import router as sense_router
 from src.api.sessions_api import router as sessions_router
 from src.api.skills import router as skills_router
 from src.api.soma_connector import router as soma_connector_router
+from src.api.soma_discovery import router as soma_discovery_router
 from src.api.system_overview import router as system_overview_router
 from src.api.tag import router as tag_router
 from src.api.terminal_ws import router as terminal_router
@@ -149,7 +150,10 @@ async def _intelligence_auto_collect():
 async def lifespan(app: FastAPI):
     # Startup
     await db_pool.connect()
-    qdrant_client.ensure_collection()
+    try:
+        qdrant_client.ensure_collection()
+    except Exception:
+        print("WARNING: Qdrant not available, skipping")
     meili_client.ensure_index()
     await gland_gateway.startup()
 
@@ -415,6 +419,7 @@ app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(learn_router, prefix="/api/learn", tags=["learn"])
 app.include_router(registry_router, prefix="/api/registry", tags=["registry"])
 app.include_router(soma_connector_router, prefix="/api/soma", tags=["soma-connector"])
+app.include_router(soma_discovery_router, prefix="/api/soma/discovery", tags=["Soma Discovery"])
 app.include_router(config_api_router, prefix="/api", tags=["config"])
 app.include_router(diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"])
 app.include_router(admin_actions_router, prefix="/api/admin", tags=["admin"])
