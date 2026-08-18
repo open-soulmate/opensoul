@@ -56,6 +56,10 @@ class IntrusionDetectionMiddleware(BaseHTTPMiddleware):
         # Extract request info
         ip = request.client.host if request.client else "unknown"
         method = request.method
+
+        # Whitelist localhost — the frontend (OpenMate) and cron jobs call from the same machine
+        if ip in ("127.0.0.1", "::1", "localhost"):
+            return await call_next(request)
         query = str(request.url.query) if request.url.query else ""
         user_agent = request.headers.get("user-agent", "")
 
