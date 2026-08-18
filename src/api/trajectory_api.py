@@ -9,6 +9,15 @@ from pydantic import BaseModel
 from src.database.postgres import db_pool
 
 router = APIRouter()
+# ── Health ────────────────────────────────────────────────────
+
+
+@router.get("/health")
+async def trajectory_v2_health():
+    """Trajectory-v2 health check."""
+    return {"status": "ok", "component": "trajectory-v2"}
+
+
 
 
 # ── Request Schemas ──────────────────────────────────────────
