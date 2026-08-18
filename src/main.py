@@ -34,6 +34,7 @@ from src.api.entity import router as entity_router
 from src.api.event_stream import router as event_stream_router
 from src.api.export import router as export_router
 from src.api.gene import router as gene_router
+from src.api.gene_templates import router as gene_templates_router
 from src.api.git_api import router as git_router
 from src.api.gland import gateway as gland_gateway
 from src.api.gland import router as gland_router
@@ -283,6 +284,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("marrow", "/api/marrow/health"),
     ("gland", "/api/gland/health"),
     ("gene", "/api/gene/health"),
+    ("gene-templates", "/api/gene/adapter-health"),
     ("echo", "/api/echo/health"),
     ("mirror", "/api/mirror/health"),
     ("link", "/api/link/health"),
@@ -402,6 +404,7 @@ app.include_router(sense_router, prefix="/api/sense", tags=["sense"])
 app.include_router(immune_router, prefix="/api/immune", tags=["immune"])
 app.include_router(marrow_router, prefix="/api/marrow", tags=["marrow"])
 app.include_router(gene_router, prefix="/api/gene", tags=["gene"])
+app.include_router(gene_templates_router, prefix="/api/gene", tags=["Gene Templates"])
 app.include_router(echo_router, prefix="/api/echo", tags=["echo"])
 app.include_router(mirror_router, prefix="/api/mirror", tags=["mirror"])
 app.include_router(link_router, prefix="/api/link", tags=["link"])
