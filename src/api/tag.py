@@ -2,8 +2,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from src.models.tag import TagCreate, TagUpdate, TagResponse
 from src.database.postgres import db_pool
+from src.models.tag import TagCreate, TagResponse, TagUpdate
 
 router = APIRouter()
 
@@ -18,7 +18,9 @@ async def tag_health():
 async def create(data: TagCreate, user_id: UUID):
     row = await db_pool.fetchrow(
         "INSERT INTO tags (name, color, user_id) VALUES ($1, $2, $3) RETURNING *",
-        data.name, data.color, user_id,
+        data.name,
+        data.color,
+        user_id,
     )
     return dict(row)
 
@@ -38,7 +40,9 @@ async def list_all(user_id: UUID):
 async def update(tag_id: UUID, data: TagUpdate, user_id: UUID):
     fields = data.model_dump(exclude_unset=True)
     if not fields:
-        row = await db_pool.fetchrow("SELECT * FROM tags WHERE id = $1 AND user_id = $2", tag_id, user_id)
+        row = await db_pool.fetchrow(
+            "SELECT * FROM tags WHERE id = $1 AND user_id = $2", tag_id, user_id
+        )
         if not row:
             raise HTTPException(status_code=404, detail="Tag not found")
         return dict(row)
@@ -62,7 +66,9 @@ async def update(tag_id: UUID, data: TagUpdate, user_id: UUID):
 
 @router.delete("/{tag_id}")
 async def delete(tag_id: UUID, user_id: UUID):
-    result = await db_pool.execute("DELETE FROM tags WHERE id = $1 AND user_id = $2", tag_id, user_id)
+    result = await db_pool.execute(
+        "DELETE FROM tags WHERE id = $1 AND user_id = $2", tag_id, user_id
+    )
     if "DELETE 1" not in result:
         raise HTTPException(status_code=404, detail="Tag not found")
     return {"deleted": True}

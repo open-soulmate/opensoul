@@ -1,6 +1,6 @@
 """OpenLink API — 突触系统：双向集成网关、Webhook管理。"""
 
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from src.link.connector import IntegrationManager
@@ -13,6 +13,7 @@ manager = IntegrationManager()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class ConnectorCreateRequest(BaseModel):
     name: str
@@ -40,6 +41,7 @@ class WebhookSendRequest(BaseModel):
 
 # ── Connector CRUD ─────────────────────────────────────────
 
+
 @router.post("/connectors")
 async def create_connector(req: ConnectorCreateRequest):
     """Create a new integration connector."""
@@ -53,11 +55,19 @@ async def create_connector(req: ConnectorCreateRequest):
         description=req.description,
         tags=req.tags,
     )
-    push_event({
-        "organ": "link", "emoji": "🔗", "type": "connector_created",
-        "summary": f"🔌 Connector created: {connector.name} ({connector.type.value})",
-        "detail": {"connector_id": connector.connector_id, "name": connector.name, "type": connector.type.value},
-    })
+    push_event(
+        {
+            "organ": "link",
+            "emoji": "🔗",
+            "type": "connector_created",
+            "summary": f"🔌 Connector created: {connector.name} ({connector.type.value})",
+            "detail": {
+                "connector_id": connector.connector_id,
+                "name": connector.name,
+                "type": connector.type.value,
+            },
+        }
+    )
 
     return {
         "connector_id": connector.connector_id,
@@ -120,6 +130,7 @@ async def delete_connector(connector_id: str):
 
 # ── Connector Test (frontend calls /connectors/{id}/test) ──
 
+
 @router.post("/connectors/{connector_id}/test")
 async def test_connector(connector_id: str, req: WebhookSendRequest | None = None):
     """Test a connector by sending a test payload."""
@@ -129,6 +140,7 @@ async def test_connector(connector_id: str, req: WebhookSendRequest | None = Non
 
 
 # ── Webhook Ingress ────────────────────────────────────────
+
 
 @router.post("/webhook/{connector_id}")
 async def receive_webhook(connector_id: str, request: Request):
@@ -144,7 +156,7 @@ async def receive_webhook(connector_id: str, request: Request):
         signature = request.headers.get("X-Signature", "")
         body = await request.body()
         expected = f"sha256={__import__('hmac').new(connector.secret.encode(), body, __import__('hashlib').sha256).hexdigest()}"
-        if not __import__('hmac').compare_digest(signature, expected):
+        if not __import__("hmac").compare_digest(signature, expected):
             raise HTTPException(401, "Invalid signature")
 
     try:
@@ -162,15 +174,24 @@ async def receive_webhook(connector_id: str, request: Request):
         source_ip=source_ip,
     )
 
-    push_event({
-        "organ": "link", "emoji": "🔗", "type": "webhook_received",
-        "summary": f"📥 Webhook received from {source_ip} → {connector_id}",
-        "detail": {"connector_id": connector_id, "source_ip": source_ip, "method": request.method},
-    })
+    push_event(
+        {
+            "organ": "link",
+            "emoji": "🔗",
+            "type": "webhook_received",
+            "summary": f"📥 Webhook received from {source_ip} → {connector_id}",
+            "detail": {
+                "connector_id": connector_id,
+                "source_ip": source_ip,
+                "method": request.method,
+            },
+        }
+    )
 
     # Also push to notification center for immediate visibility
     try:
         from src.api.notifications import push_notification
+
         push_notification(
             source="link",
             title=f"🔗 Webhook: {connector.name}",
@@ -179,7 +200,11 @@ async def receive_webhook(connector_id: str, request: Request):
             organ="link",
             emoji="🔗",
             action_url="/link",
-            metadata={"connector_id": connector_id, "source_ip": source_ip, "event_id": event.event_id},
+            metadata={
+                "connector_id": connector_id,
+                "source_ip": source_ip,
+                "event_id": event.event_id,
+            },
         )
     except Exception:
         pass  # Non-fatal
@@ -187,8 +212,8 @@ async def receive_webhook(connector_id: str, request: Request):
     return {"received": True, "event_id": event.event_id}
 
 
-
 # ── Webhook Egress ─────────────────────────────────────────
+
 
 @router.post("/connectors/{connector_id}/send")
 async def send_webhook(connector_id: str, req: WebhookSendRequest):
@@ -201,6 +226,7 @@ async def send_webhook(connector_id: str, req: WebhookSendRequest):
 
 # ── Events ─────────────────────────────────────────────────
 
+
 @router.get("/events")
 async def get_events(
     connector_id: str = Query(default=None),
@@ -211,6 +237,7 @@ async def get_events(
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def link_stats():
@@ -223,6 +250,7 @@ async def link_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def link_health():

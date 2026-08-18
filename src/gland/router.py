@@ -13,7 +13,7 @@ from src.gland.token_meter import TokenMeter
 logger = logging.getLogger(__name__)
 
 
-class TaskType(str, enum.Enum):
+class TaskType(enum.StrEnum):
     CHAT = "chat"
     COMPLETION = "completion"
     EMBEDDING = "embedding"
@@ -81,19 +81,23 @@ class ModelRouter:
     def list_providers(self) -> list[dict]:
         out = []
         for p in self.providers.values():
-            out.append({
-                "name": p.name,
-                "base_url": p.base_url,
-                "models": p.models,
-                "enabled": p.enabled and not self._is_cooling_down(p),
-                "priority": p.priority,
-                "consecutive_failures": p._consecutive_failures,
-            })
+            out.append(
+                {
+                    "name": p.name,
+                    "base_url": p.base_url,
+                    "models": p.models,
+                    "enabled": p.enabled and not self._is_cooling_down(p),
+                    "priority": p.priority,
+                    "consecutive_failures": p._consecutive_failures,
+                }
+            )
         return out
 
     # ── smart routing ────────────────────────────────────────────
 
-    def _resolve_model(self, provider: ProviderConfig, task: TaskType, model: str | None) -> str | None:
+    def _resolve_model(
+        self, provider: ProviderConfig, task: TaskType, model: str | None
+    ) -> str | None:
         """Determine the concrete model name for a request."""
         if model:
             return model
@@ -123,7 +127,9 @@ class ModelRouter:
             p._cooldown_until = time.time() + self.COOLDOWN_SECONDS
             logger.warning(
                 "Provider=%s cooling down for %ds after %d failures",
-                p.name, self.COOLDOWN_SECONDS, p._consecutive_failures,
+                p.name,
+                self.COOLDOWN_SECONDS,
+                p._consecutive_failures,
             )
 
     def _mark_success(self, p: ProviderConfig) -> None:
@@ -152,7 +158,9 @@ class ModelRouter:
         for provider in candidates:
             resolved_model = self._resolve_model(provider, task, model)
             if not resolved_model:
-                logger.debug("Skipping provider=%s: no model for task=%s", provider.name, task.value)
+                logger.debug(
+                    "Skipping provider=%s: no model for task=%s", provider.name, task.value
+                )
                 continue
 
             api_key = self.key_manager.next_key(provider.name)
@@ -162,8 +170,13 @@ class ModelRouter:
 
             try:
                 result = await self._call_chat(
-                    provider, api_key, resolved_model, messages,
-                    temperature=temperature, max_tokens=max_tokens, stream=stream,
+                    provider,
+                    api_key,
+                    resolved_model,
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=stream,
                 )
                 self._mark_success(provider)
 
@@ -298,7 +311,12 @@ class ModelRouter:
             resp.raise_for_status()
             reply = resp.json()["choices"][0]["message"]["content"]
             self._mark_success(provider)
-            return {"status": "ok", "provider": provider_name, "model": model, "reply": reply.strip()}
+            return {
+                "status": "ok",
+                "provider": provider_name,
+                "model": model,
+                "reply": reply.strip(),
+            }
         except Exception as exc:
             self._mark_failure(provider)
             return {"status": "error", "provider": provider_name, "detail": str(exc)}

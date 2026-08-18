@@ -3,21 +3,22 @@
 import json
 import os
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
 class VoiceProfile:
     """A named voice configuration."""
+
     profile_id: str
     name: str
     description: str = ""
     engine: str = "edge-tts"
     voice_id: str = "zh-CN-XiaoxiaoNeural"
     language: str = "zh-CN"
-    rate: str = "+0%"        # e.g. "+20%", "-10%"
-    pitch: str = "+0Hz"      # e.g. "+5Hz"
-    volume: str = "+0%"      # e.g. "+10%"
+    rate: str = "+0%"  # e.g. "+20%", "-10%"
+    pitch: str = "+0Hz"  # e.g. "+5Hz"
+    volume: str = "+0%"  # e.g. "+10%"
     tags: list[str] = field(default_factory=list)
     builtin: bool = False
     usage_count: int = 0

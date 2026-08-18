@@ -9,11 +9,9 @@ Supports multiple backends:
 from __future__ import annotations
 
 import base64
-import io
 import os
 import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
 
 try:
     import whisper
@@ -84,13 +82,15 @@ class ASREngine:
         if self._llm_gateway:
             try:
                 import asyncio
+
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # We're inside an async context; can't use run_until_complete
                     # Return a placeholder — the async version should be used instead
                     return ASRResult(
                         text="[ASR: use /asr/transcribe-async for LLM fallback in async context]",
-                        language="", engine="none",
+                        language="",
+                        engine="none",
                     )
                 return loop.run_until_complete(
                     self._transcribe_via_llm(audio_bytes, language, format)
@@ -100,7 +100,8 @@ class ASREngine:
 
         return ASRResult(
             text="[ASR unavailable: no whisper and no LLM fallback configured]",
-            language="", engine="none",
+            language="",
+            engine="none",
         )
 
     async def transcribe_async(
@@ -124,7 +125,8 @@ class ASREngine:
 
         return ASRResult(
             text="[ASR unavailable: no whisper and no LLM fallback configured]",
-            language="", engine="none",
+            language="",
+            engine="none",
         )
 
     def _transcribe_whisper(
@@ -230,7 +232,8 @@ class ASREngine:
         except Exception as e:
             return ASRResult(
                 text=f"[LLM ASR fallback error: {e}]",
-                language="", engine="error",
+                language="",
+                engine="error",
             )
 
     def list_models(self) -> list[str]:

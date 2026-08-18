@@ -1,12 +1,13 @@
 """WebSocket terminal endpoint for OpenMate."""
+
 import asyncio
+import fcntl
 import json
 import os
 import pty
-import select
 import struct
-import fcntl
 import termios
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
@@ -25,7 +26,7 @@ async def terminal_ws(websocket: WebSocket):
         return
 
     # Parent process
-    loop = asyncio.get_event_loop()
+    asyncio.get_event_loop()
 
     async def read_pty():
         """Read from PTY and send to WebSocket."""

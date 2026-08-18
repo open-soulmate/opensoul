@@ -1,8 +1,6 @@
 """Integration tests for OpenCortex (皮层) — advanced reasoning, task planning,
 GraphRAG, recommendations, and quality scoring."""
 
-import pytest
-
 
 class TestCortexHealth:
     def test_health(self, client):
@@ -31,7 +29,9 @@ class TestGraphRAGExtract:
     def test_extract_entities_and_relations(self, client):
         resp = client.post(
             "/api/cortex/graphrag/extract",
-            params={"text": "OpenAI发布了GPT-4模型，Google随后推出了Gemini。两家公司都在人工智能领域竞争。"},
+            params={
+                "text": "OpenAI发布了GPT-4模型，Google随后推出了Gemini。两家公司都在人工智能领域竞争。"
+            },
         )
         assert resp.status_code == 200
         data = resp.json()

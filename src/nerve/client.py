@@ -1,13 +1,14 @@
 """NATS client for OpenNerve messaging."""
 
-import asyncio
 import logging
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 try:
     import nats
     from nats.aio.client import Client as NATSClient
     from nats.aio.msg import Msg
+
     NATS_AVAILABLE = True
 except ImportError:
     nats = None
@@ -78,6 +79,7 @@ class NerveClient:
             payload = data.serialize()
         elif isinstance(data, dict):
             import json
+
             payload = json.dumps(data).encode()
         else:
             payload = data
@@ -109,6 +111,7 @@ class NerveClient:
             payload = data.serialize()
         elif isinstance(data, dict):
             import json
+
             payload = json.dumps(data).encode()
         else:
             payload = data

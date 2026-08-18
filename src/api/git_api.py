@@ -17,7 +17,8 @@ router = APIRouter()
 async def _git(args: list[str], cwd: str | None = None) -> tuple[str, int]:
     """Run a git command and return (stdout, returncode)."""
     proc = await asyncio.create_subprocess_exec(
-        "git", *args,
+        "git",
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=cwd or str(Path.home()),
@@ -28,6 +29,7 @@ async def _git(args: list[str], cwd: str | None = None) -> tuple[str, int]:
 
 
 # ── Status ───────────────────────────────────────────────────────
+
 
 @router.get("/status")
 async def git_status(cwd: str | None = None):
@@ -57,7 +59,9 @@ async def git_status(cwd: str | None = None):
     ahead = behind = 0
     upstream_out, rc = await _git(["rev-parse", "--abbrev-ref", "@{upstream}"], work_dir)
     if rc == 0 and upstream_out:
-        rev_out, _ = await _git(["rev-list", "--left-right", "--count", f"HEAD...{upstream_out}"], work_dir)
+        rev_out, _ = await _git(
+            ["rev-list", "--left-right", "--count", f"HEAD...{upstream_out}"], work_dir
+        )
         parts = rev_out.split()
         if len(parts) == 2:
             ahead, behind = int(parts[0]), int(parts[1])
@@ -73,6 +77,7 @@ async def git_status(cwd: str | None = None):
 
 
 # ── Commit ───────────────────────────────────────────────────────
+
 
 class CommitRequest(BaseModel):
     message: str

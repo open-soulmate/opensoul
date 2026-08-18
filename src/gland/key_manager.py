@@ -6,7 +6,7 @@ import hmac
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
@@ -110,7 +110,11 @@ class KeyManager:
             slot.last_checked = time.time()
             if slot.fail_count >= 3:
                 slot.is_valid = False
-                logger.warning("Key for provider=%s marked invalid after %d failures", provider, slot.fail_count)
+                logger.warning(
+                    "Key for provider=%s marked invalid after %d failures",
+                    provider,
+                    slot.fail_count,
+                )
             return False
 
     async def validate_all(self, provider: str, base_url: str) -> list[bool]:

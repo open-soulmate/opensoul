@@ -4,7 +4,6 @@ import re
 
 from src.config import settings
 
-
 # ---------------------------------------------------------------------------
 # SQL dialect conversion: PostgreSQL → SQLite
 # ---------------------------------------------------------------------------
@@ -21,6 +20,7 @@ def _convert_sql_for_sqlite(sql: str, args: tuple) -> tuple[str, tuple]:
     - ANY($N) → expanded IN (?, ?, ...)
     - NOW() → datetime('now')
     """
+
     # 1. Handle ANY($N) first — expand list args into IN (?, ...)
     def _replace_any(m: re.Match) -> str:
         idx = int(m.group(1)) - 1  # $N is 1-indexed

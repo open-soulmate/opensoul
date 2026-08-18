@@ -1,15 +1,17 @@
 """OpenTrajectory API — Agent execution trace, replay, and fork endpoints."""
 
 import json
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.trajectory.store import trajectory_store, TrajectoryEvent, EventType
+from src.trajectory.store import EventType, TrajectoryEvent, trajectory_store
 
 router = APIRouter()
 
 
 # ── Request Schemas ──────────────────────────────────────────
+
 
 class SessionCreateRequest(BaseModel):
     agent_id: str = ""
@@ -39,12 +41,14 @@ class BatchEventRequest(BaseModel):
 
 # ── Health ───────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "trajectory"}
 
 
 # ── Stats ────────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def stats():
@@ -53,6 +57,7 @@ async def stats():
 
 
 # ── Sessions ─────────────────────────────────────────────────
+
 
 @router.post("/sessions")
 async def create_session(req: SessionCreateRequest):
@@ -74,7 +79,10 @@ async def list_sessions(
 ):
     """List trajectory sessions with optional filters."""
     sessions = await trajectory_store.list_sessions(
-        agent_id=agent_id, status=status, limit=limit, offset=offset,
+        agent_id=agent_id,
+        status=status,
+        limit=limit,
+        offset=offset,
     )
     total = await trajectory_store.count_sessions()
     return {
@@ -115,6 +123,7 @@ async def end_session(session_id: str, status: str = Query(default="completed"))
 
 
 # ── Events ───────────────────────────────────────────────────
+
 
 @router.post("/sessions/{session_id}/events")
 async def record_event(session_id: str, req: EventRecordRequest):
@@ -186,6 +195,7 @@ async def get_event(event_id: str):
 
 # ── Search ───────────────────────────────────────────────────
 
+
 @router.get("/search")
 async def search_events(
     session_id: str = Query(default=""),
@@ -195,8 +205,10 @@ async def search_events(
 ):
     """Search across trajectory events."""
     events = await trajectory_store.search_events(
-        session_id=session_id, event_type=event_type,
-        keyword=keyword, limit=limit,
+        session_id=session_id,
+        event_type=event_type,
+        keyword=keyword,
+        limit=limit,
     )
     return {
         "events": [e.to_dict() for e in events],
@@ -206,6 +218,7 @@ async def search_events(
 
 
 # ── Fork (Branch) ────────────────────────────────────────────
+
 
 @router.post("/sessions/{session_id}/fork")
 async def fork_session(session_id: str, req: ForkRequest):
@@ -223,6 +236,7 @@ async def fork_session(session_id: str, req: ForkRequest):
 
 
 # ── Replay ───────────────────────────────────────────────────
+
 
 @router.get("/sessions/{session_id}/replay")
 async def replay_session(session_id: str, from_event: str = Query(default="")):
@@ -266,18 +280,15 @@ async def replay_session(session_id: str, from_event: str = Query(default="")):
 
 # ── Event Types ──────────────────────────────────────────────
 
+
 @router.get("/event-types")
 async def list_event_types():
     """List all supported event types."""
-    return {
-        "types": [
-            {"value": et.value, "name": et.name}
-            for et in EventType
-        ]
-    }
+    return {"types": [{"value": et.value, "name": et.name} for et in EventType]}
 
 
 # ── Analytics ──────────────────────────────────────────────
+
 
 @router.get("/analytics/tools")
 async def tool_analytics(limit: int = Query(default=50, ge=1, le=200)):

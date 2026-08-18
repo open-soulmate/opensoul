@@ -1,7 +1,8 @@
 """OpenMarrow API — 骨髓系统：备份恢复、数据迁移、定时备份。"""
 
 import os
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.marrow.backup import BackupManager, BackupScheduler
@@ -20,6 +21,7 @@ scheduler.start()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class BackupCreateRequest(BaseModel):
     source_dirs: list[str]
@@ -54,6 +56,7 @@ class ScheduleToggleRequest(BaseModel):
 
 # ── Backup Endpoints ───────────────────────────────────────
 
+
 @router.post("/backup")
 async def create_backup(req: BackupCreateRequest):
     """Create a backup snapshot of specified directories."""
@@ -73,14 +76,23 @@ async def create_backup(req: BackupCreateRequest):
         tags=req.tags,
     )
 
-    push_event({
-        "organ": "marrow", "emoji": "🦴", "type": "backup_created",
-        "summary": f"💾 Backup created: {manifest.name} ({manifest.file_count} files)",
-        "detail": {"backup_id": manifest.backup_id, "name": manifest.name, "file_count": manifest.file_count},
-    })
+    push_event(
+        {
+            "organ": "marrow",
+            "emoji": "🦴",
+            "type": "backup_created",
+            "summary": f"💾 Backup created: {manifest.name} ({manifest.file_count} files)",
+            "detail": {
+                "backup_id": manifest.backup_id,
+                "name": manifest.name,
+                "file_count": manifest.file_count,
+            },
+        }
+    )
     # Push notification for backup completion
     try:
         from src.api.notifications import push_notification
+
         push_notification(
             source="marrow",
             title=f"💾 Backup Complete: {manifest.name}",
@@ -89,7 +101,11 @@ async def create_backup(req: BackupCreateRequest):
             organ="marrow",
             emoji="🦴",
             action_url="/marrow",
-            metadata={"backup_id": manifest.backup_id, "file_count": manifest.file_count, "size_bytes": manifest.size_bytes},
+            metadata={
+                "backup_id": manifest.backup_id,
+                "file_count": manifest.file_count,
+                "size_bytes": manifest.size_bytes,
+            },
         )
     except Exception:
         pass
@@ -134,15 +150,20 @@ async def restore_backup(backup_id: str, req: RestoreRequest | None = None):
     result = backup_manager.restore_backup(backup_id, target)
     if not result["success"]:
         raise HTTPException(400, result["error"])
-    push_event({
-        "organ": "marrow", "emoji": "🦴", "type": "backup_restored",
-        "summary": f"♻️ Backup restored: {backup_id}",
-        "detail": {"backup_id": backup_id, "target_dir": target},
-    })
+    push_event(
+        {
+            "organ": "marrow",
+            "emoji": "🦴",
+            "type": "backup_restored",
+            "summary": f"♻️ Backup restored: {backup_id}",
+            "detail": {"backup_id": backup_id, "target_dir": target},
+        }
+    )
     return result
 
 
 # ── Scheduled Backup Endpoints ─────────────────────────────
+
 
 @router.post("/schedules")
 async def create_schedule(req: ScheduleCreateRequest):
@@ -150,7 +171,9 @@ async def create_schedule(req: ScheduleCreateRequest):
     # Validate interval
     valid_intervals = list(BackupScheduler.INTERVALS.keys())
     if req.interval not in valid_intervals and not req.interval_seconds:
-        raise HTTPException(400, f"Invalid interval. Choose from: {valid_intervals} or provide interval_seconds")
+        raise HTTPException(
+            400, f"Invalid interval. Choose from: {valid_intervals} or provide interval_seconds"
+        )
 
     # Validate source dirs
     valid_dirs = []
@@ -170,11 +193,19 @@ async def create_schedule(req: ScheduleCreateRequest):
         tags=req.tags,
     )
 
-    push_event({
-        "organ": "marrow", "emoji": "🦴", "type": "schedule_created",
-        "summary": f"⏰ Backup schedule created: {schedule.name} ({schedule.cron_expr})",
-        "detail": {"schedule_id": schedule.schedule_id, "name": schedule.name, "interval": schedule.cron_expr},
-    })
+    push_event(
+        {
+            "organ": "marrow",
+            "emoji": "🦴",
+            "type": "schedule_created",
+            "summary": f"⏰ Backup schedule created: {schedule.name} ({schedule.cron_expr})",
+            "detail": {
+                "schedule_id": schedule.schedule_id,
+                "name": schedule.name,
+                "interval": schedule.cron_expr,
+            },
+        }
+    )
 
     return {
         "schedule_id": schedule.schedule_id,
@@ -222,6 +253,7 @@ async def run_due_schedules():
 
 # ── Data Migration Endpoints ───────────────────────────────
 
+
 @router.post("/export")
 async def export_data(req: ExportRequest):
     """Export data in specified format (json/jsonl/csv)."""
@@ -252,8 +284,8 @@ async def import_data(
     format: str = Form(default="json"),
 ):
     """Import data from uploaded file."""
-    import tempfile
     import os
+    import tempfile
 
     suffix = {"json": ".json", "jsonl": ".jsonl", "csv": ".csv"}.get(format, ".txt")
     data = await file.read()
@@ -285,6 +317,7 @@ async def list_exports():
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def marrow_stats():
     """Get OpenMarrow statistics."""
@@ -302,6 +335,7 @@ async def marrow_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def marrow_health():

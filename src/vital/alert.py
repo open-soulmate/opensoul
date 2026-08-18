@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from src.config import settings
+
 from .collector import MetricsCollector, MetricsSnapshot
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,14 @@ class AlertManager:
         # Push to Notification Center
         try:
             from src.api.notifications import push_notification
-            emoji = "🔴" if record.severity == "critical" else "🟡" if record.severity == "warning" else "🔵"
+
+            emoji = (
+                "🔴"
+                if record.severity == "critical"
+                else "🟡"
+                if record.severity == "warning"
+                else "🔵"
+            )
             push_notification(
                 source="vital",
                 title=f"{emoji} 系统告警: {record.rule_name}",

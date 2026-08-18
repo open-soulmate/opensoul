@@ -1,8 +1,9 @@
 """OpenVision API — 视觉成像中枢：图表、思维导图生成。"""
 
-import time
 import base64
-from fastapi import APIRouter, HTTPException, Query
+import time
+
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -17,6 +18,7 @@ mindmaps = MindMapGenerator()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class BarChartRequest(BaseModel):
     labels: list[str]
@@ -67,6 +69,7 @@ class MindMapRequest(BaseModel):
 
 # ── Chart Endpoints ────────────────────────────────────────
 
+
 @router.post("/chart/bar")
 async def create_bar_chart(req: BarChartRequest):
     """Generate a bar chart."""
@@ -76,8 +79,12 @@ async def create_bar_chart(req: BarChartRequest):
         raise HTTPException(400, "Labels and values must have same length")
 
     result = charts.bar_chart(
-        labels=req.labels, values=req.values, title=req.title,
-        xlabel=req.xlabel, ylabel=req.ylabel, color=req.color,
+        labels=req.labels,
+        values=req.values,
+        title=req.title,
+        xlabel=req.xlabel,
+        ylabel=req.ylabel,
+        color=req.color,
     )
 
     output_file = ""
@@ -104,8 +111,11 @@ async def create_line_chart(req: LineChartRequest):
         raise HTTPException(400, "x values and at least one series required")
 
     result = charts.line_chart(
-        x=req.x, series=req.series, title=req.title,
-        xlabel=req.xlabel, ylabel=req.ylabel,
+        x=req.x,
+        series=req.series,
+        title=req.title,
+        xlabel=req.xlabel,
+        ylabel=req.ylabel,
     )
 
     output_file = ""
@@ -151,8 +161,11 @@ async def create_scatter_plot(req: ScatterRequest):
         raise HTTPException(400, "x and y values required")
 
     result = charts.scatter_plot(
-        x=req.x, y=req.y, title=req.title,
-        xlabel=req.xlabel, ylabel=req.ylabel,
+        x=req.x,
+        y=req.y,
+        title=req.title,
+        xlabel=req.xlabel,
+        ylabel=req.ylabel,
     )
 
     output_file = ""
@@ -169,27 +182,37 @@ async def create_scatter_plot(req: ScatterRequest):
 
 # ── Chart JSON Endpoints (return metadata only) ───────────
 
+
 @router.post("/chart/bar/json")
 async def bar_chart_json(req: BarChartRequest):
     """Generate bar chart, return metadata only."""
     result = charts.bar_chart(
-        labels=req.labels, values=req.values, title=req.title,
-        xlabel=req.xlabel, ylabel=req.ylabel, color=req.color,
+        labels=req.labels,
+        values=req.values,
+        title=req.title,
+        xlabel=req.xlabel,
+        ylabel=req.ylabel,
+        color=req.color,
     )
     output_file = ""
     if req.save_output:
         fname = req.output_name or f"bar-{int(time.time())}"
         output_file = charts.save_output(result.image_data, fname, result.format)
     return {
-        "format": result.format, "engine": result.engine,
-        "chart_type": result.chart_type, "size_bytes": result.size_bytes,
+        "format": result.format,
+        "engine": result.engine,
+        "chart_type": result.chart_type,
+        "size_bytes": result.size_bytes,
         "elapsed_ms": int(result.elapsed_seconds * 1000),
         "output_file": output_file,
-        "image_base64": base64.b64encode(result.image_data).decode() if result.format == "png" else "",
+        "image_base64": base64.b64encode(result.image_data).decode()
+        if result.format == "png"
+        else "",
     }
 
 
 # ── Mind Map Endpoints ─────────────────────────────────────
+
 
 @router.post("/mindmap")
 async def create_mindmap(req: MindMapRequest):
@@ -228,11 +251,14 @@ async def mindmap_json(req: MindMapRequest):
         "size_bytes": len(result["image_data"]),
         "elapsed_seconds": result.get("elapsed_seconds", 0),
         "output_file": output_file,
-        "image_base64": base64.b64encode(result["image_data"]).decode() if result["format"] == "png" else "",
+        "image_base64": base64.b64encode(result["image_data"]).decode()
+        if result["format"] == "png"
+        else "",
     }
 
 
 # ── Output Endpoints ───────────────────────────────────────
+
 
 @router.get("/outputs")
 async def list_outputs():
@@ -244,6 +270,7 @@ async def list_outputs():
 async def delete_output(filename: str):
     """Delete a saved output file."""
     import os
+
     path = os.path.join(charts._output_dir, filename)
     if os.path.exists(path):
         os.unlink(path)
@@ -252,6 +279,7 @@ async def delete_output(filename: str):
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def vision_stats():
@@ -267,6 +295,7 @@ async def vision_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def vision_health():

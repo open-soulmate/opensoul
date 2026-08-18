@@ -4,11 +4,9 @@ Tracks file versions when content changes, supports history listing,
 rollback to previous versions, and diff between versions.
 """
 
-import hashlib
 import sqlite3
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 
 @dataclass
@@ -126,15 +124,11 @@ class VersionManager:
 
     def stats(self) -> dict:
         """Get versioning statistics."""
-        total_versions = self._db.execute(
-            "SELECT COUNT(*) FROM file_versions"
-        ).fetchone()[0]
+        total_versions = self._db.execute("SELECT COUNT(*) FROM file_versions").fetchone()[0]
         total_files = self._db.execute(
             "SELECT COUNT(DISTINCT file_id) FROM file_versions"
         ).fetchone()[0]
-        avg_versions = (
-            round(total_versions / total_files, 1) if total_files > 0 else 0
-        )
+        avg_versions = round(total_versions / total_files, 1) if total_files > 0 else 0
 
         return {
             "total_versions": total_versions,

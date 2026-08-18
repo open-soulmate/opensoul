@@ -42,13 +42,28 @@ async def hybrid_search(query: str, user_id: UUID, limit: int = 10) -> list[dict
         kid = r.get("id")
         if kid and kid not in seen:
             seen[kid] = True
-            merged.append({"id": kid, "title": r.get("title"), "content": r.get("content", "")[:200], "source": "fulltext", "score": r.get("_rankingScore", 0)})
+            merged.append(
+                {
+                    "id": kid,
+                    "title": r.get("title"),
+                    "content": r.get("content", "")[:200],
+                    "source": "fulltext",
+                    "score": r.get("_rankingScore", 0),
+                }
+            )
 
     for r in semantic_results:
         kid = r.get("id")
         if kid and kid not in seen:
             seen[kid] = True
-            merged.append({"id": kid, "chunk": r.get("chunk", ""), "source": "semantic", "score": r.get("score", 0)})
+            merged.append(
+                {
+                    "id": kid,
+                    "chunk": r.get("chunk", ""),
+                    "source": "semantic",
+                    "score": r.get("score", 0),
+                }
+            )
         elif kid and kid in seen:
             # Boost existing entry
             for m in merged:

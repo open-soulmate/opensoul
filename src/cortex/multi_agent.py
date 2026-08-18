@@ -62,7 +62,9 @@ class Writer(BaseAgent):
 class MultiAgent:
     """Orchestrates a Researcher → Analyzer → Writer pipeline."""
 
-    def __init__(self, base_url: str | None = None, api_key: str | None = None, model: str | None = None):
+    def __init__(
+        self, base_url: str | None = None, api_key: str | None = None, model: str | None = None
+    ):
         url = base_url or settings.llm_base_url
         key = api_key or settings.llm_api_key
         mdl = model or settings.llm_model

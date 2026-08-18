@@ -6,10 +6,10 @@ via OpenGland.
 """
 
 import json
-import re
 import logging
-from typing import Any
+import re
 from collections import defaultdict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +52,22 @@ ENTITY_PATTERNS: dict[str, list[str]] = {
 RELATION_PATTERNS: list[tuple[str, str]] = [
     # Chinese patterns
     (r"([\u4e00-\u9fffA-Za-z]+?)(?:是|为|属于|隶属于|旗下)([\u4e00-\u9fffA-Za-z]+)", "belongs_to"),
-    (r"([\u4e00-\u9fffA-Za-z]+?)(?:生产|制造|提供|推出|发布|开发了?)([\u4e00-\u9fffA-Za-z]+)", "produces"),
-    (r"([\u4e00-\u9fffA-Za-z]+?)(?:使用|采用|部署|采购|选用|基于|依赖)([\u4e00-\u9fffA-Za-z]+)", "uses"),
-    (r"([\u4e00-\u9fffA-Za-z]+?)(?:竞品|竞争对手|替代|对标)([\u4e00-\u9fffA-Za-z]+)", "competes_with"),
-    (r"([\u4e00-\u9fffA-Za-z]+?)(?:合作|联合|共建|携手|集成)([\u4e00-\u9fffA-Za-z]+)", "cooperates_with"),
+    (
+        r"([\u4e00-\u9fffA-Za-z]+?)(?:生产|制造|提供|推出|发布|开发了?)([\u4e00-\u9fffA-Za-z]+)",
+        "produces",
+    ),
+    (
+        r"([\u4e00-\u9fffA-Za-z]+?)(?:使用|采用|部署|采购|选用|基于|依赖)([\u4e00-\u9fffA-Za-z]+)",
+        "uses",
+    ),
+    (
+        r"([\u4e00-\u9fffA-Za-z]+?)(?:竞品|竞争对手|替代|对标)([\u4e00-\u9fffA-Za-z]+)",
+        "competes_with",
+    ),
+    (
+        r"([\u4e00-\u9fffA-Za-z]+?)(?:合作|联合|共建|携手|集成)([\u4e00-\u9fffA-Za-z]+)",
+        "cooperates_with",
+    ),
     (r"([\u4e00-\u9fffA-Za-z]+?)(?:包含|含有|包括|涵盖|内置)([\u4e00-\u9fffA-Za-z]+)", "contains"),
     (r"([\u4e00-\u9fffA-Za-z]+?)(?:推荐|建议|首选|适用于)([\u4e00-\u9fffA-Za-z]+)", "recommends"),
     (r"([\u4e00-\u9fffA-Za-z]+?)(?:投资|收购|并购|入股)([\u4e00-\u9fffA-Za-z]+)", "invests_in"),
@@ -63,7 +75,10 @@ RELATION_PATTERNS: list[tuple[str, str]] = [
     (r"([\u4e00-\u9fffA-Za-z]+?)(?:创建|发明|提出|研发)([\u4e00-\u9fffA-Za-z]+)", "created"),
     # English patterns
     (r"([A-Z][a-zA-Z\s]+?)\s+(?:is\s+a|is\s+an|are)\s+([a-zA-Z\s]+)", "is_a"),
-    (r"([A-Z][a-zA-Z\s]+?)\s+(?:uses|uses|built\s+on|based\s+on|powered\s+by)\s+([A-Z][a-zA-Z\s]+)", "uses"),
+    (
+        r"([A-Z][a-zA-Z\s]+?)\s+(?:uses|uses|built\s+on|based\s+on|powered\s+by)\s+([A-Z][a-zA-Z\s]+)",
+        "uses",
+    ),
     (r"([A-Z][a-zA-Z\s]+?)\s+(?:includes|contains|supports)\s+([A-Z][a-zA-Z\s]+)", "contains"),
     (r"([A-Z][a-zA-Z\s]+?)\s+(?:competes\s+with|rival)\s+([A-Z][a-zA-Z\s]+)", "competes_with"),
     (r"([A-Z][a-zA-Z\s]+?)\s+(?:acquired|bought|invested\s+in)\s+([A-Z][a-zA-Z\s]+)", "invests_in"),
@@ -76,12 +91,42 @@ class GraphRAGEngine:
     def __init__(self):
         self._entity_patterns = ENTITY_PATTERNS
         self._relation_patterns = RELATION_PATTERNS
-        self._particles = set("的了和与跟但而或并也就又再还才被把将从在到对向给让过着吗呢吧啊呀哦嘛")
+        self._particles = set(
+            "的了和与跟但而或并也就又再还才被把将从在到对向给让过着吗呢吧啊呀哦嘛"
+        )
         self._suffixes = [
-            "公司", "集团", "股份", "科技", "技术", "信息", "软件", "网络", "通信",
-            "大学", "学院", "研究院", "研究所", "服务器", "交换机", "路由器",
-            "防火墙", "存储", "显示屏", "摄像头", "手机", "平板", "工作站",
-            "投影", "打印机", "电脑", "笔记本", "银行", "医院", "基金", "协会", "联盟",
+            "公司",
+            "集团",
+            "股份",
+            "科技",
+            "技术",
+            "信息",
+            "软件",
+            "网络",
+            "通信",
+            "大学",
+            "学院",
+            "研究院",
+            "研究所",
+            "服务器",
+            "交换机",
+            "路由器",
+            "防火墙",
+            "存储",
+            "显示屏",
+            "摄像头",
+            "手机",
+            "平板",
+            "工作站",
+            "投影",
+            "打印机",
+            "电脑",
+            "笔记本",
+            "银行",
+            "医院",
+            "基金",
+            "协会",
+            "联盟",
         ]
 
     # ── Entity Extraction ───────────────────────────────────────────
@@ -104,17 +149,33 @@ class GraphRAGEngine:
                         if name in seen:
                             continue
                         # Skip common words
-                        if name.lower() in {"the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "of", "to", "for"}:
+                        if name.lower() in {
+                            "the",
+                            "a",
+                            "an",
+                            "is",
+                            "are",
+                            "was",
+                            "were",
+                            "in",
+                            "on",
+                            "at",
+                            "of",
+                            "to",
+                            "for",
+                        }:
                             continue
                         # Skip single-char names for non-location types
                         if len(name) < 2 and entity_type not in ("location",):
                             continue
                         seen.add(name)
-                        entities.append({
-                            "name": name,
-                            "type": entity_type,
-                            "properties": {},
-                        })
+                        entities.append(
+                            {
+                                "name": name,
+                                "type": entity_type,
+                                "properties": {},
+                            }
+                        )
                 except re.error:
                     continue
 
@@ -145,7 +206,7 @@ class GraphRAGEngine:
                 if c in self._particles:
                     last_p = i
             if last_p >= 0:
-                name = prefix[last_p + 1:] + name[suffix_start:]
+                name = prefix[last_p + 1 :] + name[suffix_start:]
         else:
             # No suffix keyword — just strip leading particles
             while name and name[0] in self._particles:
@@ -155,9 +216,7 @@ class GraphRAGEngine:
 
     # ── Relation Extraction ─────────────────────────────────────────
 
-    def extract_relations(
-        self, text: str, entities: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def extract_relations(self, text: str, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Extract relations between known entities from text."""
         relations: list[dict[str, Any]] = []
         entity_names = {e["name"] for e in entities}
@@ -181,12 +240,14 @@ class GraphRAGEngine:
                         continue
                     seen_pairs.add(pair_key)
 
-                    relations.append({
-                        "source": source,
-                        "target": target,
-                        "type": rel_type,
-                        "properties": {},
-                    })
+                    relations.append(
+                        {
+                            "source": source,
+                            "target": target,
+                            "type": rel_type,
+                            "properties": {},
+                        }
+                    )
             except re.error:
                 continue
 
@@ -194,9 +255,7 @@ class GraphRAGEngine:
 
     # ── Build Graph from Knowledge ──────────────────────────────────
 
-    async def build_graph_from_knowledge(
-        self, db_pool: Any, user_id: str
-    ) -> dict[str, Any]:
+    async def build_graph_from_knowledge(self, db_pool: Any, user_id: str) -> dict[str, Any]:
         """Scan all knowledge entries for a user, extract entities/relations,
         and upsert into the entities/relations tables.
 
@@ -244,7 +303,8 @@ class GraphRAGEngine:
         for name, entity in all_entities.items():
             existing = await db_pool.fetchrow(
                 "SELECT id FROM entities WHERE name = $1 AND user_id = $2",
-                name, user_id,
+                name,
+                user_id,
             )
             if existing:
                 entity_id_map[name] = str(existing["id"])
@@ -253,7 +313,10 @@ class GraphRAGEngine:
                 await db_pool.execute(
                     "INSERT INTO entities (id, name, type, description, properties, user_id) "
                     "VALUES ($1, $2, $3, $4, $5, $6)",
-                    eid, name, entity["type"], "",
+                    eid,
+                    name,
+                    entity["type"],
+                    "",
                     json.dumps(entity.get("properties", {})),
                     user_id,
                 )
@@ -271,14 +334,19 @@ class GraphRAGEngine:
             # Check duplicate
             existing = await db_pool.fetchrow(
                 "SELECT id FROM relations WHERE source_id = $1 AND target_id = $2 AND relation_type = $3",
-                source_id, target_id, rel["type"],
+                source_id,
+                target_id,
+                rel["type"],
             )
             if not existing:
                 rid = str(_uuid.uuid4())
                 await db_pool.execute(
                     "INSERT INTO relations (id, source_id, target_id, relation_type, properties, user_id) "
                     "VALUES ($1, $2, $3, $4, $5, $6)",
-                    rid, source_id, target_id, rel["type"],
+                    rid,
+                    source_id,
+                    target_id,
+                    rel["type"],
                     json.dumps(rel.get("properties", {})),
                     user_id,
                 )
@@ -293,8 +361,10 @@ class GraphRAGEngine:
             "entity_types": dict(
                 defaultdict(
                     int,
-                    {e["type"]: sum(1 for v in all_entities.values() if v["type"] == e["type"])
-                     for e in all_entities.values()}
+                    {
+                        e["type"]: sum(1 for v in all_entities.values() if v["type"] == e["type"])
+                        for e in all_entities.values()
+                    },
                 )
             ),
         }
@@ -308,7 +378,8 @@ class GraphRAGEngine:
         entity = await db_pool.fetchrow(
             "SELECT id, name, type, description, properties FROM entities "
             "WHERE name = $1 AND user_id = $2",
-            entity_name, user_id,
+            entity_name,
+            user_id,
         )
         if not entity:
             return {"error": f"Entity '{entity_name}' not found"}
@@ -336,13 +407,15 @@ class GraphRAGEngine:
                         props = json.loads(props)
                     except (json.JSONDecodeError, TypeError):
                         props = {}
-                result_entities.append({
-                    "id": str(ent["id"]),
-                    "name": ent["name"],
-                    "type": ent["type"],
-                    "description": ent["description"] or "",
-                    "properties": props or {},
-                })
+                result_entities.append(
+                    {
+                        "id": str(ent["id"]),
+                        "name": ent["name"],
+                        "type": ent["type"],
+                        "description": ent["description"] or "",
+                        "properties": props or {},
+                    }
+                )
 
             # Outgoing relations
             out_rels = await db_pool.fetch(
@@ -352,16 +425,19 @@ class GraphRAGEngine:
                 current_id,
             )
             for rel in out_rels:
-                result_relations.append({
-                    "id": str(rel["id"]),
-                    "source": ent["name"] if ent else "?",
-                    "target": rel["target_name"],
-                    "type": rel["relation_type"],
-                    "direction": "out",
-                })
+                result_relations.append(
+                    {
+                        "id": str(rel["id"]),
+                        "source": ent["name"] if ent else "?",
+                        "target": rel["target_name"],
+                        "type": rel["relation_type"],
+                        "direction": "out",
+                    }
+                )
                 target_row = await db_pool.fetchrow(
                     "SELECT id FROM entities WHERE name = $1 AND user_id = $2",
-                    rel["target_name"], user_id,
+                    rel["target_name"],
+                    user_id,
                 )
                 if target_row:
                     queue.append((str(target_row["id"]), current_depth + 1))
@@ -374,16 +450,19 @@ class GraphRAGEngine:
                 current_id,
             )
             for rel in in_rels:
-                result_relations.append({
-                    "id": str(rel["id"]),
-                    "source": rel["source_name"],
-                    "target": ent["name"] if ent else "?",
-                    "type": rel["relation_type"],
-                    "direction": "in",
-                })
+                result_relations.append(
+                    {
+                        "id": str(rel["id"]),
+                        "source": rel["source_name"],
+                        "target": ent["name"] if ent else "?",
+                        "type": rel["relation_type"],
+                        "direction": "in",
+                    }
+                )
                 source_row = await db_pool.fetchrow(
                     "SELECT id FROM entities WHERE name = $1 AND user_id = $2",
-                    rel["source_name"], user_id,
+                    rel["source_name"],
+                    user_id,
                 )
                 if source_row:
                     queue.append((str(source_row["id"]), current_depth + 1))

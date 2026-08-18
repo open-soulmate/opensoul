@@ -12,10 +12,9 @@ import argparse
 import json
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -57,7 +56,9 @@ class TestSuite:
         return self.end_time - self.start_time
 
 
-def make_request(base_url: str, method: str, path: str, body: dict | None = None, timeout: float = 10.0) -> tuple[int, dict | str, float]:
+def make_request(
+    base_url: str, method: str, path: str, body: dict | None = None, timeout: float = 10.0
+) -> tuple[int, dict | str, float]:
     """Make an HTTP request and return (status_code, response_body, elapsed_ms)."""
     url = f"{base_url}{path}"
     start = time.time()
@@ -88,9 +89,17 @@ def make_request(base_url: str, method: str, path: str, body: dict | None = None
         return 0, str(e), elapsed
 
 
-def check_endpoint(suite: TestSuite, base_url: str, component: str, method: str, path: str,
-                    expected_status: int = 200, body: dict | None = None,
-                    required_keys: list[str] | None = None, verbose: bool = False):
+def check_endpoint(
+    suite: TestSuite,
+    base_url: str,
+    component: str,
+    method: str,
+    path: str,
+    expected_status: int = 200,
+    body: dict | None = None,
+    required_keys: list[str] | None = None,
+    verbose: bool = False,
+):
     """Test a single endpoint and record the result."""
     status, resp, elapsed = make_request(base_url, method, path, body)
 
@@ -136,20 +145,40 @@ def run_tests(base_url: str, verbose: bool = False) -> TestSuite:
     suite.start_time = time.time()
 
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"  Open-Soulmate Integration Test Suite")
+        print(f"\n{'=' * 60}")
+        print("  Open-Soulmate Integration Test Suite")
         print(f"  Base URL: {base_url}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     # ── Core System ──────────────────────────────────────────
-    if verbose: print("🧠 Core System")
-    check_endpoint(suite, base_url, "soul", "GET", "/api/health", required_keys=["component", "status"])
-    check_endpoint(suite, base_url, "soul", "GET", "/api/version", required_keys=["version", "name"])
-    check_endpoint(suite, base_url, "soul", "GET", "/api/health/all", required_keys=["organs", "healthy", "total"])
-    check_endpoint(suite, base_url, "soul", "GET", "/api/system/overview", required_keys=["organs", "metrics", "system_status"])
+    if verbose:
+        print("🧠 Core System")
+    check_endpoint(
+        suite, base_url, "soul", "GET", "/api/health", required_keys=["component", "status"]
+    )
+    check_endpoint(
+        suite, base_url, "soul", "GET", "/api/version", required_keys=["version", "name"]
+    )
+    check_endpoint(
+        suite,
+        base_url,
+        "soul",
+        "GET",
+        "/api/health/all",
+        required_keys=["organs", "healthy", "total"],
+    )
+    check_endpoint(
+        suite,
+        base_url,
+        "soul",
+        "GET",
+        "/api/system/overview",
+        required_keys=["organs", "metrics", "system_status"],
+    )
 
     # ── Knowledge ────────────────────────────────────────────
-    if verbose: print("📚 Knowledge")
+    if verbose:
+        print("📚 Knowledge")
     check_endpoint(suite, base_url, "knowledge", "GET", "/api/knowledge/health")
     check_endpoint(suite, base_url, "knowledge", "GET", "/api/knowledge/stats")
     check_endpoint(suite, base_url, "knowledge", "GET", "/api/knowledge/stats")
@@ -161,218 +190,259 @@ def run_tests(base_url: str, verbose: bool = False) -> TestSuite:
     check_endpoint(suite, base_url, "tag", "GET", "/api/tags/health")
 
     # ── Cortex (AI Engine) ───────────────────────────────────
-    if verbose: print("🧩 Cortex")
+    if verbose:
+        print("🧩 Cortex")
     check_endpoint(suite, base_url, "cortex", "GET", "/api/cortex/health")
     check_endpoint(suite, base_url, "cortex", "GET", "/api/cortex/stats")
     check_endpoint(suite, base_url, "cortex-enhanced", "GET", "/api/cortex/enhanced/health")
 
     # ── Nerve (Event Bus) ────────────────────────────────────
-    if verbose: print("⚡ Nerve")
+    if verbose:
+        print("⚡ Nerve")
     check_endpoint(suite, base_url, "nerve", "GET", "/api/nerve/health")
     check_endpoint(suite, base_url, "nerve", "GET", "/api/nerve/stats")
     check_endpoint(suite, base_url, "nerve", "GET", "/api/nerve/nodes")
     check_endpoint(suite, base_url, "nerve", "GET", "/api/nerve/events?limit=5")
 
     # ── Vein (File System) ───────────────────────────────────
-    if verbose: print("🩸 Vein")
+    if verbose:
+        print("🩸 Vein")
     check_endpoint(suite, base_url, "vein", "GET", "/api/vein/health")
     check_endpoint(suite, base_url, "vein", "GET", "/api/vein/stats")
     check_endpoint(suite, base_url, "vein", "GET", "/api/vein/files?limit=5")
     check_endpoint(suite, base_url, "vein", "GET", "/api/vein/cache/stats")
 
     # ── Sense (Multimodal) ───────────────────────────────────
-    if verbose: print("👁 Sense")
+    if verbose:
+        print("👁 Sense")
     check_endpoint(suite, base_url, "sense", "GET", "/api/sense/health")
     check_endpoint(suite, base_url, "sense", "GET", "/api/sense/stats")
     check_endpoint(suite, base_url, "sense", "GET", "/api/sense/stats")
 
     # ── Immune (Security) ────────────────────────────────────
-    if verbose: print("🛡 Immune")
+    if verbose:
+        print("🛡 Immune")
     check_endpoint(suite, base_url, "immune", "GET", "/api/immune/health")
     check_endpoint(suite, base_url, "immune", "GET", "/api/immune/stats")
     check_endpoint(suite, base_url, "immune", "GET", "/api/immune/audit/log?limit=5")
 
     # ── Vital (Monitoring) ───────────────────────────────────
-    if verbose: print("📊 Vital")
+    if verbose:
+        print("📊 Vital")
     check_endpoint(suite, base_url, "vital", "GET", "/api/vital/health")
     check_endpoint(suite, base_url, "vital", "GET", "/api/vital/stats")
     check_endpoint(suite, base_url, "vital", "GET", "/api/vital/metrics")
 
     # ── Gland (LLM Gateway) ──────────────────────────────────
-    if verbose: print("🧪 Gland")
+    if verbose:
+        print("🧪 Gland")
     check_endpoint(suite, base_url, "gland", "GET", "/api/gland/health")
     check_endpoint(suite, base_url, "gland", "GET", "/api/gland/stats")
     check_endpoint(suite, base_url, "gland", "GET", "/api/gland/models")
 
     # ── Marrow (Backup) ──────────────────────────────────────
-    if verbose: print("🦴 Marrow")
+    if verbose:
+        print("🦴 Marrow")
     check_endpoint(suite, base_url, "marrow", "GET", "/api/marrow/health")
     check_endpoint(suite, base_url, "marrow", "GET", "/api/marrow/stats")
     check_endpoint(suite, base_url, "marrow", "GET", "/api/marrow/backups")
 
     # ── Gene (Templates) ─────────────────────────────────────
-    if verbose: print("🧬 Gene")
+    if verbose:
+        print("🧬 Gene")
     check_endpoint(suite, base_url, "gene", "GET", "/api/gene/health")
     check_endpoint(suite, base_url, "gene", "GET", "/api/gene/stats")
     check_endpoint(suite, base_url, "gene", "GET", "/api/gene/templates")
 
     # ── Echo (Notifications) ─────────────────────────────────
-    if verbose: print("🔊 Echo")
+    if verbose:
+        print("🔊 Echo")
     check_endpoint(suite, base_url, "echo", "GET", "/api/echo/health")
     check_endpoint(suite, base_url, "echo", "GET", "/api/echo/stats")
     check_endpoint(suite, base_url, "echo", "GET", "/api/echo/channels")
     check_endpoint(suite, base_url, "echo", "GET", "/api/echo/history?limit=5")
 
     # ── Mirror (Sandbox) ─────────────────────────────────────
-    if verbose: print("🪞 Mirror")
+    if verbose:
+        print("🪞 Mirror")
     check_endpoint(suite, base_url, "mirror", "GET", "/api/mirror/health")
     check_endpoint(suite, base_url, "mirror", "GET", "/api/mirror/stats")
     check_endpoint(suite, base_url, "mirror", "GET", "/api/mirror/sandboxes")
 
     # ── Link (Integration) ───────────────────────────────────
-    if verbose: print("🔗 Link")
+    if verbose:
+        print("🔗 Link")
     check_endpoint(suite, base_url, "link", "GET", "/api/link/health")
     check_endpoint(suite, base_url, "link", "GET", "/api/link/stats")
     check_endpoint(suite, base_url, "link", "GET", "/api/link/connectors")
     check_endpoint(suite, base_url, "link", "GET", "/api/link/events?limit=5")
 
     # ── Hippo (Memory Lifecycle) ─────────────────────────────
-    if verbose: print("🧠 Hippo")
+    if verbose:
+        print("🧠 Hippo")
     check_endpoint(suite, base_url, "hippo", "GET", "/api/hippo/health")
     check_endpoint(suite, base_url, "hippo", "GET", "/api/hippo/stats")
 
     # ── Reflex (Fast Response) ───────────────────────────────
-    if verbose: print("⚡ Reflex")
+    if verbose:
+        print("⚡ Reflex")
     check_endpoint(suite, base_url, "reflex", "GET", "/api/reflex/health")
     check_endpoint(suite, base_url, "reflex", "GET", "/api/reflex/stats")
 
     # ── Heredity (Versioning) ────────────────────────────────
-    if verbose: print("🔗 Heredity")
+    if verbose:
+        print("🔗 Heredity")
     check_endpoint(suite, base_url, "heredity", "GET", "/api/heredity/health")
     check_endpoint(suite, base_url, "heredity", "GET", "/api/heredity/stats")
 
     # ── Pulse (Timer) ────────────────────────────────────────
-    if verbose: print("💓 Pulse")
+    if verbose:
+        print("💓 Pulse")
     check_endpoint(suite, base_url, "pulse", "GET", "/api/pulse/health")
     check_endpoint(suite, base_url, "pulse", "GET", "/api/pulse/stats")
 
     # ── Nest (Multi-tenant) ──────────────────────────────────
-    if verbose: print("🏠 Nest")
+    if verbose:
+        print("🏠 Nest")
     check_endpoint(suite, base_url, "nest", "GET", "/api/nest/health")
     check_endpoint(suite, base_url, "nest", "GET", "/api/nest/stats")
 
     # ── Limb (RPA) ───────────────────────────────────────────
-    if verbose: print("💪 Limb")
+    if verbose:
+        print("💪 Limb")
     check_endpoint(suite, base_url, "limb", "GET", "/api/limb/health")
     check_endpoint(suite, base_url, "limb", "GET", "/api/limb/stats")
 
     # ── Voice (TTS) ──────────────────────────────────────────
-    if verbose: print("🎤 Voice")
+    if verbose:
+        print("🎤 Voice")
     check_endpoint(suite, base_url, "voice", "GET", "/api/voice/health")
     check_endpoint(suite, base_url, "voice", "GET", "/api/voice/stats")
 
     # ── Vision (Charts) ──────────────────────────────────────
-    if verbose: print("🎨 Vision")
+    if verbose:
+        print("🎨 Vision")
     check_endpoint(suite, base_url, "vision", "GET", "/api/vision/health")
     check_endpoint(suite, base_url, "vision", "GET", "/api/vision/stats")
 
     # ── Mind (Personality) ───────────────────────────────────
-    if verbose: print("💭 Mind")
+    if verbose:
+        print("💭 Mind")
     check_endpoint(suite, base_url, "mind", "GET", "/api/mind/health")
     check_endpoint(suite, base_url, "mind", "GET", "/api/mind/stats")
 
     # ── Will (Workflow) ──────────────────────────────────────
-    if verbose: print("✨ Will")
+    if verbose:
+        print("✨ Will")
     check_endpoint(suite, base_url, "will", "GET", "/api/will/health")
     check_endpoint(suite, base_url, "will", "GET", "/api/will/stats")
 
     # ── Workflow ─────────────────────────────────────────────
-    if verbose: print("⚙️ Workflow")
+    if verbose:
+        print("⚙️ Workflow")
     check_endpoint(suite, base_url, "workflow", "GET", "/api/workflow/health")
     check_endpoint(suite, base_url, "workflow", "GET", "/api/workflow/stats")
 
     # ── Trajectory ───────────────────────────────────────────
-    if verbose: print("📈 Trajectory")
+    if verbose:
+        print("📈 Trajectory")
     check_endpoint(suite, base_url, "trajectory", "GET", "/api/trajectory/health")
     check_endpoint(suite, base_url, "trajectory", "GET", "/api/trajectory/stats")
     check_endpoint(suite, base_url, "trajectory", "GET", "/api/trajectory/sessions?limit=5")
     check_endpoint(suite, base_url, "trajectory", "GET", "/api/trajectory/event-types")
 
     # ── Intelligence ─────────────────────────────────────────
-    if verbose: print("🔍 Intelligence")
+    if verbose:
+        print("🔍 Intelligence")
     check_endpoint(suite, base_url, "intelligence", "GET", "/api/intelligence/health")
     check_endpoint(suite, base_url, "intelligence", "GET", "/api/intelligence/health")
 
     # ── Healer ───────────────────────────────────────────────
-    if verbose: print("💊 Healer")
+    if verbose:
+        print("💊 Healer")
     check_endpoint(suite, base_url, "healer", "GET", "/api/healer/health")
     check_endpoint(suite, base_url, "healer", "GET", "/api/healer/stats")
 
     # ── Timeline ─────────────────────────────────────────────
-    if verbose: print("📅 Timeline")
+    if verbose:
+        print("📅 Timeline")
     check_endpoint(suite, base_url, "timeline", "GET", "/api/timeline/health")
     check_endpoint(suite, base_url, "timeline", "GET", "/api/timeline/stats")
 
     # ── Benchmark ────────────────────────────────────────────
-    if verbose: print("📊 Benchmark")
+    if verbose:
+        print("📊 Benchmark")
     check_endpoint(suite, base_url, "benchmark", "GET", "/api/benchmark/health")
     check_endpoint(suite, base_url, "benchmark", "GET", "/api/benchmark/stats")
 
     # ── Diagnostics ──────────────────────────────────────────
-    if verbose: print("🩺 Diagnostics")
+    if verbose:
+        print("🩺 Diagnostics")
     check_endpoint(suite, base_url, "diagnostics", "GET", "/api/diagnostics/health")
     check_endpoint(suite, base_url, "diagnostics", "GET", "/api/diagnostics/health")
 
     # ── Soma Connector ───────────────────────────────────────
-    if verbose: print("🤖 Soma Connector")
+    if verbose:
+        print("🤖 Soma Connector")
     check_endpoint(suite, base_url, "soma", "GET", "/api/soma/health")
     check_endpoint(suite, base_url, "soma", "GET", "/api/soma/health")
 
     # ── Pipeline ─────────────────────────────────────────────
-    if verbose: print("🔄 Pipeline")
+    if verbose:
+        print("🔄 Pipeline")
     check_endpoint(suite, base_url, "pipeline", "GET", "/api/pipeline/health")
     check_endpoint(suite, base_url, "pipeline", "GET", "/api/pipeline/stats")
 
     # ── Topology ─────────────────────────────────────────────
-    if verbose: print("🌐 Topology")
+    if verbose:
+        print("🌐 Topology")
     check_endpoint(suite, base_url, "topology", "GET", "/api/topology/health")
     check_endpoint(suite, base_url, "topology", "GET", "/api/topology/health")
 
     # ── Notifications ────────────────────────────────────────
-    if verbose: print("🔔 Notifications")
+    if verbose:
+        print("🔔 Notifications")
     check_endpoint(suite, base_url, "notifications", "GET", "/api/notifications/health")
     check_endpoint(suite, base_url, "notifications", "GET", "/api/notifications/health")
 
     # ── Config ───────────────────────────────────────────────
-    if verbose: print("⚙️ Config")
+    if verbose:
+        print("⚙️ Config")
     check_endpoint(suite, base_url, "config", "GET", "/api/config")
 
     # ── Registry ─────────────────────────────────────────────
-    if verbose: print("📋 Registry")
+    if verbose:
+        print("📋 Registry")
     check_endpoint(suite, base_url, "registry", "GET", "/api/registry/components")
 
     # ── Plugins ──────────────────────────────────────────────
-    if verbose: print("🔌 Plugins")
+    if verbose:
+        print("🔌 Plugins")
     check_endpoint(suite, base_url, "plugins", "GET", "/api/plugins/health")
 
     # ── MCP ──────────────────────────────────────────────────
-    if verbose: print("🔧 MCP")
+    if verbose:
+        print("🔧 MCP")
     check_endpoint(suite, base_url, "mcp", "GET", "/api/mcp/health")
 
     # ── Learn ────────────────────────────────────────────────
-    if verbose: print("📖 Learn")
+    if verbose:
+        print("📖 Learn")
     check_endpoint(suite, base_url, "learn", "GET", "/api/learn/health")
 
     # ── Event Stream ─────────────────────────────────────────
-    if verbose: print("📡 Event Stream")
+    if verbose:
+        print("📡 Event Stream")
     check_endpoint(suite, base_url, "event-stream", "GET", "/api/events/health")
 
     # ── Admin ────────────────────────────────────────────────
-    if verbose: print("🔐 Admin")
+    if verbose:
+        print("🔐 Admin")
     check_endpoint(suite, base_url, "admin", "GET", "/api/admin/report")
 
     # ── System Bootstrap ─────────────────────────────────────
-    if verbose: print("🚀 System Bootstrap")
+    if verbose:
+        print("🚀 System Bootstrap")
     check_endpoint(suite, base_url, "bootstrap", "GET", "/api/system/bootstrap/status")
     check_endpoint(suite, base_url, "bootstrap", "POST", "/api/system/bootstrap/run")
 
@@ -417,10 +487,10 @@ def print_report(suite: TestSuite, as_json: bool = False):
         return
 
     # Text report
-    print(f"\n{'='*60}")
-    print(f"  Open-Soulmate Integration Test Report")
+    print(f"\n{'=' * 60}")
+    print("  Open-Soulmate Integration Test Report")
     print(f"  {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Summary
     status_icon = "✅" if suite.failed == 0 else "⚠️"

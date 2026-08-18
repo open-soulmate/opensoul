@@ -9,10 +9,9 @@ Multi-dimensional quality assessment of knowledge entries:
 """
 
 import json
-import math
-import re
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -48,7 +47,8 @@ class QualityScorer:
         row = await db_pool.fetchrow(
             "SELECT id, title, content, metadata, created_at, updated_at "
             "FROM knowledge WHERE id = $1 AND user_id = $2",
-            knowledge_id, user_id,
+            knowledge_id,
+            user_id,
         )
         if not row:
             return {"error": "Knowledge entry not found"}
@@ -76,13 +76,12 @@ class QualityScorer:
             "grade": self._get_grade(total),
         }
 
-    async def score_all(
-        self, db_pool: Any, user_id: str, limit: int = 100
-    ) -> list[dict[str, Any]]:
+    async def score_all(self, db_pool: Any, user_id: str, limit: int = 100) -> list[dict[str, Any]]:
         """Batch score knowledge entries."""
         rows = await db_pool.fetch(
             "SELECT id FROM knowledge WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-            user_id, limit,
+            user_id,
+            limit,
         )
         results = []
         for row in rows:
@@ -93,9 +92,7 @@ class QualityScorer:
         results.sort(key=lambda x: x["total_score"], reverse=True)
         return results
 
-    async def get_quality_report(
-        self, db_pool: Any, user_id: str
-    ) -> dict[str, Any]:
+    async def get_quality_report(self, db_pool: Any, user_id: str) -> dict[str, Any]:
         """Aggregate quality report for all user knowledge."""
         scores = await self.score_all(db_pool, user_id, limit=1000)
 
@@ -191,9 +188,23 @@ class QualityScorer:
 
         # Technical terms
         tech_terms = [
-            "API", "SDK", "REST", "WebSocket", "HTTP", "JSON", "SQL",
-            "Docker", "Kubernetes", "Linux", "Python", "JavaScript",
-            "React", "FastAPI", "PostgreSQL", "Redis", "Qdrant",
+            "API",
+            "SDK",
+            "REST",
+            "WebSocket",
+            "HTTP",
+            "JSON",
+            "SQL",
+            "Docker",
+            "Kubernetes",
+            "Linux",
+            "Python",
+            "JavaScript",
+            "React",
+            "FastAPI",
+            "PostgreSQL",
+            "Redis",
+            "Qdrant",
         ]
         tech_count = sum(1 for t in tech_terms if t in text)
         score += min(0.20, tech_count * 0.04)
@@ -216,12 +227,16 @@ class QualityScorer:
         return min(1.0, score)
 
     def _score_freshness(self, created_at: Any, updated_at: Any) -> float:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         try:
-            updated = updated_at if isinstance(updated_at, datetime) else datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+            updated = (
+                updated_at
+                if isinstance(updated_at, datetime)
+                else datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+            )
             if updated.tzinfo is None:
-                updated = updated.replace(tzinfo=timezone.utc)
+                updated = updated.replace(tzinfo=UTC)
             age_days = (now - updated).days
         except Exception:
             age_days = 999

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import time
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -150,16 +150,25 @@ class TemplateEngine:
 
         now = time.time()
         for tpl in defaults:
-            variables = self._extract_variables(tpl["title_template"] + " " + tpl["content_template"])
+            variables = self._extract_variables(
+                tpl["title_template"] + " " + tpl["content_template"]
+            )
             self._db.execute(
                 """INSERT OR IGNORE INTO templates
                    (template_id, name, description, channel, title_template, content_template,
                     variables, category, icon, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    tpl["template_id"], tpl["name"], tpl["description"], tpl["channel"],
-                    tpl["title_template"], tpl["content_template"],
-                    json.dumps(variables), tpl["category"], tpl["icon"], now,
+                    tpl["template_id"],
+                    tpl["name"],
+                    tpl["description"],
+                    tpl["channel"],
+                    tpl["title_template"],
+                    tpl["content_template"],
+                    json.dumps(variables),
+                    tpl["category"],
+                    tpl["icon"],
+                    now,
                 ),
             )
         self._db.commit()
@@ -172,9 +181,11 @@ class TemplateEngine:
     @staticmethod
     def render(template_text: str, variables: dict[str, Any]) -> str:
         """Render a template by substituting {{variables}}."""
+
         def replacer(match):
             key = match.group(1)
             return str(variables.get(key, match.group(0)))
+
         return re.sub(r"\{\{(\w+)\}\}", replacer, template_text)
 
     def create(
@@ -197,28 +208,53 @@ class TemplateEngine:
                (template_id, name, description, channel, title_template, content_template,
                 variables, category, icon, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (template_id, name, description, channel, title_template, content_template,
-             json.dumps(variables), category, icon, now),
+            (
+                template_id,
+                name,
+                description,
+                channel,
+                title_template,
+                content_template,
+                json.dumps(variables),
+                category,
+                icon,
+                now,
+            ),
         )
         self._db.commit()
 
         return MessageTemplate(
-            template_id=template_id, name=name, description=description,
-            channel=channel, title_template=title_template, content_template=content_template,
-            variables=variables, category=category, icon=icon, created_at=now,
+            template_id=template_id,
+            name=name,
+            description=description,
+            channel=channel,
+            title_template=title_template,
+            content_template=content_template,
+            variables=variables,
+            category=category,
+            icon=icon,
+            created_at=now,
         )
 
     def get(self, template_id: str) -> MessageTemplate | None:
-        row = self._db.execute("SELECT * FROM templates WHERE template_id = ?", (template_id,)).fetchone()
+        row = self._db.execute(
+            "SELECT * FROM templates WHERE template_id = ?", (template_id,)
+        ).fetchone()
         if not row:
             return None
         return MessageTemplate(
-            template_id=row["template_id"], name=row["name"], description=row["description"],
-            channel=row["channel"], title_template=row["title_template"],
+            template_id=row["template_id"],
+            name=row["name"],
+            description=row["description"],
+            channel=row["channel"],
+            title_template=row["title_template"],
             content_template=row["content_template"],
-            variables=json.loads(row["variables"]), category=row["category"],
-            icon=row["icon"], created_at=row["created_at"],
-            usage_count=row["usage_count"], last_used=row["last_used"],
+            variables=json.loads(row["variables"]),
+            category=row["category"],
+            icon=row["icon"],
+            created_at=row["created_at"],
+            usage_count=row["usage_count"],
+            last_used=row["last_used"],
         )
 
     def list_templates(self, category: str | None = None) -> list[dict]:
@@ -258,7 +294,15 @@ class TemplateEngine:
         if not tpl:
             return False
 
-        allowed = {"name", "description", "channel", "title_template", "content_template", "category", "icon"}
+        allowed = {
+            "name",
+            "description",
+            "channel",
+            "title_template",
+            "content_template",
+            "category",
+            "icon",
+        }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
         if not updates:
             return False
@@ -302,9 +346,13 @@ class TemplateEngine:
     def stats(self) -> dict:
         total = self._db.execute("SELECT COUNT(*) FROM templates").fetchone()[0]
         by_category = {}
-        for row in self._db.execute("SELECT category, COUNT(*) as cnt FROM templates GROUP BY category"):
+        for row in self._db.execute(
+            "SELECT category, COUNT(*) as cnt FROM templates GROUP BY category"
+        ):
             by_category[row["category"]] = row["cnt"]
-        total_usage = self._db.execute("SELECT COALESCE(SUM(usage_count), 0) FROM templates").fetchone()[0]
+        total_usage = self._db.execute(
+            "SELECT COALESCE(SUM(usage_count), 0) FROM templates"
+        ).fetchone()[0]
         return {
             "total_templates": total,
             "by_category": by_category,

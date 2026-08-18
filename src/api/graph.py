@@ -2,10 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from src.models.entity import RelationCreate, RelationResponse, GraphData
-from src.services.graph import create_relation, get_graph, list_relations
-from src.services.entity import list_entities, get_entity_with_relations
 from src.database.postgres import db_pool
+from src.models.entity import GraphData, RelationCreate, RelationResponse
+from src.services.entity import get_entity_with_relations, list_entities
+from src.services.graph import create_relation, get_graph, list_relations
 
 router = APIRouter()
 
@@ -33,7 +33,13 @@ async def graph_stats():
             "by_type": {r["entity_type"]: r["cnt"] for r in (by_type or [])},
         }
     except Exception:
-        return {"status": "ok", "component": "OpenGraph", "total_entities": 0, "total_relations": 0, "by_type": {}}
+        return {
+            "status": "ok",
+            "component": "OpenGraph",
+            "total_entities": 0,
+            "total_relations": 0,
+            "by_type": {},
+        }
 
 
 def _resolve_user_id(user_id: str) -> UUID:
@@ -42,6 +48,7 @@ def _resolve_user_id(user_id: str) -> UUID:
         return UUID(user_id)
     except ValueError:
         import hashlib
+
         h = hashlib.md5(user_id.encode()).hexdigest()
         return UUID(f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}")
 
@@ -65,6 +72,7 @@ async def get_entity_detail(entity_id: UUID, user_id: str = Query("default")):
     entity = await get_entity_with_relations(entity_id, uid)
     if not entity:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Entity not found")
     return entity
 
@@ -86,13 +94,20 @@ async def get_relations(
 
 
 @router.get("/full", response_model=GraphData)
-async def get_full_graph(user_id: str = Query("default", description="User ID (UUID or username)"), depth: int = Query(2, ge=1, le=5)):
+async def get_full_graph(
+    user_id: str = Query("default", description="User ID (UUID or username)"),
+    depth: int = Query(2, ge=1, le=5),
+):
     """Full graph data (nodes + edges) for frontend G6 rendering."""
     uid = _resolve_user_id(user_id)
     return await get_graph(uid, depth)
 
 
 @router.get("/", response_model=GraphData)
-async def get_graph_data(user_id: str = Query("default", description="User ID (UUID or username)"), depth: int = 2, entity_id: UUID | None = None):
+async def get_graph_data(
+    user_id: str = Query("default", description="User ID (UUID or username)"),
+    depth: int = 2,
+    entity_id: UUID | None = None,
+):
     uid = _resolve_user_id(user_id)
     return await get_graph(uid, depth, entity_id)

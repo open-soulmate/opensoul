@@ -9,11 +9,11 @@ Sets up:
 
 from __future__ import annotations
 
-import os
 import json
-import time
 import logging
+import os
 import threading
+import time
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ _BOOTSTRAP_STATE_FILE = os.path.expanduser("~/.opensoul/bootstrap_state.json")
 @dataclass
 class BootstrapState:
     """Tracks what has been bootstrapped."""
+
     bootstrapped: bool = False
     bootstrapped_at: float = 0.0
     version: str = "1.0.0"
@@ -40,7 +41,7 @@ class SystemBootstrap:
     def _load_state(self) -> BootstrapState:
         try:
             if os.path.exists(_BOOTSTRAP_STATE_FILE):
-                with open(_BOOTSTRAP_STATE_FILE, "r") as f:
+                with open(_BOOTSTRAP_STATE_FILE) as f:
                     data = json.load(f)
                 state = BootstrapState()
                 state.bootstrapped = data.get("bootstrapped", False)
@@ -56,12 +57,16 @@ class SystemBootstrap:
         try:
             os.makedirs(os.path.dirname(_BOOTSTRAP_STATE_FILE), exist_ok=True)
             with open(_BOOTSTRAP_STATE_FILE, "w") as f:
-                json.dump({
-                    "bootstrapped": self._state.bootstrapped,
-                    "bootstrapped_at": self._state.bootstrapped_at,
-                    "version": self._state.version,
-                    "items": self._state.items,
-                }, f, indent=2)
+                json.dump(
+                    {
+                        "bootstrapped": self._state.bootstrapped,
+                        "bootstrapped_at": self._state.bootstrapped_at,
+                        "version": self._state.version,
+                        "items": self._state.items,
+                    },
+                    f,
+                    indent=2,
+                )
         except Exception as e:
             logger.warning("Failed to save bootstrap state: %s", e)
 
@@ -122,7 +127,7 @@ class SystemBootstrap:
         """Create default backup schedule for the data directory."""
         try:
             # Use the same singleton instances as the API
-            from src.api.marrow import backup_manager, scheduler
+            from src.api.marrow import scheduler
 
             # Check if schedule already exists
             existing = scheduler.list_schedules()
@@ -183,7 +188,6 @@ class SystemBootstrap:
         """Setup default immune rate-limit configuration."""
         try:
             # Immune is auto-configured with defaults from the API module
-            from src.api.immune import router as _  # ensure module loaded
             return {
                 "success": True,
                 "rate_limit": {
@@ -239,11 +243,16 @@ class SystemBootstrap:
         """Ensure default gene templates exist."""
         try:
             from src.gene.templates import TemplateEngine
+
             engine = TemplateEngine()
             templates = engine.list_templates()
 
             if len(templates) > 0:
-                return {"success": True, "skipped": True, "reason": f"{len(templates)} templates already exist"}
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "reason": f"{len(templates)} templates already exist",
+                }
 
             return {"success": True, "skipped": True, "reason": "templates managed by gene module"}
         except Exception as e:

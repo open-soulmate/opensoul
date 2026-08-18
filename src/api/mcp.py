@@ -16,6 +16,7 @@ registry = McpServerRegistry()
 
 # ── Request Schemas ────────────────────────────────────────
 
+
 class ServerCreateRequest(BaseModel):
     name: str
     url: str
@@ -37,12 +38,14 @@ class ServerUpdateRequest(BaseModel):
 
 # ── Health ─────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "mcp"}
 
 
 # ── Server CRUD ────────────────────────────────────────────
+
 
 @router.get("/servers")
 async def list_servers(enabled_only: bool = Query(default=False)):
@@ -64,8 +67,12 @@ async def get_server(server_id: str):
 async def add_server(req: ServerCreateRequest):
     """Register a new MCP server."""
     srv = registry.add_server(
-        name=req.name, url=req.url, description=req.description,
-        transport=req.transport, config=req.config, tools=req.tools,
+        name=req.name,
+        url=req.url,
+        description=req.description,
+        transport=req.transport,
+        config=req.config,
+        tools=req.tools,
     )
     return srv.to_dict()
 
@@ -90,6 +97,7 @@ async def delete_server(server_id: str):
 
 # ── Connection ─────────────────────────────────────────────
 
+
 @router.post("/servers/{server_id}/connect")
 async def connect_server(server_id: str):
     """Connect to an MCP server and discover its tools."""
@@ -110,6 +118,7 @@ async def disconnect_server(server_id: str):
 
 # ── Tools ──────────────────────────────────────────────────
 
+
 @router.get("/tools")
 async def list_tools(server_id: str | None = Query(default=None)):
     """List all tools from enabled MCP servers."""
@@ -118,6 +127,7 @@ async def list_tools(server_id: str | None = Query(default=None)):
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def get_stats():

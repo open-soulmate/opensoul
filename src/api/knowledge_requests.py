@@ -1,11 +1,11 @@
 import json
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from src.database.postgres import db_pool
 from src.api.user import get_current_user
+from src.database.postgres import db_pool
 
 router = APIRouter()
 
@@ -30,7 +30,11 @@ async def create_request(data: KnowledgeRequestCreate, user_id: UUID = Depends(g
 
     await db_pool.execute(
         "INSERT INTO knowledge_requests (id, user_id, user_name, kb_name, kb_description) VALUES (?, ?, ?, ?, ?)",
-        req_id, str(user_id), user_name, data.kb_name, data.kb_description,
+        req_id,
+        str(user_id),
+        user_name,
+        data.kb_name,
+        data.kb_description,
     )
     row = await db_pool.fetchrow("SELECT * FROM knowledge_requests WHERE id = ?", req_id)
     return _parse_row(row)
@@ -53,7 +57,9 @@ async def list_requests(
         values.append(user_id)
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
-    rows = await db_pool.fetch(f"SELECT * FROM knowledge_requests{where} ORDER BY created_at DESC", *values)
+    rows = await db_pool.fetch(
+        f"SELECT * FROM knowledge_requests{where} ORDER BY created_at DESC", *values
+    )
     return [_parse_row(r) for r in rows]
 
 
@@ -76,7 +82,9 @@ async def get_request(request_id: str, current_user: UUID = Depends(get_current_
 
 
 @router.post("/{request_id}/review")
-async def review_request(request_id: str, data: KnowledgeRequestReview, current_user: UUID = Depends(get_current_user)):
+async def review_request(
+    request_id: str, data: KnowledgeRequestReview, current_user: UUID = Depends(get_current_user)
+):
     """管理员审批知识库申请"""
     if data.status not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Status must be 'approved' or 'rejected'")
@@ -89,7 +97,10 @@ async def review_request(request_id: str, data: KnowledgeRequestReview, current_
 
     await db_pool.execute(
         "UPDATE knowledge_requests SET status = ?, reviewer_id = ?, review_note = ?, reviewed_at = datetime('now') WHERE id = ?",
-        data.status, str(current_user), data.review_note, request_id,
+        data.status,
+        str(current_user),
+        data.review_note,
+        request_id,
     )
 
     # 如果审批通过，创建知识库
@@ -97,8 +108,13 @@ async def review_request(request_id: str, data: KnowledgeRequestReview, current_
         kb_id = str(uuid4())
         await db_pool.execute(
             "INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            kb_id, row["user_id"], row["kb_name"], f"知识库: {row['kb_name']}\n{row['kb_description']}",
-            "auto-created", "kb", json.dumps({"type": "knowledge_base", "description": row["kb_description"]}),
+            kb_id,
+            row["user_id"],
+            row["kb_name"],
+            f"知识库: {row['kb_name']}\n{row['kb_description']}",
+            "auto-created",
+            "kb",
+            json.dumps({"type": "knowledge_base", "description": row["kb_description"]}),
         )
 
     updated = await db_pool.fetchrow("SELECT * FROM knowledge_requests WHERE id = ?", request_id)

@@ -1,107 +1,109 @@
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.config import settings
 
 logger = logging.getLogger(__name__)
-from src.database.postgres import db_pool
-from src.database.qdrant import qdrant_client
-from src.database.meilisearch import meili_client
-
-from src.api.knowledge import router as knowledge_router
-from src.api.knowledge_requests import router as knowledge_requests_router
-from src.api.kb_sharing import router as kb_sharing_router
-from src.api.dedup import router as dedup_router
-from src.api.permission import router as permission_router
-from src.api.agent_proxy import router as agent_proxy_router
 from src.a2a.api import router as a2a_router
 from src.acp.api import router as acp_router
-from src.api.hermes_bridge import router as hermes_bridge_router
-from src.api.ws_chat import router as ws_router
-from src.api.hermes_cron import router as hermes_cron_router
-from src.api.agents import router as agents_router
-from src.api.skills import router as skills_router
-from src.api.marketplace import router as marketplace_router
-from src.api.download_api import router as download_router
-from src.api.terminal_ws import router as terminal_router
-from src.api.ai_groups import router as ai_groups_router
-from src.api.ai_engine import router as ai_engine_router
-from src.api.agent_collaboration import router as agent_collab_router
-from src.api.enterprise import router as enterprise_router
-from src.api.search import router as search_router
-from src.api.chat import router as chat_router
-from src.api.graph import router as graph_router
-from src.api.entity import router as entity_router
-from src.api.tag import router as tag_router
-from src.api.user import router as user_router
-from src.api.llm import router as llm_router
+from src.api.admin_actions import router as admin_actions_router
 from src.api.agent import router as agent_router
-from src.api.export import router as export_router
+from src.api.agent_collaboration import router as agent_collab_router
+from src.api.agent_proxy import router as agent_proxy_router
+from src.api.agents import router as agents_router
+from src.api.ai_engine import router as ai_engine_router
+from src.api.ai_groups import router as ai_groups_router
+from src.api.benchmark import router as benchmark_router
+from src.api.capture import router as capture_router
+from src.api.chat import router as chat_router
+from src.api.config_api import router as config_api_router
 from src.api.cortex import router as cortex_router
 from src.api.cortex_enhanced import router as cortex_enhanced_router
-from src.api.nerve import router as nerve_router
-from src.api.will import router as will_router
-from src.api.gland import router as gland_router
-from src.api.gland import gateway as gland_gateway
-from src.api.vital import router as vital_router
-from src.api.vein import router as vein_router
-from src.api.sense import router as sense_router
-from src.api.immune import router as immune_router
-from src.api.marrow import router as marrow_router
-from src.api.gene import router as gene_router
+from src.api.dedup import router as dedup_router
+from src.api.diagnostics import router as diagnostics_router
+from src.api.download_api import router as download_router
 from src.api.echo import router as echo_router
-from src.api.mirror import router as mirror_router
-from src.api.link import router as link_router
-from src.api.hippo import router as hippo_router
-from src.api.reflex import router as reflex_router
+from src.api.enterprise import router as enterprise_router
+from src.api.entity import router as entity_router
+from src.api.event_stream import router as event_stream_router
+from src.api.export import router as export_router
+from src.api.gene import router as gene_router
+from src.api.git_api import router as git_router
+from src.api.gland import gateway as gland_gateway
+from src.api.gland import router as gland_router
+from src.api.graph import router as graph_router
+from src.api.healer import router as healer_router
 from src.api.heredity import router as heredity_router
-from src.api.pulse import router as pulse_router
-from src.api.nest import router as nest_router
-from src.api.limb import router as limb_router
-from src.api.voice import router as voice_router
-from src.api.vision import router as vision_router
-from src.api.mind import router as mind_router
+from src.api.hermes_bridge import router as hermes_bridge_router
+from src.api.hermes_cron import router as hermes_cron_router
+from src.api.hippo import router as hippo_router
+from src.api.immune import router as immune_router
 from src.api.intelligence import router as intelligence_router
+from src.api.kb_sharing import router as kb_sharing_router
+from src.api.knowledge import router as knowledge_router
+from src.api.knowledge_requests import router as knowledge_requests_router
+from src.api.learn import router as learn_router
+from src.api.limb import router as limb_router
+from src.api.link import router as link_router
+from src.api.llm import router as llm_router
+from src.api.marketplace import router as marketplace_router
+from src.api.marrow import router as marrow_router
+from src.api.mcp import router as mcp_router
+from src.api.mind import router as mind_router
+from src.api.mirror import router as mirror_router
+from src.api.nerve import router as nerve_router
+from src.api.nest import router as nest_router
+from src.api.notifications import router as notifications_router
+from src.api.permission import router as permission_router
+from src.api.pipeline import router as pipeline_router
+from src.api.plugins_api import router as plugins_router
+from src.api.pulse import router as pulse_router
+from src.api.reflex import router as reflex_router
+from src.api.registry import router as registry_router
+from src.api.search import router as search_router
+from src.api.sense import router as sense_router
+from src.api.sessions_api import router as sessions_router
+from src.api.skills import router as skills_router
+from src.api.soma_connector import router as soma_connector_router
+from src.api.system_overview import router as system_overview_router
+from src.api.tag import router as tag_router
+from src.api.terminal_ws import router as terminal_router
+from src.api.timeline import router as timeline_router
+from src.api.topology import router as topology_router
 from src.api.trajectory import router as trajectory_router
 from src.api.trajectory_api import router as trajectory_api_router
-from src.api.plugins_api import router as plugins_router
-from src.api.mcp import router as mcp_router
-from src.api.learn import router as learn_router
-from src.api.soma_connector import router as soma_connector_router
-from src.api.config_api import router as config_api_router
-from src.api.diagnostics import router as diagnostics_router
-from src.api.admin_actions import router as admin_actions_router
-from src.api.sessions_api import router as sessions_router
-from src.api.event_stream import router as event_stream_router
-from src.api.workspace_api import router as workspace_router
-from src.api.git_api import router as git_router
-from src.api.registry import router as registry_router
-from src.api.capture import router as capture_router
-from src.api.pipeline import router as pipeline_router
-from src.api.topology import router as topology_router
+from src.api.user import router as user_router
+from src.api.vein import router as vein_router
+from src.api.vision import router as vision_router
+from src.api.vital import router as vital_router
+from src.api.voice import router as voice_router
+from src.api.will import router as will_router
 from src.api.workflow import router as workflow_router
-from src.api.notifications import router as notifications_router
-from src.api.healer import router as healer_router
-from src.api.timeline import router as timeline_router
-from src.api.benchmark import router as benchmark_router
-from src.api.system_overview import router as system_overview_router
+from src.api.workspace_api import router as workspace_router
+from src.api.ws_chat import router as ws_router
+from src.database.meilisearch import meili_client
+from src.database.postgres import db_pool
+from src.database.qdrant import qdrant_client
+from src.plugin_loader import load_all_plugins
+from src.vital.alert import AlertManager
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
-from src.vital.alert import AlertManager
-from src.plugin_loader import load_all_plugins
 
 
 async def _intelligence_auto_collect():
     """Background task: periodically collect metrics from all organs for Intelligence analysis."""
     import time as _time
+
     import httpx as _httpx
-    from src.api.intelligence import intelligence as _intel, _ORGAN_ENDPOINTS
+
+    from src.api.intelligence import _ORGAN_ENDPOINTS
+    from src.api.intelligence import intelligence as _intel
 
     # Wait a bit for the server to fully start
     await asyncio.sleep(10)
@@ -110,24 +112,32 @@ async def _intelligence_auto_collect():
         try:
             base = "http://127.0.0.1:8090"
             async with _httpx.AsyncClient(timeout=5.0) as client:
+
                 async def _collect(name: str, path: str):
                     start = _time.time()
                     try:
                         r = await client.get(f"{base}{path}")
                         elapsed_ms = (_time.time() - start) * 1000
                         data = r.json() if r.status_code == 200 else {}
-                        _intel.record_metrics(name, {
-                            "health": "ok" if r.status_code == 200 else "error",
-                            "response_time_ms": elapsed_ms,
-                            "custom": {k: v for k, v in data.items() if k != "status"},
-                        })
+                        _intel.record_metrics(
+                            name,
+                            {
+                                "health": "ok" if r.status_code == 200 else "error",
+                                "response_time_ms": elapsed_ms,
+                                "custom": {k: v for k, v in data.items() if k != "status"},
+                            },
+                        )
                     except Exception:
                         elapsed_ms = (_time.time() - start) * 1000
-                        _intel.record_metrics(name, {
-                            "health": "error",
-                            "response_time_ms": elapsed_ms,
-                            "error_count": 1,
-                        })
+                        _intel.record_metrics(
+                            name,
+                            {
+                                "health": "error",
+                                "response_time_ms": elapsed_ms,
+                                "error_count": 1,
+                            },
+                        )
+
                 await asyncio.gather(*[_collect(n, p) for n, p in _ORGAN_ENDPOINTS])
         except Exception:
             pass  # Never crash the background task
@@ -161,6 +171,7 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(5)  # Wait for all organs to be ready
         try:
             from src.system.bootstrap import SystemBootstrap
+
             bs = SystemBootstrap()
             if not bs.is_bootstrapped:
                 result = bs.run_bootstrap()
@@ -214,13 +225,16 @@ async def index():
 
 
 import asyncio
+
 import httpx
+
 
 # Health check endpoint
 @app.get("/api/health")
 async def health():
     """Soul health — includes database, knowledge, and system stats."""
     import time
+
     start = time.time()
 
     # Collect stats from core subsystems
@@ -235,6 +249,7 @@ async def health():
     # Knowledge base stats
     try:
         from src.database.postgres import db_pool
+
         if db_pool:
             rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM knowledge")
             stats["knowledge_entries"] = rows[0]["cnt"] if rows else 0
@@ -313,15 +328,23 @@ async def health_all():
     base = "http://127.0.0.1:8090"
     results = {}
     async with httpx.AsyncClient(timeout=5.0) as client:
+
         async def _check(name: str, path: str):
             try:
                 r = await client.get(f"{base}{path}")
                 results[name] = "ok" if r.status_code == 200 else "error"
             except Exception:
                 results[name] = "error"
+
         await asyncio.gather(*[_check(n, p) for n, p in _ORGAN_HEALTH_ROUTES])
     ok = sum(1 for v in results.values() if v == "ok")
-    return {"status": "ok" if ok == len(results) else "degraded", "healthy": ok, "total": len(results), "organs": results}
+    return {
+        "status": "ok" if ok == len(results) else "degraded",
+        "healthy": ok,
+        "total": len(results),
+        "organs": results,
+    }
+
 
 # Version endpoint
 @app.get("/api/version")
@@ -331,7 +354,9 @@ async def version():
 
 # Register all API routers
 app.include_router(knowledge_router, prefix="/api/knowledge", tags=["knowledge"])
-app.include_router(knowledge_requests_router, prefix="/api/knowledge-requests", tags=["knowledge-requests"])
+app.include_router(
+    knowledge_requests_router, prefix="/api/knowledge-requests", tags=["knowledge-requests"]
+)
 app.include_router(kb_sharing_router, prefix="/api/kb-sharing", tags=["kb-sharing"])
 app.include_router(dedup_router, prefix="/api/dedup", tags=["dedup"])
 app.include_router(permission_router, prefix="/api/permission", tags=["permission"])

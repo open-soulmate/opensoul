@@ -1,12 +1,12 @@
 """OpenWill API — 意志系统：工作流编排、条件触发、多分支流程。"""
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Any
 
 from src.will.engine import WorkflowEngine
 from src.will.models import (
-    ExecutionStatus,
     NodeType,
     TriggerType,
     WorkflowStatus,
@@ -17,6 +17,7 @@ engine = WorkflowEngine()
 
 
 # ── Request Schemas ────────────────────────────────────────────
+
 
 class WorkflowCreate(BaseModel):
     name: str
@@ -52,6 +53,7 @@ class ExecuteRequest(BaseModel):
 
 
 # ── Workflow Endpoints ─────────────────────────────────────────
+
 
 @router.post("/workflows")
 async def create_workflow(req: WorkflowCreate):
@@ -108,6 +110,7 @@ async def delete_workflow(workflow_id: str):
 
 # ── Node Endpoints ─────────────────────────────────────────────
 
+
 @router.post("/workflows/{workflow_id}/nodes")
 async def add_node(workflow_id: str, req: NodeCreate):
     """Add a node to a workflow."""
@@ -132,6 +135,7 @@ async def remove_node(workflow_id: str, node_id: str):
 
 
 # ── Edge Endpoints ─────────────────────────────────────────────
+
 
 @router.post("/workflows/{workflow_id}/edges")
 async def add_edge(workflow_id: str, req: EdgeCreate):
@@ -158,6 +162,7 @@ async def remove_edge(workflow_id: str, edge_id: str):
 
 # ── Validation ─────────────────────────────────────────────────
 
+
 @router.get("/workflows/{workflow_id}/validate")
 async def validate_workflow(workflow_id: str):
     """Validate a workflow DAG."""
@@ -169,6 +174,7 @@ async def validate_workflow(workflow_id: str):
 
 
 # ── Execution Endpoints ────────────────────────────────────────
+
 
 @router.post("/workflows/{workflow_id}/execute")
 async def execute_workflow(workflow_id: str, req: ExecuteRequest = ExecuteRequest()):
@@ -208,6 +214,7 @@ async def cancel_execution(execution_id: str):
 
 # ── Health / Stats ─────────────────────────────────────────────
 
+
 @router.get("/health")
 async def will_health():
     """OpenWill health check."""
@@ -234,11 +241,23 @@ async def list_action_types():
                 "label": "HTTP Request",
                 "description": "Make a real HTTP request to any URL",
                 "config_schema": {
-                    "url": {"type": "string", "required": True, "description": "Target URL (supports ${var} interpolation)"},
-                    "method": {"type": "string", "default": "GET", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+                    "url": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Target URL (supports ${var} interpolation)",
+                    },
+                    "method": {
+                        "type": "string",
+                        "default": "GET",
+                        "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+                    },
                     "headers": {"type": "object", "description": "Request headers"},
                     "body": {"type": "object", "description": "Request body (for POST/PUT/PATCH)"},
-                    "timeout": {"type": "integer", "default": 30, "description": "Timeout in seconds"},
+                    "timeout": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "Timeout in seconds",
+                    },
                 },
             },
             {
@@ -246,9 +265,16 @@ async def list_action_types():
                 "label": "LLM Call",
                 "description": "Call an LLM via OpenGland for AI-powered processing",
                 "config_schema": {
-                    "prompt": {"type": "string", "required": True, "description": "User prompt (supports ${var})"},
+                    "prompt": {
+                        "type": "string",
+                        "required": True,
+                        "description": "User prompt (supports ${var})",
+                    },
                     "system": {"type": "string", "description": "System prompt"},
-                    "model": {"type": "string", "description": "Model name (auto-selected if empty)"},
+                    "model": {
+                        "type": "string",
+                        "description": "Model name (auto-selected if empty)",
+                    },
                     "temperature": {"type": "number", "default": 0.7},
                     "max_tokens": {"type": "integer", "default": 2048},
                     "timeout": {"type": "integer", "default": 60},
@@ -260,10 +286,22 @@ async def list_action_types():
                 "description": "Send a notification via OpenEcho (webhook, email, etc.)",
                 "config_schema": {
                     "title": {"type": "string", "description": "Notification title"},
-                    "content": {"type": "string", "required": True, "description": "Notification content"},
-                    "channel": {"type": "string", "default": "webhook", "enum": ["webhook", "email", "sms", "dingtalk", "wecom"]},
+                    "content": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Notification content",
+                    },
+                    "channel": {
+                        "type": "string",
+                        "default": "webhook",
+                        "enum": ["webhook", "email", "sms", "dingtalk", "wecom"],
+                    },
                     "target": {"type": "string", "description": "Target address/URL"},
-                    "priority": {"type": "string", "default": "normal", "enum": ["low", "normal", "high", "urgent"]},
+                    "priority": {
+                        "type": "string",
+                        "default": "normal",
+                        "enum": ["low", "normal", "high", "urgent"],
+                    },
                 },
             },
             {
@@ -271,7 +309,11 @@ async def list_action_types():
                 "label": "Knowledge Search",
                 "description": "Search the OpenSoul knowledge base",
                 "config_schema": {
-                    "query": {"type": "string", "required": True, "description": "Search query (supports ${var})"},
+                    "query": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Search query (supports ${var})",
+                    },
                     "limit": {"type": "integer", "default": 5},
                 },
             },
@@ -280,7 +322,11 @@ async def list_action_types():
                 "label": "Run Script",
                 "description": "Execute a shell command with safety constraints",
                 "config_schema": {
-                    "command": {"type": "string", "required": True, "description": "Shell command (supports ${var})"},
+                    "command": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Shell command (supports ${var})",
+                    },
                     "cwd": {"type": "string", "description": "Working directory"},
                     "timeout": {"type": "integer", "default": 30},
                 },
@@ -290,7 +336,11 @@ async def list_action_types():
                 "label": "Organ API Call",
                 "description": "Call any OpenSoul organ's API endpoint directly",
                 "config_schema": {
-                    "endpoint": {"type": "string", "required": True, "description": "API path (e.g. '/api/vein/stats')"},
+                    "endpoint": {
+                        "type": "string",
+                        "required": True,
+                        "description": "API path (e.g. '/api/vein/stats')",
+                    },
                     "method": {"type": "string", "default": "GET"},
                     "body": {"type": "object", "description": "Request body or params"},
                     "timeout": {"type": "integer", "default": 30},
@@ -301,6 +351,7 @@ async def list_action_types():
 
 
 # ── Helpers ────────────────────────────────────────────────────
+
 
 def _workflow_dict(wf: Any) -> dict:
     return {

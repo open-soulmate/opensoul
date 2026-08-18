@@ -4,14 +4,14 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from src.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class Status(str, Enum):
+class Status(StrEnum):
     UP = "up"
     DOWN = "down"
     DEGRADED = "degraded"
@@ -73,9 +73,13 @@ class HealthChecker:
             from src.database.qdrant import qdrant_client
 
             if not qdrant_client.AVAILABLE:
-                return ComponentHealth("qdrant", Status.SKIPPED, message="qdrant_client not installed")
+                return ComponentHealth(
+                    "qdrant", Status.SKIPPED, message="qdrant_client not installed"
+                )
             if qdrant_client.client is None:
-                return ComponentHealth("qdrant", Status.SKIPPED, message="qdrant client unavailable")
+                return ComponentHealth(
+                    "qdrant", Status.SKIPPED, message="qdrant client unavailable"
+                )
 
             t0 = time.monotonic()
             qdrant_client.client.get_collections()
@@ -89,9 +93,13 @@ class HealthChecker:
             from src.database.meilisearch import meili_client
 
             if not meili_client.AVAILABLE:
-                return ComponentHealth("meilisearch", Status.SKIPPED, message="meilisearch not installed")
+                return ComponentHealth(
+                    "meilisearch", Status.SKIPPED, message="meilisearch not installed"
+                )
             if meili_client.client is None:
-                return ComponentHealth("meilisearch", Status.SKIPPED, message="meilisearch client unavailable")
+                return ComponentHealth(
+                    "meilisearch", Status.SKIPPED, message="meilisearch client unavailable"
+                )
 
             t0 = time.monotonic()
             meili_client.client.health()

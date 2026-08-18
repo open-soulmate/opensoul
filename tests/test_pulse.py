@@ -1,7 +1,5 @@
 """Integration tests for OpenPulse (脉搏) — precision timer signals."""
 
-import pytest
-
 
 class TestPulseHealth:
     def test_health(self, client):
@@ -14,10 +12,13 @@ class TestPulseHealth:
 
 class TestPulseSignals:
     def test_create_list_delete_signal(self, client):
-        resp = client.post("/api/pulse/signals", json={
-            "name": "test_signal",
-            "interval_seconds": 60,
-        })
+        resp = client.post(
+            "/api/pulse/signals",
+            json={
+                "name": "test_signal",
+                "interval_seconds": 60,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         sid = data["signal_id"]

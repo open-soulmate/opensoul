@@ -4,14 +4,14 @@ Tracks conversation sessions, their metadata, and manages
 session-scoped memory grouping.
 """
 
+import threading
 import time
 import uuid
-import threading
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(StrEnum):
     ACTIVE = "active"
     IDLE = "idle"
     EXPIRED = "expired"
@@ -21,6 +21,7 @@ class SessionStatus(str, Enum):
 @dataclass
 class Session:
     """A conversation session."""
+
     session_id: str
     user_id: str = ""
     title: str = ""
@@ -37,7 +38,7 @@ class SessionManager:
 
     def __init__(
         self,
-        idle_timeout_seconds: float = 1800,   # 30 min
+        idle_timeout_seconds: float = 1800,  # 30 min
         expire_timeout_seconds: float = 86400,  # 24 hours
         max_sessions: int = 500,
     ):

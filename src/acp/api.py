@@ -6,8 +6,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from src.api.user import get_current_user
 from src.acp.proxy import get_acp_process
+from src.api.user import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,7 +47,9 @@ async def send_message(data: ACPMessage, user_id: UUID = Depends(get_current_use
 async def send_image(data: ACPImageMessage, user_id: UUID = Depends(get_current_user)):
     acp = get_acp_process()
     try:
-        result = await acp.send_message_with_image(data.text, data.image_data, data.mime_type, data.session_id)
+        result = await acp.send_message_with_image(
+            data.text, data.image_data, data.mime_type, data.session_id
+        )
         return {
             "ok": True,
             "content": result.get("response_text", ""),

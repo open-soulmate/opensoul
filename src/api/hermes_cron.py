@@ -1,7 +1,6 @@
 """Hermes cron job API endpoints."""
 
 import asyncio
-import json
 import logging
 from uuid import UUID
 
@@ -28,7 +27,9 @@ class CronJobCreate(BaseModel):
 async def run_hermes_cron(*args: str) -> dict:
     """Run a hermes cron command and return parsed output."""
     proc = await asyncio.create_subprocess_exec(
-        "hermes", "cron", *args,
+        "hermes",
+        "cron",
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -63,7 +64,13 @@ async def list_cron_jobs(user_id: UUID = Depends(get_current_user)):
                 if current_job:
                     jobs.append(current_job)
                 job_id = line[:12].strip()
-                status = "active" if "[active]" in line else "paused" if "[paused]" in line else "unknown"
+                status = (
+                    "active"
+                    if "[active]" in line
+                    else "paused"
+                    if "[paused]" in line
+                    else "unknown"
+                )
                 current_job = {"id": job_id, "status": status}
             elif current_job:
                 if line.startswith("Name:"):
@@ -174,7 +181,13 @@ async def get_cron_job(job_id: str, user_id: UUID = Depends(get_current_user)):
                 if current_job:
                     jobs.append(current_job)
                 jid = line[:12].strip()
-                status = "active" if "[active]" in line else "paused" if "[paused]" in line else "unknown"
+                status = (
+                    "active"
+                    if "[active]" in line
+                    else "paused"
+                    if "[paused]" in line
+                    else "unknown"
+                )
                 current_job = {"id": jid, "status": status}
             elif current_job:
                 if line.startswith("Name:"):

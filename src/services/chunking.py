@@ -46,12 +46,14 @@ def chunk_text(text: str, max_chars: int = 800, overlap_chars: int = 50) -> list
 
         chunk_text_str = text[start:end].strip()
         if chunk_text_str:
-            chunks.append(Chunk(
-                content=chunk_text_str,
-                index=idx,
-                start_char=start,
-                end_char=end,
-            ))
+            chunks.append(
+                Chunk(
+                    content=chunk_text_str,
+                    index=idx,
+                    start_char=start,
+                    end_char=end,
+                )
+            )
             idx += 1
 
         # Move forward with overlap
@@ -85,13 +87,15 @@ def chunk_by_paragraphs(text: str, max_chars: int = 800, overlap_chars: int = 50
             # Flush current chunk
             content = "\n\n".join(current_parts)
             start = char_offset - current_len
-            chunks.append(Chunk(
-                content=content,
-                index=idx,
-                start_char=start,
-                end_char=char_offset,
-                metadata={"strategy": "paragraph"},
-            ))
+            chunks.append(
+                Chunk(
+                    content=content,
+                    index=idx,
+                    start_char=start,
+                    end_char=char_offset,
+                    metadata={"strategy": "paragraph"},
+                )
+            )
             idx += 1
             current_parts = []
             current_len = 0
@@ -101,13 +105,15 @@ def chunk_by_paragraphs(text: str, max_chars: int = 800, overlap_chars: int = 50
             if current_parts:
                 content = "\n\n".join(current_parts)
                 start = char_offset - current_len
-                chunks.append(Chunk(
-                    content=content,
-                    index=idx,
-                    start_char=start,
-                    end_char=char_offset,
-                    metadata={"strategy": "paragraph"},
-                ))
+                chunks.append(
+                    Chunk(
+                        content=content,
+                        index=idx,
+                        start_char=start,
+                        end_char=char_offset,
+                        metadata={"strategy": "paragraph"},
+                    )
+                )
                 idx += 1
                 current_parts = []
                 current_len = 0
@@ -115,13 +121,15 @@ def chunk_by_paragraphs(text: str, max_chars: int = 800, overlap_chars: int = 50
             # Split the large paragraph
             sub_chunks = chunk_text(para, max_chars=max_chars, overlap_chars=overlap_chars)
             for sc in sub_chunks:
-                chunks.append(Chunk(
-                    content=sc.content,
-                    index=idx,
-                    start_char=char_offset + sc.start_char,
-                    end_char=char_offset + sc.end_char,
-                    metadata={"strategy": "paragraph_split"},
-                ))
+                chunks.append(
+                    Chunk(
+                        content=sc.content,
+                        index=idx,
+                        start_char=char_offset + sc.start_char,
+                        end_char=char_offset + sc.end_char,
+                        metadata={"strategy": "paragraph_split"},
+                    )
+                )
                 idx += 1
         else:
             current_parts.append(para)
@@ -133,13 +141,15 @@ def chunk_by_paragraphs(text: str, max_chars: int = 800, overlap_chars: int = 50
     if current_parts:
         content = "\n\n".join(current_parts)
         start = char_offset - current_len
-        chunks.append(Chunk(
-            content=content,
-            index=idx,
-            start_char=start,
-            end_char=char_offset,
-            metadata={"strategy": "paragraph"},
-        ))
+        chunks.append(
+            Chunk(
+                content=content,
+                index=idx,
+                start_char=start,
+                end_char=char_offset,
+                metadata={"strategy": "paragraph"},
+            )
+        )
 
     return chunks
 
@@ -166,25 +176,29 @@ def chunk_by_headers(text: str, max_chars: int = 800, overlap_chars: int = 50) -
         section_title = header_match.group(2).strip() if header_match else ""
 
         if len(part) <= max_chars:
-            chunks.append(Chunk(
-                content=part,
-                index=idx,
-                start_char=char_offset,
-                end_char=char_offset + len(part),
-                metadata={"strategy": "header", "section": section_title},
-            ))
+            chunks.append(
+                Chunk(
+                    content=part,
+                    index=idx,
+                    start_char=char_offset,
+                    end_char=char_offset + len(part),
+                    metadata={"strategy": "header", "section": section_title},
+                )
+            )
             idx += 1
         else:
             # Split section content further
             sub_chunks = chunk_text(part, max_chars=max_chars, overlap_chars=overlap_chars)
             for sc in sub_chunks:
-                chunks.append(Chunk(
-                    content=sc.content,
-                    index=idx,
-                    start_char=char_offset + sc.start_char,
-                    end_char=char_offset + sc.end_char,
-                    metadata={"strategy": "header_split", "section": section_title},
-                ))
+                chunks.append(
+                    Chunk(
+                        content=sc.content,
+                        index=idx,
+                        start_char=char_offset + sc.start_char,
+                        end_char=char_offset + sc.end_char,
+                        metadata={"strategy": "header_split", "section": section_title},
+                    )
+                )
                 idx += 1
 
         char_offset += len(part) + 1
@@ -192,7 +206,9 @@ def chunk_by_headers(text: str, max_chars: int = 800, overlap_chars: int = 50) -
     return chunks
 
 
-def smart_chunk(text: str, content_type: str = "text", max_chars: int = 800, overlap_chars: int = 50) -> list[Chunk]:
+def smart_chunk(
+    text: str, content_type: str = "text", max_chars: int = 800, overlap_chars: int = 50
+) -> list[Chunk]:
     """Choose the best chunking strategy based on content type."""
     if content_type in ("markdown", "text/markdown", "text/x-markdown"):
         header_chunks = chunk_by_headers(text, max_chars=max_chars, overlap_chars=overlap_chars)

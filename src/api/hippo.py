@@ -1,12 +1,13 @@
 """OpenHippo API — 海马体：记忆生命周期管理、会话管理、衰减遗忘。"""
 
 import time
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from src.hippo.decay import DecayStrategy
 from src.hippo.memory_store import MemoryStore
 from src.hippo.session import SessionManager, SessionStatus
-from src.hippo.decay import DecayStrategy
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ sessions = SessionManager()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class MemoryCreateRequest(BaseModel):
     session_id: str
@@ -46,6 +48,7 @@ class DecayConfigRequest(BaseModel):
 
 # ── Health ─────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def health():
     """OpenHippo health check."""
@@ -58,6 +61,7 @@ async def health():
 
 
 # ── Memory CRUD ────────────────────────────────────────────
+
 
 @router.post("/memories")
 async def create_memory(req: MemoryCreateRequest):
@@ -172,6 +176,7 @@ async def delete_memory(memory_id: str):
 
 # ── Decay Control ──────────────────────────────────────────
 
+
 @router.post("/decay/run")
 async def run_decay_cycle():
     """Run a decay cycle: update retention, archive, forget."""
@@ -230,6 +235,7 @@ async def simulate_decay(
 
 
 # ── Session Management ─────────────────────────────────────
+
 
 @router.post("/sessions")
 async def create_session(req: SessionCreateRequest):
@@ -318,6 +324,7 @@ async def run_lifecycle_check():
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def hippo_stats():
     """OpenHippo detailed statistics."""
@@ -326,7 +333,7 @@ async def hippo_stats():
     all_memories = store.search(limit=1000)
     by_tag = {}
     for m in all_memories:
-        for t in (m.tags or []):
+        for t in m.tags or []:
             by_tag[t] = by_tag.get(t, 0) + 1
 
     return {

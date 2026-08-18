@@ -100,9 +100,7 @@ class ChunkedUploader:
         self._sessions[upload_id] = session
         return session
 
-    def upload_chunk(
-        self, upload_id: str, chunk_index: int, data: bytes
-    ) -> UploadSession | None:
+    def upload_chunk(self, upload_id: str, chunk_index: int, data: bytes) -> UploadSession | None:
         """Upload a single chunk. Returns session or None if not found."""
         session = self._sessions.get(upload_id)
         if not session:
@@ -153,6 +151,7 @@ class ChunkedUploader:
         chunk_dir = self._temp / upload_id
         if chunk_dir.exists():
             import shutil
+
             shutil.rmtree(chunk_dir)
 
         return True
@@ -160,10 +159,7 @@ class ChunkedUploader:
     def _cleanup_old_sessions(self, max_age: float = 3600):
         """Remove sessions older than max_age seconds."""
         now = time.time()
-        stale = [
-            uid for uid, s in self._sessions.items()
-            if now - s.created_at > max_age
-        ]
+        stale = [uid for uid, s in self._sessions.items() if now - s.created_at > max_age]
         for uid in stale:
             self.cleanup(uid)
 

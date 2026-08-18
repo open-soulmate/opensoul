@@ -10,7 +10,6 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -167,9 +166,7 @@ class TimelineStore:
 
     def get_event(self, event_id: str) -> TimelineEvent | None:
         """Get a single event by ID."""
-        row = self._db.execute(
-            "SELECT * FROM events WHERE event_id = ?", (event_id,)
-        ).fetchone()
+        row = self._db.execute("SELECT * FROM events WHERE event_id = ?", (event_id,)).fetchone()
         if not row:
             return None
         return TimelineEvent(

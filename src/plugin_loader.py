@@ -1,7 +1,7 @@
 """Plugin Loader — auto-discovers and loads plugins from ~/.openmate/plugins/."""
 
-import json
 import importlib.util
+import json
 import logging
 import os
 from pathlib import Path
@@ -77,17 +77,19 @@ def load_all_plugins(app):
         else:
             logger.info(f"Plugin {plugin_id}: no backend (frontend-only)")
 
-        loaded_plugins.append({
-            "id": plugin_id,
-            "name": manifest.get("name", plugin_id),
-            "version": manifest.get("version", "0.0.0"),
-            "description": manifest.get("description", ""),
-            "type": manifest.get("type", "general"),
-            "sidebar": manifest.get("sidebar", []),
-            "api_prefix": api_prefix,
-            "has_backend": router is not None,
-            "config": manifest.get("config", {}),
-        })
+        loaded_plugins.append(
+            {
+                "id": plugin_id,
+                "name": manifest.get("name", plugin_id),
+                "version": manifest.get("version", "0.0.0"),
+                "description": manifest.get("description", ""),
+                "type": manifest.get("type", "general"),
+                "sidebar": manifest.get("sidebar", []),
+                "api_prefix": api_prefix,
+                "has_backend": router is not None,
+                "config": manifest.get("config", {}),
+            }
+        )
 
     logger.info(f"Loaded {len(loaded_plugins)} plugins")
     return loaded_plugins

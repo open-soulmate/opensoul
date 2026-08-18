@@ -2,7 +2,7 @@
 
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -28,7 +28,7 @@ class EventBus:
             "topic": topic,
             "data": data,
             "source": source,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "delivered_to": [],
         }
         # Deliver to matching subscribers
@@ -41,15 +41,17 @@ class EventBus:
 
         self._events.append(event)
         if len(self._events) > self._max_events:
-            self._events = self._events[-self._max_events:]
+            self._events = self._events[-self._max_events :]
         return event
 
-    def subscribe(self, subscriber_id: str, topic_pattern: str, callback_url: str = "") -> dict[str, Any]:
+    def subscribe(
+        self, subscriber_id: str, topic_pattern: str, callback_url: str = ""
+    ) -> dict[str, Any]:
         sub = {
             "id": subscriber_id,
             "topic_pattern": topic_pattern,
             "callback_url": callback_url,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "delivery_count": 0,
             "last_delivery": None,
         }
@@ -67,14 +69,16 @@ class EventBus:
                 return True
         return False
 
-    def register_node(self, node_id: str, node_type: str, metadata: dict | None = None) -> dict[str, Any]:
+    def register_node(
+        self, node_id: str, node_type: str, metadata: dict | None = None
+    ) -> dict[str, Any]:
         node = {
             "node_id": node_id,
             "node_type": node_type,
             "status": "online",
             "metadata": metadata or {},
-            "registered_at": datetime.now(timezone.utc).isoformat(),
-            "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+            "registered_at": datetime.now(UTC).isoformat(),
+            "last_heartbeat": datetime.now(UTC).isoformat(),
             "event_count": 0,
         }
         self._nodes[node_id] = node
@@ -83,14 +87,16 @@ class EventBus:
     def heartbeat(self, node_id: str) -> bool:
         if node_id not in self._nodes:
             return False
-        self._nodes[node_id]["last_heartbeat"] = datetime.now(timezone.utc).isoformat()
+        self._nodes[node_id]["last_heartbeat"] = datetime.now(UTC).isoformat()
         self._nodes[node_id]["status"] = "online"
         return True
 
     def remove_node(self, node_id: str) -> bool:
         return self._nodes.pop(node_id, None) is not None
 
-    def get_events(self, topic: str | None = None, limit: int = 100, since: str | None = None) -> list[dict]:
+    def get_events(
+        self, topic: str | None = None, limit: int = 100, since: str | None = None
+    ) -> list[dict]:
         events = self._events
         if topic:
             events = [e for e in events if self._topic_matches(topic, e["topic"])]
@@ -128,6 +134,7 @@ bus = EventBus()
 
 # ── Request Schemas ────────────────────────────────────────────
 
+
 class PublishRequest(BaseModel):
     topic: str
     data: dict[str, Any] = Field(default_factory=dict)
@@ -152,6 +159,7 @@ class HeartbeatRequest(BaseModel):
 
 # ── Event Endpoints ────────────────────────────────────────────
 
+
 @router.post("/publish")
 async def publish_event(req: PublishRequest):
     """Publish an event to the bus."""
@@ -170,6 +178,7 @@ async def list_events(
 
 
 # ── Subscription Endpoints ─────────────────────────────────────
+
 
 @router.post("/subscribe")
 async def subscribe(req: SubscribeRequest):
@@ -197,6 +206,7 @@ async def list_subscriptions():
 
 
 # ── Node Management ────────────────────────────────────────────
+
 
 @router.post("/nodes/register")
 async def register_node(req: NodeRegisterRequest):
@@ -229,6 +239,7 @@ async def list_nodes():
 
 
 # ── Health / Stats ─────────────────────────────────────────────
+
 
 @router.get("/health")
 async def nerve_health():

@@ -1,7 +1,5 @@
 """Integration tests for OpenNerve (神经) — event bus, WebSocket."""
 
-import pytest
-
 
 class TestNerveHealth:
     def test_health(self, client):

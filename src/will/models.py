@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import time
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class NodeType(str, Enum):
+class NodeType(StrEnum):
     TRIGGER = "trigger"
     ACTION = "action"
     CONDITION = "condition"
@@ -20,14 +19,14 @@ class NodeType(str, Enum):
     END = "end"
 
 
-class TriggerType(str, Enum):
+class TriggerType(StrEnum):
     MANUAL = "manual"
     CRON = "cron"
     EVENT = "event"
     WEBHOOK = "webhook"
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     HTTP = "http"
     LLM = "llm"
     KNOWLEDGE_SEARCH = "knowledge_search"
@@ -37,14 +36,14 @@ class ActionType(str, Enum):
     ORGAN = "organ"
 
 
-class WorkflowStatus(str, Enum):
+class WorkflowStatus(StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     PAUSED = "paused"
     ARCHIVED = "archived"
 
 
-class ExecutionStatus(str, Enum):
+class ExecutionStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
@@ -83,8 +82,8 @@ class Workflow(BaseModel):
     trigger: TriggerType = TriggerType.MANUAL
     trigger_config: dict[str, Any] = Field(default_factory=dict)
     variables: dict[str, Any] = Field(default_factory=dict)
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     run_count: int = 0
     last_run_at: str | None = None
 
@@ -122,6 +121,7 @@ class Workflow(BaseModel):
         adj: dict[str, list[str]] = {}
         for n in self.nodes:
             adj[n.id] = [e.target_node_id for e in self.get_outgoing_edges(n.id)]
+
         def dfs(node_id: str) -> bool:
             visited.add(node_id)
             path.add(node_id)
@@ -134,6 +134,7 @@ class Workflow(BaseModel):
                         return True
             path.discard(node_id)
             return False
+
         for n in self.nodes:
             if n.id not in visited:
                 dfs(n.id)
@@ -157,7 +158,7 @@ class WorkflowExecution(BaseModel):
     workflow_id: str
     workflow_name: str = ""
     status: ExecutionStatus = ExecutionStatus.PENDING
-    started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     completed_at: str | None = None
     steps: list[StepExecution] = Field(default_factory=list)
     variables: dict[str, Any] = Field(default_factory=dict)

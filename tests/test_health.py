@@ -1,7 +1,5 @@
 """Integration tests for OpenSoul health endpoints."""
 
-import pytest
-
 
 class TestHealthAll:
     def test_health_all_returns_200(self, client):
@@ -16,10 +14,29 @@ class TestHealthAll:
         resp = client.get("/api/health/all")
         organs = resp.json()["organs"]
         expected = [
-            "soul", "cortex", "nerve", "vein", "sense", "will",
-            "vital", "gland", "immune", "marrow", "gene", "echo",
-            "mirror", "link", "hippo", "reflex", "heredity", "pulse",
-            "nest", "limb", "voice", "vision", "mind",
+            "soul",
+            "cortex",
+            "nerve",
+            "vein",
+            "sense",
+            "will",
+            "vital",
+            "gland",
+            "immune",
+            "marrow",
+            "gene",
+            "echo",
+            "mirror",
+            "link",
+            "hippo",
+            "reflex",
+            "heredity",
+            "pulse",
+            "nest",
+            "limb",
+            "voice",
+            "vision",
+            "mind",
         ]
         for organ in expected:
             assert organ in organs, f"Missing organ: {organ}"

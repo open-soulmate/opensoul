@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import json
-import time
 import threading
-import urllib.request
+import time
 import urllib.error
+import urllib.request
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class Channel(str, Enum):
+class Channel(StrEnum):
     WEBHOOK = "webhook"
     EMAIL = "email"
     DINGTALK = "dingtalk"
@@ -65,7 +65,14 @@ class MessageDispatcher:
         # Register console channel by default
         self._channels[Channel.CONSOLE] = ChannelConfig(channel=Channel.CONSOLE, enabled=True)
 
-    def configure_channel(self, channel: Channel, endpoint: str = "", token: str = "", enabled: bool = True, extra: dict | None = None):
+    def configure_channel(
+        self,
+        channel: Channel,
+        endpoint: str = "",
+        token: str = "",
+        enabled: bool = True,
+        extra: dict | None = None,
+    ):
         with self._lock:
             self._channels[channel] = ChannelConfig(
                 channel=channel,
@@ -75,7 +82,9 @@ class MessageDispatcher:
                 extra=extra or {},
             )
 
-    def send(self, channel: Channel, title: str, content: str, target: str = "", priority: int = 5) -> SendResult:
+    def send(
+        self, channel: Channel, title: str, content: str, target: str = "", priority: int = 5
+    ) -> SendResult:
         """Send a message via specified channel."""
         self._counter += 1
         msg_id = f"msg_{int(time.time())}_{self._counter}"
@@ -151,13 +160,15 @@ class MessageDispatcher:
     def _send_webhook(self, msg: Message, config: ChannelConfig) -> SendResult:
         """Send via generic webhook (POST JSON)."""
         try:
-            payload = json.dumps({
-                "msg_id": msg.msg_id,
-                "title": msg.title,
-                "content": msg.content,
-                "timestamp": msg.timestamp,
-                "priority": msg.priority,
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "msg_id": msg.msg_id,
+                    "title": msg.title,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp,
+                    "priority": msg.priority,
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
                 config.endpoint,
@@ -168,7 +179,7 @@ class MessageDispatcher:
             if config.token:
                 req.add_header("Authorization", f"Bearer {config.token}")
 
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10):
                 return SendResult(success=True, msg_id=msg.msg_id, channel="webhook")
 
         except Exception as e:
@@ -177,13 +188,15 @@ class MessageDispatcher:
     def _send_dingtalk(self, msg: Message, config: ChannelConfig) -> SendResult:
         """Send via DingTalk robot webhook."""
         try:
-            payload = json.dumps({
-                "msgtype": "markdown",
-                "markdown": {
-                    "title": msg.title,
-                    "text": f"## {msg.title}\n\n{msg.content}",
-                },
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "msgtype": "markdown",
+                    "markdown": {
+                        "title": msg.title,
+                        "text": f"## {msg.title}\n\n{msg.content}",
+                    },
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
                 config.endpoint,
@@ -191,7 +204,7 @@ class MessageDispatcher:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10):
                 return SendResult(success=True, msg_id=msg.msg_id, channel="dingtalk")
 
         except Exception as e:
@@ -200,13 +213,15 @@ class MessageDispatcher:
     def _send_feishu(self, msg: Message, config: ChannelConfig) -> SendResult:
         """Send via Feishu/Lark robot webhook."""
         try:
-            payload = json.dumps({
-                "msg_type": "interactive",
-                "card": {
-                    "header": {"title": {"tag": "plain_text", "content": msg.title}},
-                    "elements": [{"tag": "markdown", "content": msg.content}],
-                },
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "msg_type": "interactive",
+                    "card": {
+                        "header": {"title": {"tag": "plain_text", "content": msg.title}},
+                        "elements": [{"tag": "markdown", "content": msg.content}],
+                    },
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
                 config.endpoint,
@@ -214,7 +229,7 @@ class MessageDispatcher:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10):
                 return SendResult(success=True, msg_id=msg.msg_id, channel="feishu")
 
         except Exception as e:
@@ -226,17 +241,26 @@ class MessageDispatcher:
             token = config.token
             chat_id = config.extra.get("chat_id", msg.target)
             if not token or not chat_id:
-                return SendResult(success=False, msg_id=msg.msg_id, channel="telegram", error="Missing token or chat_id")
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="telegram",
+                    error="Missing token or chat_id",
+                )
 
             url = f"https://api.telegram.org/bot{token}/sendMessage"
-            payload = json.dumps({
-                "chat_id": chat_id,
-                "text": f"*{msg.title}*\n\n{msg.content}",
-                "parse_mode": "Markdown",
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "chat_id": chat_id,
+                    "text": f"*{msg.title}*\n\n{msg.content}",
+                    "parse_mode": "Markdown",
+                }
+            ).encode("utf-8")
 
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            req = urllib.request.Request(
+                url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10):
                 return SendResult(success=True, msg_id=msg.msg_id, channel="telegram")
 
         except Exception as e:
@@ -245,8 +269,8 @@ class MessageDispatcher:
     def _send_email(self, msg: Message, config: ChannelConfig) -> SendResult:
         """Send via SMTP email."""
         import smtplib
-        from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
 
         try:
             smtp_host = config.endpoint or config.extra.get("smtp_host", "")
@@ -257,8 +281,12 @@ class MessageDispatcher:
             to_addr = msg.target or config.extra.get("to", "")
 
             if not smtp_host or not to_addr:
-                return SendResult(success=False, msg_id=msg.msg_id, channel="email",
-                                  error="Missing smtp_host or recipient address")
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="email",
+                    error="Missing smtp_host or recipient address",
+                )
 
             # Build email
             email_msg = MIMEMultipart("alternative")
@@ -273,7 +301,7 @@ class MessageDispatcher:
             # HTML body
             html_body = f"""<html><body>
 <h2>{msg.title}</h2>
-<p>{msg.content.replace(chr(10), '<br>')}</p>
+<p>{msg.content.replace(chr(10), "<br>")}</p>
 <hr><small>OpenEcho · Priority: {msg.priority}</small>
 </body></html>"""
             email_msg.attach(MIMEText(html_body, "html", "utf-8"))
@@ -305,16 +333,22 @@ class MessageDispatcher:
         try:
             webhook_url = config.endpoint
             if not webhook_url:
-                return SendResult(success=False, msg_id=msg.msg_id, channel="wechat_work",
-                                  error="Missing webhook URL")
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="wechat_work",
+                    error="Missing webhook URL",
+                )
 
             # WeChat Work robot supports markdown format
-            payload = json.dumps({
-                "msgtype": "markdown",
-                "markdown": {
-                    "content": f"## {msg.title}\n\n{msg.content}\n\n> Priority: {msg.priority}",
-                },
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "msgtype": "markdown",
+                    "markdown": {
+                        "content": f"## {msg.title}\n\n{msg.content}\n\n> Priority: {msg.priority}",
+                    },
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
                 webhook_url,
@@ -325,8 +359,12 @@ class MessageDispatcher:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 if result.get("errcode", 0) != 0:
-                    return SendResult(success=False, msg_id=msg.msg_id, channel="wechat_work",
-                                      error=f"WeChat API error: {result.get('errmsg', 'unknown')}")
+                    return SendResult(
+                        success=False,
+                        msg_id=msg.msg_id,
+                        channel="wechat_work",
+                        error=f"WeChat API error: {result.get('errmsg', 'unknown')}",
+                    )
                 return SendResult(success=True, msg_id=msg.msg_id, channel="wechat_work")
 
         except Exception as e:

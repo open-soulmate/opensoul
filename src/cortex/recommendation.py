@@ -5,10 +5,9 @@ shared entities, shared tags, and domain/type matching.
 """
 
 import json
-import re
 import logging
+import re
 from typing import Any
-from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +30,9 @@ class RecommendationEngine:
     ) -> list[dict[str, Any]]:
         """Return top-N related knowledge entries for *knowledge_id*."""
         target = await db_pool.fetchrow(
-            "SELECT id, title, content, metadata FROM knowledge "
-            "WHERE id = $1 AND user_id = $2",
-            knowledge_id, user_id,
+            "SELECT id, title, content, metadata FROM knowledge WHERE id = $1 AND user_id = $2",
+            knowledge_id,
+            user_id,
         )
         if not target:
             return []
@@ -51,9 +50,9 @@ class RecommendationEngine:
 
         # All other knowledge
         rows = await db_pool.fetch(
-            "SELECT id, title, content, metadata FROM knowledge "
-            "WHERE user_id = $1 AND id != $2",
-            user_id, knowledge_id,
+            "SELECT id, title, content, metadata FROM knowledge WHERE user_id = $1 AND id != $2",
+            user_id,
+            knowledge_id,
         )
 
         scored: list[dict[str, Any]] = []
@@ -91,18 +90,20 @@ class RecommendationEngine:
             )
 
             if total > 0.05:
-                scored.append({
-                    "id": str(row["id"]),
-                    "title": row["title"] or "",
-                    "similarity": round(total, 4),
-                    "breakdown": {
-                        "keyword": round(kw_sim, 4),
-                        "entity": round(entity_sim, 4),
-                        "tag": round(tag_sim, 4),
-                        "domain": round(domain_sim, 4),
-                        "type": round(type_sim, 4),
-                    },
-                })
+                scored.append(
+                    {
+                        "id": str(row["id"]),
+                        "title": row["title"] or "",
+                        "similarity": round(total, 4),
+                        "breakdown": {
+                            "keyword": round(kw_sim, 4),
+                            "entity": round(entity_sim, 4),
+                            "tag": round(tag_sim, 4),
+                            "domain": round(domain_sim, 4),
+                            "type": round(type_sim, 4),
+                        },
+                    }
+                )
 
         scored.sort(key=lambda x: x["similarity"], reverse=True)
         return scored[:limit]
@@ -114,7 +115,8 @@ class RecommendationEngine:
         rows = await db_pool.fetch(
             "SELECT id, title, metadata, created_at FROM knowledge "
             "WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-            user_id, limit,
+            user_id,
+            limit,
         )
         return [
             {
@@ -125,14 +127,13 @@ class RecommendationEngine:
             for r in rows
         ]
 
-    async def get_recent(
-        self, db_pool: Any, user_id: str, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def get_recent(self, db_pool: Any, user_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """Newest knowledge entries."""
         rows = await db_pool.fetch(
             "SELECT id, title, metadata, created_at FROM knowledge "
             "WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-            user_id, limit,
+            user_id,
+            limit,
         )
         return [
             {

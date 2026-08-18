@@ -5,8 +5,14 @@ from pydantic import BaseModel
 
 from src.api.user import get_current_user
 from src.services.permission import (
-    check_permission, add_role, remove_role, get_user_roles,
-    add_policy, remove_policy, get_all_policies, get_all_roles,
+    add_policy,
+    add_role,
+    check_permission,
+    get_all_policies,
+    get_all_roles,
+    get_user_roles,
+    remove_policy,
+    remove_role,
 )
 
 router = APIRouter()
@@ -27,6 +33,7 @@ class PolicyAdd(BaseModel):
 async def check(obj: str, act: str, user_id: UUID = Depends(get_current_user)):
     """检查当前用户权限"""
     from src.services.auth import get_user_by_id
+
     user = await get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -38,6 +45,7 @@ async def check(obj: str, act: str, user_id: UUID = Depends(get_current_user)):
 async def assign_role(data: RoleAssign, user_id: UUID = Depends(get_current_user)):
     """分配角色（仅admin）"""
     from src.services.auth import get_user_by_id
+
     user = await get_user_by_id(user_id)
     if not user or not check_permission(user["username"], "user", "*"):
         raise HTTPException(status_code=403, detail="Admin only")
@@ -49,6 +57,7 @@ async def assign_role(data: RoleAssign, user_id: UUID = Depends(get_current_user
 async def revoke_role(data: RoleAssign, user_id: UUID = Depends(get_current_user)):
     """撤销角色（仅admin）"""
     from src.services.auth import get_user_by_id
+
     user = await get_user_by_id(user_id)
     if not user or not check_permission(user["username"], "user", "*"):
         raise HTTPException(status_code=403, detail="Admin only")
@@ -67,6 +76,7 @@ async def list_roles(username: str, user_id: UUID = Depends(get_current_user)):
 async def list_policies(user_id: UUID = Depends(get_current_user)):
     """查看所有策略（仅admin）"""
     from src.services.auth import get_user_by_id
+
     user = await get_user_by_id(user_id)
     if not user or not check_permission(user["username"], "user", "*"):
         raise HTTPException(status_code=403, detail="Admin only")
@@ -79,6 +89,7 @@ async def list_policies(user_id: UUID = Depends(get_current_user)):
 async def create_policy(data: PolicyAdd, user_id: UUID = Depends(get_current_user)):
     """添加策略（仅admin）"""
     from src.services.auth import get_user_by_id
+
     user = await get_user_by_id(user_id)
     if not user or not check_permission(user["username"], "user", "*"):
         raise HTTPException(status_code=403, detail="Admin only")
@@ -90,6 +101,7 @@ async def create_policy(data: PolicyAdd, user_id: UUID = Depends(get_current_use
 async def delete_policy(data: PolicyAdd, user_id: UUID = Depends(get_current_user)):
     """删除策略（仅admin）"""
     from src.services.auth import get_user_by_id
+
     user = await get_user_by_id(user_id)
     if not user or not check_permission(user["username"], "user", "*"):
         raise HTTPException(status_code=403, detail="Admin only")

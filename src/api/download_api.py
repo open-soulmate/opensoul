@@ -7,18 +7,14 @@ and auto-updating plugins.
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Optional
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.api.user import get_current_user
-from src.api.download_plugins import get_download_manager, DownloadProgress
-from src.api.native_downloader import get_downloader, DownloadStatus
+from src.api.download_plugins import get_download_manager
+from src.api.native_downloader import get_downloader
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,6 +25,7 @@ CACHE_DIR = Path.home() / ".openmate" / "download-cache"
 
 # ─── Plugin Management ───────────────────────────────────────────
 
+
 @router.get("/plugins")
 async def list_plugins():
     """List all download plugins and their status"""
@@ -37,9 +34,13 @@ async def list_plugins():
     return {
         "plugins": [
             {
-                "id": p.id, "name": p.name, "description": p.description,
-                "version": p.version, "status": p.status.value,
-                "supports_resume": p.supports_resume, "supports_p2p": p.supports_p2p,
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "version": p.version,
+                "status": p.status.value,
+                "supports_resume": p.supports_resume,
+                "supports_p2p": p.supports_p2p,
                 "priority": p.priority,
             }
             for p in plugins
@@ -116,6 +117,7 @@ async def batch_plugin_action(req: BatchPluginRequest):
                 else:
                     info = plugin.get_info()
                     import platform
+
                     os_name = "darwin" if platform.system() == "Darwin" else "linux"
                     # Construct uninstall command from binary name
                     if os_name == "darwin":
@@ -147,11 +149,12 @@ async def get_plugin_version(plugin_id: str):
 
 # ─── Download with Resume/P2P ────────────────────────────────────
 
+
 class DownloadRequest(BaseModel):
     url: str
-    dest: Optional[str] = None  # defaults to cache dir
+    dest: str | None = None  # defaults to cache dir
     resume: bool = True
-    plugin_id: Optional[str] = None  # auto-select if None
+    plugin_id: str | None = None  # auto-select if None
 
 
 @router.post("/download")
@@ -184,11 +187,18 @@ async def download_sync(req: DownloadRequest):
 
     task = await dl.download_sync(req.url, dest)
     return {
-        "status": task.status.value, "dest": task.dest, "url": task.url,
-        "total_bytes": task.total_bytes, "downloaded_bytes": task.downloaded_bytes,
-        "speed": task.speed, "eta": task.eta, "progress_pct": task.progress_pct,
-        "plugin": task.plugin, "supports_resume": task.supports_resume,
-        "error": task.error, "task_id": task.id,
+        "status": task.status.value,
+        "dest": task.dest,
+        "url": task.url,
+        "total_bytes": task.total_bytes,
+        "downloaded_bytes": task.downloaded_bytes,
+        "speed": task.speed,
+        "eta": task.eta,
+        "progress_pct": task.progress_pct,
+        "plugin": task.plugin,
+        "supports_resume": task.supports_resume,
+        "error": task.error,
+        "task_id": task.id,
     }
 
 
@@ -200,7 +210,11 @@ async def download_progress_stream():
     async def stream():
         while True:
             await asyncio.sleep(1)
-            tasks = [t.to_dict() for t in dl.list_tasks() if t.status.value in ("downloading", "connecting", "pending")]
+            tasks = [
+                t.to_dict()
+                for t in dl.list_tasks()
+                if t.status.value in ("downloading", "connecting", "pending")
+            ]
             if tasks:
                 yield f"data: {json.dumps({'tasks': tasks})}\n\n"
             else:
@@ -210,6 +224,7 @@ async def download_progress_stream():
 
 
 # ─── Cache Management ────────────────────────────────────────────
+
 
 @router.get("/cache")
 async def list_cache():
@@ -223,18 +238,26 @@ async def list_cache():
         if f.is_file() and not f.name.endswith(".aria2"):
             size = f.stat().st_size
             total_size += size
-            files.append({
-                "name": f.name, "path": str(f), "size": size,
-                "modified": f.stat().st_mtime,
-            })
+            files.append(
+                {
+                    "name": f.name,
+                    "path": str(f),
+                    "size": size,
+                    "modified": f.stat().st_mtime,
+                }
+            )
 
-    return {"files": sorted(files, key=lambda x: x["modified"], reverse=True), "total_size": total_size}
+    return {
+        "files": sorted(files, key=lambda x: x["modified"], reverse=True),
+        "total_size": total_size,
+    }
 
 
 @router.delete("/cache")
 async def clear_cache():
     """Clear download cache"""
     import shutil
+
     if CACHE_DIR.exists():
         shutil.rmtree(CACHE_DIR)
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -250,7 +273,9 @@ async def delete_cache_file(filename: str):
         return {"success": True}
     raise HTTPException(status_code=404, detail="File not found")
 
+
 # ─── Task Management ────────────────────────────────────────────
+
 
 @router.get("/tasks")
 async def list_download_tasks():
@@ -285,17 +310,19 @@ async def cancel_download(task_id: str):
 
 # ─── OpenWing Config ──────────────────────────────────────────
 
+
 @router.get("/config")
 async def get_config():
     """Get OpenWing engine configuration"""
     import subprocess
+
     try:
         proc = subprocess.run(
-            ["openwing", "config", "list"],
-            capture_output=True, text=True, timeout=5
+            ["openwing", "config", "list"], capture_output=True, text=True, timeout=5
         )
         if proc.returncode == 0:
             import json
+
             return json.loads(proc.stdout.strip())
     except Exception:
         pass
@@ -306,12 +333,15 @@ async def get_config():
 async def set_config(body: dict):
     """Set OpenWing engine configuration"""
     import subprocess
+
     key = body.get("key", "")
     value = body.get("value", "")
     try:
         proc = subprocess.run(
             ["openwing", "config", "set", key, str(value)],
-            capture_output=True, text=True, timeout=5
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if proc.returncode == 0:
             return {"status": "ok", "key": key, "value": value}

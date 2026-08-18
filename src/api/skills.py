@@ -4,7 +4,6 @@ Auto-detects skills from individual agent directories and migrates them
 to a shared location so all agents can use them without duplication.
 """
 
-import json
 import logging
 import os
 import shutil
@@ -18,9 +17,12 @@ from src.api.user import get_current_user
 
 router = APIRouter()
 
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "OpenSkills"}
+
+
 logger = logging.getLogger(__name__)
 
 # Shared skills directory - all agents read from here
@@ -51,14 +53,19 @@ def _parse_skill_md(skill_md: Path) -> dict:
             continue
         if in_fm:
             if line.startswith("name:"):
-                name = line.split(":", 1)[1].strip().strip('"\'')
+                name = line.split(":", 1)[1].strip().strip("\"'")
             elif line.startswith("description:"):
-                description = line.split(":", 1)[1].strip().strip('"\'')
+                description = line.split(":", 1)[1].strip().strip("\"'")
             elif line.startswith("category:"):
-                category = line.split(":", 1)[1].strip().strip('"\'')
+                category = line.split(":", 1)[1].strip().strip("\"'")
             elif line.startswith("version:"):
-                version = line.split(":", 1)[1].strip().strip('"\'')
-    return {"name": name, "description": description[:200], "category": category or "general", "version": version}
+                version = line.split(":", 1)[1].strip().strip("\"'")
+    return {
+        "name": name,
+        "description": description[:200],
+        "category": category or "general",
+        "version": version,
+    }
 
 
 def _scan_shared_skills() -> list[dict]:
@@ -154,17 +161,27 @@ async def install_skill(skill_name: str, user_id: UUID = Depends(get_current_use
         env["HERMES_SKILLS_DIR"] = str(SHARED_SKILLS_DIR)
         proc = subprocess.run(
             ["hermes", "skill", "install", skill_name],
-            capture_output=True, text=True, timeout=60, env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
         )
         if proc.returncode == 0:
             return {"success": True, "output": proc.stdout[-500:]}
-        
+
         # Fallback: try pip/npm if it looks like a package
         if "/" in skill_name or "@" in skill_name:
             # GitHub repo
             proc = subprocess.run(
-                ["git", "clone", f"https://github.com/{skill_name}", str(SHARED_SKILLS_DIR / skill_name.split("/")[-1])],
-                capture_output=True, text=True, timeout=60,
+                [
+                    "git",
+                    "clone",
+                    f"https://github.com/{skill_name}",
+                    str(SHARED_SKILLS_DIR / skill_name.split("/")[-1]),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if proc.returncode == 0:
                 return {"success": True, "output": "Cloned from GitHub"}

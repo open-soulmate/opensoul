@@ -38,7 +38,7 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
     context_parts = []
     sources = []
     for i, r in enumerate(results):
-        context_parts.append(f"[{i+1}] {r.get('chunk', '')}")
+        context_parts.append(f"[{i + 1}] {r.get('chunk', '')}")
         sources.append({"id": r.get("id"), "score": r.get("score")})
 
     context = "\n\n".join(context_parts)
@@ -116,7 +116,7 @@ async def chat(req: ChatRequest, user_id: UUID):
     context_parts = []
     sources = []
     for i, r in enumerate(results):
-        context_parts.append(f"[{i+1}] {r.get('chunk', '')}")
+        context_parts.append(f"[{i + 1}] {r.get('chunk', '')}")
         sources.append({"id": r.get("id"), "score": r.get("score")})
 
     context = "\n\n".join(context_parts)

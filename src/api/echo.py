@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.echo.dispatcher import MessageDispatcher, Channel
+from src.echo.dispatcher import Channel, MessageDispatcher
 from src.echo.templates import TemplateEngine
 from src.nerve.event_bridge import push_event
 
@@ -15,6 +15,7 @@ template_engine = TemplateEngine()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class SendRequest(BaseModel):
     channel: str
@@ -40,6 +41,7 @@ class ChannelConfigRequest(BaseModel):
 
 # ── Message Endpoints ──────────────────────────────────────
 
+
 @router.post("/send")
 async def send_message(req: SendRequest):
     """Send a message via specified channel."""
@@ -58,11 +60,15 @@ async def send_message(req: SendRequest):
 
     # Emit event
     if result.success:
-        push_event({
-            "organ": "echo", "emoji": "🔊", "type": "message_sent",
-            "summary": f"📨 [{req.channel}] {req.title}",
-            "detail": {"channel": req.channel, "title": req.title, "msg_id": result.msg_id},
-        })
+        push_event(
+            {
+                "organ": "echo",
+                "emoji": "🔊",
+                "type": "message_sent",
+                "summary": f"📨 [{req.channel}] {req.title}",
+                "detail": {"channel": req.channel, "title": req.title, "msg_id": result.msg_id},
+            }
+        )
 
     return {
         "success": result.success,
@@ -87,6 +93,7 @@ async def broadcast_message(req: BroadcastRequest):
 
 
 # ── Channel Configuration ──────────────────────────────────
+
 
 @router.post("/channels/configure")
 async def configure_channel(req: ChannelConfigRequest):
@@ -115,8 +122,8 @@ async def list_channels():
 # ── Channel Health Monitoring ────────────────────────────────
 
 import time as _time
-import urllib.request
 import urllib.error
+import urllib.request
 
 _channel_health: dict[str, dict] = {}
 
@@ -146,23 +153,24 @@ def _test_channel_health(channel: str, config: dict) -> dict:
         # For webhook-based channels, try a HEAD/GET to the endpoint
         if channel in ("webhook", "dingtalk", "feishu", "wechat_work"):
             req = urllib.request.Request(endpoint, method="HEAD")
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=5):
                 result["status"] = "ok"
         elif channel == "telegram":
             token = config.get("token", "")
             if token:
                 url = f"https://api.telegram.org/bot{token}/getMe"
-                with urllib.request.urlopen(url, timeout=5) as resp:
+                with urllib.request.urlopen(url, timeout=5):
                     result["status"] = "ok"
             else:
                 result["status"] = "unconfigured"
                 result["error"] = "No bot token"
         elif channel == "email":
             import smtplib
+
             smtp_host = config.get("endpoint", "")
             port = int(config.get("extra", {}).get("smtp_port", 587))
             if smtp_host:
-                with smtplib.SMTP(smtp_host, port, timeout=5) as server:
+                with smtplib.SMTP(smtp_host, port, timeout=5):
                     result["status"] = "ok"
             else:
                 result["status"] = "unconfigured"
@@ -217,6 +225,7 @@ async def channels_health():
 
 # ── History ────────────────────────────────────────────────
 
+
 @router.get("/history")
 async def message_history(
     limit: int = Query(default=50, ge=1, le=500),
@@ -234,6 +243,7 @@ async def message_history(
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def echo_stats():
     """Get OpenEcho statistics."""
@@ -246,6 +256,7 @@ async def echo_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def echo_health():
@@ -276,6 +287,7 @@ async def echo_health():
 
 # ── Template Schemas ───────────────────────────────────────
 
+
 class TemplateCreateRequest(BaseModel):
     name: str
     title_template: str
@@ -304,6 +316,7 @@ class TemplateSendRequest(BaseModel):
 
 
 # ── Template Endpoints ─────────────────────────────────────
+
 
 @router.get("/templates")
 async def list_templates(category: str = Query(default=None)):
@@ -345,11 +358,15 @@ async def create_template(req: TemplateCreateRequest):
         category=req.category,
         icon=req.icon,
     )
-    push_event({
-        "organ": "echo", "emoji": "🔊", "type": "template_created",
-        "summary": f"📝 Template created: {tpl.name}",
-        "detail": {"template_id": tpl.template_id, "name": tpl.name},
-    })
+    push_event(
+        {
+            "organ": "echo",
+            "emoji": "🔊",
+            "type": "template_created",
+            "summary": f"📝 Template created: {tpl.name}",
+            "detail": {"template_id": tpl.template_id, "name": tpl.name},
+        }
+    )
     return {
         "template_id": tpl.template_id,
         "name": tpl.name,
@@ -399,15 +416,19 @@ async def send_from_template(template_id: str, req: TemplateSendRequest):
         priority=req.priority,
     )
 
-    push_event({
-        "organ": "echo", "emoji": "🔊", "type": "template_sent",
-        "summary": f"📨 [{channel_name}] {rendered['title']}",
-        "detail": {
-            "template_id": template_id,
-            "channel": channel_name,
-            "msg_id": result.msg_id,
-        },
-    })
+    push_event(
+        {
+            "organ": "echo",
+            "emoji": "🔊",
+            "type": "template_sent",
+            "summary": f"📨 [{channel_name}] {rendered['title']}",
+            "detail": {
+                "template_id": template_id,
+                "channel": channel_name,
+                "msg_id": result.msg_id,
+            },
+        }
+    )
 
     return {
         "success": result.success,

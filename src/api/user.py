@@ -3,8 +3,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-from src.models.user import UserCreate, UserResponse, Token
-from src.services.auth import authenticate_user, register_user, create_access_token, decode_token, get_user_by_id
+from src.models.user import Token, UserCreate, UserResponse
+from src.services.auth import (
+    authenticate_user,
+    create_access_token,
+    decode_token,
+    get_user_by_id,
+    register_user,
+)
 from src.services.permission import add_role
 
 router = APIRouter()
@@ -14,6 +20,7 @@ router = APIRouter()
 async def user_health():
     """User system health check."""
     return {"status": "ok", "component": "UserSystem"}
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 
@@ -41,7 +48,12 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(user["id"])
-    return {"access_token": token, "token_type": "bearer", "user_id": str(user["id"]), "username": user["username"]}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": str(user["id"]),
+        "username": user["username"],
+    }
 
 
 @router.get("/me", response_model=UserResponse)

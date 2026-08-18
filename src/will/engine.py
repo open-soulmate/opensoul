@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shlex
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -38,11 +36,20 @@ logger = logging.getLogger(__name__)
 _BASE = "http://127.0.0.1:8090"
 
 # Safety: blocked shell commands
-_BLOCKED_COMMANDS = frozenset({
-    "rm -rf /", "mkfs", "dd if=", ":(){ :|:& };:",
-    "shutdown", "reboot", "halt", "poweroff",
-    "chmod 777 /", "chown root",
-})
+_BLOCKED_COMMANDS = frozenset(
+    {
+        "rm -rf /",
+        "mkfs",
+        "dd if=",
+        ":(){ :|:& };:",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "chmod 777 /",
+        "chown root",
+    }
+)
 
 
 class WorkflowEngine:
@@ -92,7 +99,7 @@ class WorkflowEngine:
         for key, value in kwargs.items():
             if hasattr(wf, key) and key not in ("id", "created_at"):
                 setattr(wf, key, value)
-        wf.updated_at = datetime.now(timezone.utc).isoformat()
+        wf.updated_at = datetime.now(UTC).isoformat()
         return wf
 
     def delete_workflow(self, workflow_id: str) -> bool:
@@ -119,7 +126,7 @@ class WorkflowEngine:
             position=position or {"x": 0, "y": 0},
         )
         wf.nodes.append(node)
-        wf.updated_at = datetime.now(timezone.utc).isoformat()
+        wf.updated_at = datetime.now(UTC).isoformat()
         return node
 
     def remove_node(self, workflow_id: str, node_id: str) -> bool:
@@ -128,8 +135,10 @@ class WorkflowEngine:
             return False
         before = len(wf.nodes)
         wf.nodes = [n for n in wf.nodes if n.id != node_id]
-        wf.edges = [e for e in wf.edges if e.source_node_id != node_id and e.target_node_id != node_id]
-        wf.updated_at = datetime.now(timezone.utc).isoformat()
+        wf.edges = [
+            e for e in wf.edges if e.source_node_id != node_id and e.target_node_id != node_id
+        ]
+        wf.updated_at = datetime.now(UTC).isoformat()
         return len(wf.nodes) < before
 
     def add_edge(
@@ -153,7 +162,7 @@ class WorkflowEngine:
             label=label,
         )
         wf.edges.append(edge)
-        wf.updated_at = datetime.now(timezone.utc).isoformat()
+        wf.updated_at = datetime.now(UTC).isoformat()
         return edge
 
     def remove_edge(self, workflow_id: str, edge_id: str) -> bool:
@@ -162,12 +171,14 @@ class WorkflowEngine:
             return False
         before = len(wf.edges)
         wf.edges = [e for e in wf.edges if e.id != edge_id]
-        wf.updated_at = datetime.now(timezone.utc).isoformat()
+        wf.updated_at = datetime.now(UTC).isoformat()
         return len(wf.edges) < before
 
     # ── Execution ───────────────────────────────────────────────
 
-    async def execute_async(self, workflow_id: str, input_vars: dict | None = None) -> WorkflowExecution | None:
+    async def execute_async(
+        self, workflow_id: str, input_vars: dict | None = None
+    ) -> WorkflowExecution | None:
         """Execute workflow asynchronously with real action execution."""
         wf = self._workflows.get(workflow_id)
         if not wf:
@@ -182,7 +193,7 @@ class WorkflowEngine:
                 workflow_name=wf.name,
                 status=ExecutionStatus.FAILED,
                 error=f"Validation failed: {'; '.join(errors)}",
-                completed_at=datetime.now(timezone.utc).isoformat(),
+                completed_at=datetime.now(UTC).isoformat(),
             )
 
         exec_id = f"exec_{uuid4().hex[:12]}"
@@ -197,7 +208,7 @@ class WorkflowEngine:
 
         self._executions[exec_id] = execution
         wf.run_count += 1
-        wf.last_run_at = datetime.now(timezone.utc).isoformat()
+        wf.last_run_at = datetime.now(UTC).isoformat()
 
         # Run asynchronously with real I/O
         await self._run_execution_async(wf, execution)
@@ -218,7 +229,7 @@ class WorkflowEngine:
                 workflow_name=wf.name,
                 status=ExecutionStatus.FAILED,
                 error=f"Validation failed: {'; '.join(errors)}",
-                completed_at=datetime.now(timezone.utc).isoformat(),
+                completed_at=datetime.now(UTC).isoformat(),
             )
 
         exec_id = f"exec_{uuid4().hex[:12]}"
@@ -233,7 +244,7 @@ class WorkflowEngine:
 
         self._executions[exec_id] = execution
         wf.run_count += 1
-        wf.last_run_at = datetime.now(timezone.utc).isoformat()
+        wf.last_run_at = datetime.now(UTC).isoformat()
 
         # Try to run in existing loop, fallback to sync
         try:
@@ -250,7 +261,7 @@ class WorkflowEngine:
         if not triggers:
             execution.status = ExecutionStatus.FAILED
             execution.error = "No trigger node found"
-            execution.completed_at = datetime.now(timezone.utc).isoformat()
+            execution.completed_at = datetime.now(UTC).isoformat()
             return
 
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -274,7 +285,7 @@ class WorkflowEngine:
                     node_id=node_id,
                     node_label=node.display_label,
                     status=ExecutionStatus.RUNNING,
-                    started_at=datetime.now(timezone.utc).isoformat(),
+                    started_at=datetime.now(UTC).isoformat(),
                     input_data=dict(execution.variables),
                 )
                 execution.steps.append(step)
@@ -289,11 +300,11 @@ class WorkflowEngine:
                     step.error = str(e)
                     execution.status = ExecutionStatus.FAILED
                     execution.error = f"Node '{node.display_label}' failed: {e}"
-                    execution.completed_at = datetime.now(timezone.utc).isoformat()
+                    execution.completed_at = datetime.now(UTC).isoformat()
                     logger.error("Workflow node '%s' failed: %s", node.display_label, e)
                     return
 
-                step.completed_at = datetime.now(timezone.utc).isoformat()
+                step.completed_at = datetime.now(UTC).isoformat()
                 if step.started_at and step.completed_at:
                     step.duration_ms = self._calc_duration_ms(step.started_at, step.completed_at)
 
@@ -311,7 +322,7 @@ class WorkflowEngine:
 
         if execution.status != ExecutionStatus.FAILED:
             execution.status = ExecutionStatus.SUCCESS
-        execution.completed_at = datetime.now(timezone.utc).isoformat()
+        execution.completed_at = datetime.now(UTC).isoformat()
         self._trim_history()
 
     async def _execute_node_async(
@@ -363,7 +374,11 @@ class WorkflowEngine:
         elif action_type == "organ":
             return await self._action_organ(node, variables, client, timeout)
         else:
-            return {"action": action_type, "executed": True, "warning": f"Unknown action type: {action_type}"}
+            return {
+                "action": action_type,
+                "executed": True,
+                "warning": f"Unknown action type: {action_type}",
+            }
 
     # ── Real Action Implementations ─────────────────────────────
 
@@ -566,7 +581,7 @@ class WorkflowEngine:
                 "output": output[:5000],
                 "success": proc.returncode == 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise ValueError(f"Script timed out after {timeout}s")
         except Exception as e:
             raise ValueError(f"Script execution failed: {e}")
@@ -666,7 +681,7 @@ class WorkflowEngine:
         if not exec or exec.status not in (ExecutionStatus.PENDING, ExecutionStatus.RUNNING):
             return False
         exec.status = ExecutionStatus.CANCELLED
-        exec.completed_at = datetime.now(timezone.utc).isoformat()
+        exec.completed_at = datetime.now(UTC).isoformat()
         return True
 
     # ── Stats ───────────────────────────────────────────────────
@@ -678,7 +693,9 @@ class WorkflowEngine:
         running = sum(1 for e in self._executions.values() if e.status == ExecutionStatus.RUNNING)
         return {
             "total_workflows": len(self._workflows),
-            "active_workflows": sum(1 for w in self._workflows.values() if w.status == WorkflowStatus.ACTIVE),
+            "active_workflows": sum(
+                1 for w in self._workflows.values() if w.status == WorkflowStatus.ACTIVE
+            ),
             "total_executions": total_execs,
             "successful": success,
             "failed": failed,

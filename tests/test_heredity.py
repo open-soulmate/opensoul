@@ -1,7 +1,5 @@
 """Integration tests for OpenHeredity (遗传链) — version evolution center."""
 
-import pytest
-
 
 class TestHeredityHealth:
     def test_health(self, client):
@@ -21,7 +19,9 @@ class TestHeredityComponents:
 
     def test_get_component(self, client):
         resp = client.get("/api/heredity/components")
-        components = resp.json() if isinstance(resp.json(), list) else resp.json().get("components", [])
+        components = (
+            resp.json() if isinstance(resp.json(), list) else resp.json().get("components", [])
+        )
         if components:
             cid = components[0]["component_id"]
             resp = client.get(f"/api/heredity/components/{cid}")

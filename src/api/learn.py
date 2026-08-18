@@ -1,6 +1,7 @@
 """OpenLearn API — 学习系统：课程管理、章节学习、测验、进度追踪。"""
 
 import json
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -13,6 +14,7 @@ engine = CourseEngine()
 
 
 # ── Request Schemas ─────────────────────────────────────────
+
 
 class CourseCreateRequest(BaseModel):
     title: str
@@ -55,6 +57,7 @@ class QuizSubmitRequest(BaseModel):
 
 # ── Helpers ─────────────────────────────────────────────────
 
+
 def _course_dict(c) -> dict:
     return {
         "id": c.course_id,
@@ -95,6 +98,7 @@ def _chapter_dict(ch) -> dict:
 
 # ── Course Endpoints ────────────────────────────────────────
 
+
 @router.get("/courses")
 async def list_courses(status: str = Query(default=None)):
     """List all courses, optionally filtered by status."""
@@ -128,8 +132,8 @@ class AIGenerateRequest(BaseModel):
 async def generate_course(req: AIGenerateRequest):
     """AI-generate a course outline with chapters and quiz questions."""
     try:
-        from src.gland.router import ModelRouter
-        from src.api.gland import gateway, _ensure_bootstrapped
+        from src.api.gland import _ensure_bootstrapped, gateway
+
         _ensure_bootstrapped()
 
         prompt = f"""你是一个课程设计专家。请为以下主题生成一个完整的课程大纲。
@@ -187,9 +191,9 @@ async def generate_course(req: AIGenerateRequest):
 
         # Add chapters
         for i, ch_data in enumerate(data.get("chapters", [])):
-            chapter = engine.add_chapter(
+            engine.add_chapter(
                 course.course_id,
-                title=ch_data.get("title", f"Chapter {i+1}"),
+                title=ch_data.get("title", f"Chapter {i + 1}"),
                 content=ch_data.get("content", ""),
                 quiz=ch_data.get("quiz", []),
             )
@@ -233,12 +237,11 @@ async def delete_course(course_id: str):
 
 # ── Chapter Endpoints ───────────────────────────────────────
 
+
 @router.post("/courses/{course_id}/chapters")
 async def add_chapter(course_id: str, req: ChapterCreateRequest):
     """Add a chapter to a course."""
-    chapter = engine.add_chapter(
-        course_id, title=req.title, content=req.content, quiz=req.quiz
-    )
+    chapter = engine.add_chapter(course_id, title=req.title, content=req.content, quiz=req.quiz)
     if not chapter:
         raise HTTPException(404, "Course not found")
     return _chapter_dict(chapter)
@@ -272,6 +275,7 @@ async def mark_chapter(course_id: str, chapter_id: str, req: MarkChapterRequest)
 
 
 # ── Quiz Endpoints ──────────────────────────────────────────
+
 
 @router.get("/courses/{course_id}/chapters/{chapter_id}/quiz")
 async def get_quiz(course_id: str, chapter_id: str):
@@ -314,6 +318,7 @@ async def set_quiz(course_id: str, chapter_id: str, req: QuizSubmitRequest):
 
 
 # ── Stats & Health ──────────────────────────────────────────
+
 
 @router.get("/stats")
 async def learn_stats():

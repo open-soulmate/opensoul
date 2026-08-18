@@ -1,17 +1,13 @@
 """WebSocket endpoint for real-time chat communication."""
 
 import asyncio
-import json
 import logging
 import shutil
-from uuid import UUID
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from starlette.websockets import WebSocketState
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from src.api.user import decode_token
 from src.acp.proxy import get_acp_process
-
+from src.api.user import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -75,7 +71,7 @@ async def run_agent_proxy(agent_id: str, text: str) -> tuple[str, str, bool]:
         if not response and proc.returncode != 0:
             response = stderr.decode("utf-8", errors="replace").strip()
         return response or "（无响应）", agent_id, proc.returncode == 0
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return "Agent响应超时 (120s)", "error", False
     except Exception as e:
         return str(e), "error", False
@@ -151,7 +147,10 @@ async def chat_websocket(websocket: WebSocket):
                             # Send with image via ACP
                             img = image_attachments[0]
                             result = await acp.send_message_with_image(
-                                text, img.get("data", ""), img.get("mime_type", "image/png"), session_id
+                                text,
+                                img.get("data", ""),
+                                img.get("mime_type", "image/png"),
+                                session_id,
                             )
                             response_text = result.get("response_text", "")
                             source = result.get("source", "acp")
@@ -172,15 +171,17 @@ async def chat_websocket(websocket: WebSocket):
                         # Simulate streaming by sending chunks
                         chunk_size = 20
                         for i in range(0, len(response_text), chunk_size):
-                            chunk = response_text[i:i+chunk_size]
+                            chunk = response_text[i : i + chunk_size]
                             await websocket.send_json({"type": "chunk", "text": chunk})
                             await asyncio.sleep(0.05)
 
-                        await websocket.send_json({
-                            "type": "done",
-                            "text": response_text,
-                            "source": source,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "done",
+                                "text": response_text,
+                                "source": source,
+                            }
+                        )
                     else:
                         await websocket.send_json({"type": "error", "message": "无响应"})
 

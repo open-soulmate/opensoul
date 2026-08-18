@@ -1,11 +1,10 @@
 """OpenHeredity API — 遗传链：版本演化中心、插件版本管理、平滑升级、知识库结构迁移。"""
 
-import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.heredity.version_registry import VersionRegistry
 from src.heredity.migration import MigrationEngine
+from src.heredity.version_registry import VersionRegistry
 
 router = APIRouter()
 
@@ -51,6 +50,7 @@ for cid, cname, ver, deps in SEED_COMPONENTS:
 
 # ── Request Schemas ────────────────────────────────────────
 
+
 class RegisterRequest(BaseModel):
     component_id: str
     component_name: str
@@ -87,6 +87,7 @@ class MigrationScriptRequest(BaseModel):
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def heredity_stats():
     """Get OpenHeredity statistics."""
@@ -99,6 +100,7 @@ async def heredity_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def health():
@@ -113,6 +115,7 @@ async def health():
 
 # ── Version Registry ──────────────────────────────────────
 
+
 @router.get("/components")
 async def list_components():
     """List all registered components with their current version."""
@@ -123,9 +126,13 @@ async def list_components():
 async def register_component(req: RegisterRequest):
     """Register a new component version."""
     cv = registry.register(
-        req.component_id, req.component_name, req.version,
-        dependencies=req.dependencies, config_schema=req.config_schema,
-        release_notes=req.release_notes, breaking_changes=req.breaking_changes,
+        req.component_id,
+        req.component_name,
+        req.version,
+        dependencies=req.dependencies,
+        config_schema=req.config_schema,
+        release_notes=req.release_notes,
+        breaking_changes=req.breaking_changes,
     )
     return {
         "component_id": cv.component_id,
@@ -178,12 +185,16 @@ async def check_compatibility(component_id: str):
 
 # ── Migrations ────────────────────────────────────────────
 
+
 @router.post("/migrations")
 async def create_migration(req: MigrationCreateRequest):
     """Create a migration plan."""
     migration = registry.create_migration(
-        req.component_id, req.from_version, req.to_version,
-        steps=req.steps or None, dry_run=req.dry_run,
+        req.component_id,
+        req.from_version,
+        req.to_version,
+        steps=req.steps or None,
+        dry_run=req.dry_run,
     )
     return {
         "migration_id": migration.migration_id,
@@ -246,6 +257,7 @@ async def rollback_migration(migration_id: str):
 
 # ── Schema Migrations ─────────────────────────────────────
 
+
 @router.post("/schemas")
 async def register_schema(req: SchemaRegisterRequest):
     """Register a schema version."""
@@ -263,12 +275,22 @@ async def get_schema(component_id: str, version: str = Query(default=None)):
         "schema_id": schema.schema_id,
         "component_id": schema.component_id,
         "version": schema.version,
-        "fields": [{"name": f.name, "field_type": f.field_type, "required": f.required, "default": f.default} for f in schema.fields],
+        "fields": [
+            {
+                "name": f.name,
+                "field_type": f.field_type,
+                "required": f.required,
+                "default": f.default,
+            }
+            for f in schema.fields
+        ],
     }
 
 
 @router.get("/schemas/{component_id}/diff")
-async def diff_schemas(component_id: str, from_version: str = Query(...), to_version: str = Query(...)):
+async def diff_schemas(
+    component_id: str, from_version: str = Query(...), to_version: str = Query(...)
+):
     """Get diff between two schema versions."""
     diff = engine.diff_schemas(component_id, from_version, to_version)
     return {
@@ -285,14 +307,21 @@ async def diff_schemas(component_id: str, from_version: str = Query(...), to_ver
 async def create_script(req: MigrationScriptRequest):
     """Create a migration script."""
     script = engine.create_migration_script(
-        req.migration_type, req.component_id, req.from_version, req.to_version,
-        up_sql=req.up_sql, down_sql=req.down_sql, transform=req.transform,
+        req.migration_type,
+        req.component_id,
+        req.from_version,
+        req.to_version,
+        up_sql=req.up_sql,
+        down_sql=req.down_sql,
+        transform=req.transform,
     )
     return {"script_id": script.script_id, "applied": script.applied}
 
 
 @router.get("/scripts")
-async def list_scripts(component_id: str = Query(default=None), applied: bool = Query(default=None)):
+async def list_scripts(
+    component_id: str = Query(default=None), applied: bool = Query(default=None)
+):
     """List migration scripts."""
     return {"scripts": engine.list_scripts(component_id=component_id, applied=applied)}
 
@@ -309,6 +338,7 @@ async def apply_script(script_id: str):
 
 # ── Changelog ─────────────────────────────────────────────
 
+
 @router.get("/changelog")
 async def get_changelog(component_id: str = Query(default=None), limit: int = Query(default=50)):
     """Get changelog."""
@@ -316,6 +346,7 @@ async def get_changelog(component_id: str = Query(default=None), limit: int = Qu
 
 
 # ── Platform Version ──────────────────────────────────────
+
 
 @router.get("/platform")
 async def get_platform():

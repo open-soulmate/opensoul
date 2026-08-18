@@ -1,12 +1,13 @@
 """OpenIntelligence API — System intelligence: cross-component analytics, anomaly detection, optimization insights."""
 
-import time
 import asyncio
+import time
+
 import httpx
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from src.intelligence.analyzer import SystemIntelligence, InsightType, Severity
+from src.intelligence.analyzer import InsightType, Severity, SystemIntelligence
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ class MetricsRecordRequest(BaseModel):
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def health():
@@ -44,11 +46,17 @@ async def intelligence_stats():
         "component": "OpenIntelligence",
         "tracked_components": len(intelligence._component_metrics),
         "total_insights": len(intelligence._insights),
-        "insight_types": list(set(str(i.insight_type.value) if hasattr(i, "insight_type") else "" for i in intelligence._insights)),
+        "insight_types": list(
+            set(
+                str(i.insight_type.value) if hasattr(i, "insight_type") else ""
+                for i in intelligence._insights
+            )
+        ),
     }
 
 
 # ── System Summary ─────────────────────────────────────────
+
 
 @router.get("/summary")
 async def get_summary():
@@ -100,6 +108,7 @@ async def collect_metrics():
     errors = 0
 
     async with httpx.AsyncClient(timeout=5.0) as client:
+
         async def _collect(name: str, path: str):
             nonlocal collected, errors
             start = time.time()
@@ -108,19 +117,25 @@ async def collect_metrics():
                 elapsed_ms = (time.time() - start) * 1000
                 data = r.json() if r.status_code == 200 else {}
 
-                intelligence.record_metrics(name, {
-                    "health": "ok" if r.status_code == 200 else "error",
-                    "response_time_ms": elapsed_ms,
-                    "custom": {k: v for k, v in data.items() if k != "status"},
-                })
+                intelligence.record_metrics(
+                    name,
+                    {
+                        "health": "ok" if r.status_code == 200 else "error",
+                        "response_time_ms": elapsed_ms,
+                        "custom": {k: v for k, v in data.items() if k != "status"},
+                    },
+                )
                 collected += 1
-            except Exception as e:
+            except Exception:
                 elapsed_ms = (time.time() - start) * 1000
-                intelligence.record_metrics(name, {
-                    "health": "error",
-                    "response_time_ms": elapsed_ms,
-                    "error_count": 1,
-                })
+                intelligence.record_metrics(
+                    name,
+                    {
+                        "health": "error",
+                        "response_time_ms": elapsed_ms,
+                        "error_count": 1,
+                    },
+                )
                 errors += 1
 
         await asyncio.gather(*[_collect(n, p) for n, p in _ORGAN_ENDPOINTS])
@@ -134,6 +149,7 @@ async def collect_metrics():
 
 
 # ── Insights ───────────────────────────────────────────────
+
 
 @router.get("/insights")
 async def get_insights(
@@ -169,6 +185,7 @@ async def get_insights(
 
 # ── Trends ─────────────────────────────────────────────────
 
+
 @router.get("/trends/{component}")
 async def get_trends(
     component: str,
@@ -186,6 +203,7 @@ async def get_trends(
 
 # ── Component Details ──────────────────────────────────────
 
+
 @router.get("/components")
 async def get_component_details():
     """Get detailed metrics for all tracked components."""
@@ -193,6 +211,7 @@ async def get_component_details():
 
 
 # ── Recommendations ────────────────────────────────────────
+
 
 @router.get("/recommendations")
 async def get_recommendations():
@@ -202,14 +221,18 @@ async def get_recommendations():
 
 # ── Manual Record ──────────────────────────────────────────
 
+
 @router.post("/record")
 async def record_metrics(req: MetricsRecordRequest):
     """Manually record metrics for a component."""
-    intelligence.record_metrics(req.component, {
-        "health": req.health,
-        "response_time_ms": req.response_time_ms,
-        "request_count": req.request_count,
-        "error_count": req.error_count,
-        "custom": req.custom,
-    })
+    intelligence.record_metrics(
+        req.component,
+        {
+            "health": req.health,
+            "response_time_ms": req.response_time_ms,
+            "request_count": req.request_count,
+            "error_count": req.error_count,
+            "custom": req.custom,
+        },
+    )
     return {"status": "ok", "component": req.component}

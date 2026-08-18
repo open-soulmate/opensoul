@@ -4,9 +4,9 @@ In-memory store for session-scoped memories with TTL, decay tracking,
 and automatic archival/forgetting based on the configured decay strategy.
 """
 
+import threading
 import time
 import uuid
-import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,10 +16,11 @@ from src.hippo.decay import DecayEngine, DecayStrategy
 @dataclass
 class Memory:
     """A single memory entry in the hippocampus."""
+
     memory_id: str
     session_id: str
     content: str
-    importance: float = 0.5          # 0.0 to 1.0
+    importance: float = 0.5  # 0.0 to 1.0
     tags: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
@@ -104,8 +105,7 @@ class MemoryStore:
                     continue
                 if min_retention is not None:
                     decay = self.decay_engine.calculate(
-                        mem.created_at, mem.last_accessed_at,
-                        mem.access_count, mem.importance
+                        mem.created_at, mem.last_accessed_at, mem.access_count, mem.importance
                     )
                     mem.retention = decay.retention
                     if mem.retention < min_retention:
@@ -146,8 +146,7 @@ class MemoryStore:
                 if mem.archived:
                     continue
                 decay = self.decay_engine.calculate(
-                    mem.created_at, mem.last_accessed_at,
-                    mem.access_count, mem.importance
+                    mem.created_at, mem.last_accessed_at, mem.access_count, mem.importance
                 )
                 mem.retention = decay.retention
                 updated += 1
@@ -207,8 +206,7 @@ class MemoryStore:
                 lowest_ret = -1
                 break
             decay = self.decay_engine.calculate(
-                mem.created_at, mem.last_accessed_at,
-                mem.access_count, mem.importance
+                mem.created_at, mem.last_accessed_at, mem.access_count, mem.importance
             )
             if decay.retention < lowest_ret:
                 lowest_ret = decay.retention

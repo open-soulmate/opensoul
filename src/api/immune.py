@@ -1,13 +1,12 @@
 """OpenImmune API — 免疫系统：内容风控、限流、IP管控、安全审计。"""
 
-import time
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from src.immune.rate_limiter import RateLimiter, RateLimitConfig
-from src.immune.moderator import ContentModerator
 from src.immune.access_control import IPAccessControl
-from src.immune.audit import AuditLogger, AuditAction
+from src.immune.audit import AuditAction, AuditLogger
+from src.immune.moderator import ContentModerator
+from src.immune.rate_limiter import RateLimitConfig, RateLimiter
 from src.nerve.event_bridge import push_event
 
 router = APIRouter()
@@ -20,6 +19,7 @@ audit = AuditLogger()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class ModerateRequest(BaseModel):
     text: str
@@ -37,6 +37,7 @@ class RateLimitCheckRequest(BaseModel):
 
 # ── Content Moderation ─────────────────────────────────────
 
+
 @router.post("/moderate")
 async def moderate_text(req: ModerateRequest):
     """Scan text for sensitive data (PII, secrets, etc.)."""
@@ -48,15 +49,20 @@ async def moderate_text(req: ModerateRequest):
             detail=f"risk={result.risk_level}, findings={len(result.findings)}",
             risk_level=result.risk_level,
         )
-        push_event({
-            "organ": "immune", "emoji": "🛡", "type": "content_blocked",
-            "summary": f"⚠️ Content blocked: risk={result.risk_level}, {len(result.findings)} finding(s)",
-            "detail": {"risk_level": result.risk_level, "findings_count": len(result.findings)},
-        })
+        push_event(
+            {
+                "organ": "immune",
+                "emoji": "🛡",
+                "type": "content_blocked",
+                "summary": f"⚠️ Content blocked: risk={result.risk_level}, {len(result.findings)} finding(s)",
+                "detail": {"risk_level": result.risk_level, "findings_count": len(result.findings)},
+            }
+        )
         # Push notification for high-risk content
         if result.risk_level in ("high", "critical"):
             try:
                 from src.api.notifications import push_notification
+
                 push_notification(
                     source="immune",
                     title=f"🛡 Content Blocked: {result.risk_level}",
@@ -65,7 +71,10 @@ async def moderate_text(req: ModerateRequest):
                     organ="immune",
                     emoji="🛡",
                     action_url="/immune",
-                    metadata={"risk_level": result.risk_level, "findings_count": len(result.findings)},
+                    metadata={
+                        "risk_level": result.risk_level,
+                        "findings_count": len(result.findings),
+                    },
                 )
             except Exception:
                 pass
@@ -74,8 +83,7 @@ async def moderate_text(req: ModerateRequest):
         "is_safe": result.is_safe,
         "risk_level": result.risk_level,
         "findings": [
-            {"type": f["type"], "label": f["label"], "risk": f["risk"]}
-            for f in result.findings
+            {"type": f["type"], "label": f["label"], "risk": f["risk"]} for f in result.findings
         ],
         "redacted_text": result.redacted_text,
         "original_length": result.original_length,
@@ -83,6 +91,7 @@ async def moderate_text(req: ModerateRequest):
 
 
 # ── Rate Limiting ──────────────────────────────────────────
+
 
 @router.post("/rate-limit/check")
 async def check_rate_limit(req: RateLimitCheckRequest, request: Request):
@@ -131,6 +140,7 @@ async def update_rate_limit_config(
 
 # ── IP Access Control ──────────────────────────────────────
 
+
 @router.post("/ip/blacklist")
 async def blacklist_ip(req: IPActionRequest, request: Request):
     """Add IP to blacklist."""
@@ -141,14 +151,19 @@ async def blacklist_ip(req: IPActionRequest, request: Request):
         detail=f"blacklisted {req.ip}: {req.reason}",
         risk_level="medium",
     )
-    push_event({
-        "organ": "immune", "emoji": "🛡", "type": "ip_blacklisted",
-        "summary": f"🚫 IP blacklisted: {req.ip} — {req.reason}",
-        "detail": {"ip": req.ip, "reason": req.reason},
-    })
+    push_event(
+        {
+            "organ": "immune",
+            "emoji": "🛡",
+            "type": "ip_blacklisted",
+            "summary": f"🚫 IP blacklisted: {req.ip} — {req.reason}",
+            "detail": {"ip": req.ip, "reason": req.reason},
+        }
+    )
     # Push notification for IP blacklist events
     try:
         from src.api.notifications import push_notification
+
         push_notification(
             source="immune",
             title=f"🚫 IP Blacklisted: {req.ip}",
@@ -205,6 +220,7 @@ async def check_ip(ip: str):
 
 # ── Audit Log ──────────────────────────────────────────────
 
+
 @router.get("/audit/log")
 async def get_audit_log(
     action: str = Query(default=None),
@@ -221,13 +237,15 @@ async def get_audit_log(
         except ValueError:
             raise HTTPException(400, f"Invalid action. Valid: {[a.value for a in AuditAction]}")
 
-    return {"entries": audit.query(
-        action=action_enum,
-        risk_level=risk_level,
-        client_ip=client_ip,
-        limit=limit,
-        since=since,
-    )}
+    return {
+        "entries": audit.query(
+            action=action_enum,
+            risk_level=risk_level,
+            client_ip=client_ip,
+            limit=limit,
+            since=since,
+        )
+    }
 
 
 @router.get("/audit/stats")
@@ -237,6 +255,7 @@ async def audit_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def immune_health():

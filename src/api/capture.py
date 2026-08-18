@@ -4,10 +4,11 @@ Receives page/selection captures from the OpenMate browser extension
 and stores them in the knowledge base via OpenSoul.
 """
 
-import time
-import json
 import hashlib
+import json
 import logging
+import time
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Pydantic models ──────────────────────────────────────────────
+
 
 class PageCapture(BaseModel):
     title: str
@@ -46,6 +48,7 @@ class CaptureResponse(BaseModel):
 
 # ─── Storage helpers ──────────────────────────────────────────────
 
+
 async def _ensure_table():
     await db_pool.execute(
         """CREATE TABLE IF NOT EXISTS captures (
@@ -68,6 +71,7 @@ def _row_to_dict(row) -> dict:
     d = dict(row)
     if "keywords" in d:
         import json
+
         try:
             d["keywords"] = json.loads(d["keywords"])
         except (json.JSONDecodeError, TypeError):
@@ -77,15 +81,14 @@ def _row_to_dict(row) -> dict:
 
 # ─── Endpoints ─────────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def capture_health():
     """OpenCapture health check."""
     await _ensure_table()
     rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures")
     total = (rows[0]["cnt"] if rows else 0) if rows else 0
-    pages = await db_pool.fetch(
-        "SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'page'"
-    )
+    pages = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'page'")
     selections = await db_pool.fetch(
         "SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'selection'"
     )
@@ -104,11 +107,19 @@ async def capture_stats():
     await _ensure_table()
     try:
         total = await db_pool.fetchval("SELECT COUNT(*) FROM captures") or 0
-        pages = await db_pool.fetchval("SELECT COUNT(*) FROM captures WHERE capture_type = 'page'") or 0
-        selections = await db_pool.fetchval("SELECT COUNT(*) FROM captures WHERE capture_type = 'selection'") or 0
-        recent = await db_pool.fetchval(
-            "SELECT COUNT(*) FROM captures WHERE created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')"
-        ) or 0
+        pages = (
+            await db_pool.fetchval("SELECT COUNT(*) FROM captures WHERE capture_type = 'page'") or 0
+        )
+        selections = (
+            await db_pool.fetchval("SELECT COUNT(*) FROM captures WHERE capture_type = 'selection'")
+            or 0
+        )
+        recent = (
+            await db_pool.fetchval(
+                "SELECT COUNT(*) FROM captures WHERE created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')"
+            )
+            or 0
+        )
         return {
             "status": "ok",
             "component": "OpenCapture",
@@ -118,7 +129,14 @@ async def capture_stats():
             "recent_24h": recent,
         }
     except Exception:
-        return {"status": "ok", "component": "OpenCapture", "total_captures": 0, "page_captures": 0, "selection_captures": 0, "recent_24h": 0}
+        return {
+            "status": "ok",
+            "component": "OpenCapture",
+            "total_captures": 0,
+            "page_captures": 0,
+            "selection_captures": 0,
+            "recent_24h": 0,
+        }
 
 
 @router.post("/page", response_model=CaptureResponse)
@@ -133,7 +151,8 @@ async def capture_page(req: PageCapture):
     # Check for duplicate
     existing = await db_pool.fetchrow(
         "SELECT id FROM captures WHERE url = $1 AND content_hash = $2",
-        req.url, content_hash,
+        req.url,
+        content_hash,
     )
     if existing:
         logger.info(f"Duplicate page capture for {req.url}, returning existing")
@@ -147,11 +166,17 @@ async def capture_page(req: PageCapture):
         )
 
     import json
+
     row = await db_pool.fetchrow(
         """INSERT INTO captures (capture_type, title, url, description, keywords, content, content_hash, created_at)
            VALUES ('page', $1, $2, $3, $4, $5, $6, $7) RETURNING *""",
-        req.title, req.url, req.description,
-        json.dumps(req.keywords), content, content_hash, now,
+        req.title,
+        req.url,
+        req.description,
+        json.dumps(req.keywords),
+        content,
+        content_hash,
+        now,
     )
 
     logger.info(f"Captured page: {req.title} ({req.url})")
@@ -176,7 +201,8 @@ async def capture_selection(req: SelectionCapture):
     # Check for duplicate
     existing = await db_pool.fetchrow(
         "SELECT id FROM captures WHERE url = $1 AND content_hash = $2",
-        req.url, content_hash,
+        req.url,
+        content_hash,
     )
     if existing:
         logger.info(f"Duplicate selection capture for {req.url}")
@@ -192,7 +218,11 @@ async def capture_selection(req: SelectionCapture):
     row = await db_pool.fetchrow(
         """INSERT INTO captures (capture_type, title, url, content, content_hash, created_at)
            VALUES ('selection', $1, $2, $3, $4, $5) RETURNING *""",
-        req.title or "Selected Text", req.url, req.text, content_hash, now,
+        req.title or "Selected Text",
+        req.url,
+        req.text,
+        content_hash,
+        now,
     )
 
     logger.info(f"Captured selection: {len(req.text)} chars from {req.url}")
@@ -218,12 +248,15 @@ async def list_captures(
     if capture_type:
         rows = await db_pool.fetch(
             "SELECT * FROM captures WHERE capture_type = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-            capture_type, limit, offset,
+            capture_type,
+            limit,
+            offset,
         )
     else:
         rows = await db_pool.fetch(
             "SELECT * FROM captures ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-            limit, offset,
+            limit,
+            offset,
         )
 
     count_rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures")
@@ -270,6 +303,7 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
     # Insert into knowledge base
     try:
         import uuid as _uuid
+
         knowledge_id = str(_uuid.uuid4())
         tags = ["capture", capture["capture_type"], "browser"]
         await db_pool.execute(
@@ -281,7 +315,9 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
             capture["content"],
             f"capture://{capture_id}",
             "text/html",
-            json.dumps({"tags": tags, "url": capture["url"], "capture_type": capture["capture_type"]}),
+            json.dumps(
+                {"tags": tags, "url": capture["url"], "capture_type": capture["capture_type"]}
+            ),
             time.time(),
             time.time(),
         )
@@ -290,7 +326,9 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
             tag_id = str(_uuid.uuid4())
             await db_pool.execute(
                 "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                tag_id, tag_name, user_id,
+                tag_id,
+                tag_name,
+                user_id,
             )
             tag_row = await db_pool.fetchrow(
                 "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, user_id
@@ -298,7 +336,8 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
             if tag_row:
                 await db_pool.execute(
                     "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                    knowledge_id, tag_row["id"],
+                    knowledge_id,
+                    tag_row["id"],
                 )
     except Exception as e:
         # Fallback: table might not exist or schema differs
@@ -306,8 +345,6 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
         raise HTTPException(status_code=500, detail=f"Failed to promote: {e}")
 
     # Update capture status
-    await db_pool.execute(
-        "UPDATE captures SET status = 'promoted' WHERE id = $1", capture_id
-    )
+    await db_pool.execute("UPDATE captures SET status = 'promoted' WHERE id = $1", capture_id)
 
     return {"promoted": True, "id": capture_id, "user_id": user_id}

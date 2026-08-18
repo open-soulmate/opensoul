@@ -7,12 +7,12 @@ Uses SQLite for persistence. Each server entry stores:
 """
 
 import json
+import os
 import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-import os
 
 
 @dataclass
@@ -100,22 +100,50 @@ class McpServerRegistry:
 
         defaults = [
             McpServer(
-                id="mcp-filesystem", name="Filesystem",
+                id="mcp-filesystem",
+                name="Filesystem",
                 url="stdio://mcp-filesystem",
                 description="Read, write, and manage files on the local filesystem.",
-                transport="stdio", connected=False, enabled=True,
+                transport="stdio",
+                connected=False,
+                enabled=True,
                 tools=[
-                    McpTool("read_file", "Read contents of a file", {"type": "object", "properties": {"path": {"type": "string"}}}),
-                    McpTool("write_file", "Write contents to a file", {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}),
-                    McpTool("list_directory", "List files in a directory", {"type": "object", "properties": {"path": {"type": "string"}}}),
-                    McpTool("search_files", "Search for files by pattern", {"type": "object", "properties": {"pattern": {"type": "string"}}}),
+                    McpTool(
+                        "read_file",
+                        "Read contents of a file",
+                        {"type": "object", "properties": {"path": {"type": "string"}}},
+                    ),
+                    McpTool(
+                        "write_file",
+                        "Write contents to a file",
+                        {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "content": {"type": "string"},
+                            },
+                        },
+                    ),
+                    McpTool(
+                        "list_directory",
+                        "List files in a directory",
+                        {"type": "object", "properties": {"path": {"type": "string"}}},
+                    ),
+                    McpTool(
+                        "search_files",
+                        "Search for files by pattern",
+                        {"type": "object", "properties": {"pattern": {"type": "string"}}},
+                    ),
                 ],
             ),
             McpServer(
-                id="mcp-github", name="GitHub",
+                id="mcp-github",
+                name="GitHub",
                 url="stdio://mcp-github",
                 description="Interact with GitHub repositories, issues, and pull requests.",
-                transport="stdio", connected=False, enabled=True,
+                transport="stdio",
+                connected=False,
+                enabled=True,
                 tools=[
                     McpTool("search_repos", "Search GitHub repositories"),
                     McpTool("list_issues", "List issues in a repository"),
@@ -123,20 +151,26 @@ class McpServerRegistry:
                 ],
             ),
             McpServer(
-                id="mcp-brave-search", name="Brave Search",
+                id="mcp-brave-search",
+                name="Brave Search",
                 url="stdio://mcp-brave-search",
                 description="Web and local search using the Brave Search API.",
-                transport="stdio", connected=False, enabled=True,
+                transport="stdio",
+                connected=False,
+                enabled=True,
                 tools=[
                     McpTool("web_search", "Search the web"),
                     McpTool("local_search", "Search for local businesses"),
                 ],
             ),
             McpServer(
-                id="mcp-postgres", name="PostgreSQL",
+                id="mcp-postgres",
+                name="PostgreSQL",
                 url="stdio://mcp-postgres",
                 description="Query and manage PostgreSQL databases.",
-                transport="stdio", connected=False, enabled=True,
+                transport="stdio",
+                connected=False,
+                enabled=True,
                 tools=[
                     McpTool("query", "Execute a SQL query"),
                     McpTool("list_tables", "List all tables in the database"),
@@ -144,10 +178,13 @@ class McpServerRegistry:
                 ],
             ),
             McpServer(
-                id="mcp-memory", name="Memory",
+                id="mcp-memory",
+                name="Memory",
                 url="stdio://mcp-memory",
                 description="Persistent knowledge graph for long-term memory.",
-                transport="stdio", connected=False, enabled=True,
+                transport="stdio",
+                connected=False,
+                enabled=True,
                 tools=[
                     McpTool("create_entities", "Create new entities in the knowledge graph"),
                     McpTool("search_nodes", "Search for nodes by query"),
@@ -167,20 +204,34 @@ class McpServerRegistry:
                (id, name, url, description, transport, connected, enabled,
                 tools_json, config_json, created_at, last_connected, error)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (srv.id, srv.name, srv.url, srv.description, srv.transport,
-             1 if srv.connected else 0, 1 if srv.enabled else 0,
-             json.dumps([t.to_dict() for t in srv.tools]),
-             json.dumps(srv.config),
-             srv.created_at, srv.last_connected, srv.error),
+            (
+                srv.id,
+                srv.name,
+                srv.url,
+                srv.description,
+                srv.transport,
+                1 if srv.connected else 0,
+                1 if srv.enabled else 0,
+                json.dumps([t.to_dict() for t in srv.tools]),
+                json.dumps(srv.config),
+                srv.created_at,
+                srv.last_connected,
+                srv.error,
+            ),
         )
         self._db.commit()
 
     def _row_to_server(self, row) -> McpServer:
         d = dict(row)
         tools_raw = json.loads(d.get("tools_json") or "[]")
-        tools = [McpTool(t.get("name", ""), t.get("description", ""), t.get("inputSchema", {})) for t in tools_raw]
+        tools = [
+            McpTool(t.get("name", ""), t.get("description", ""), t.get("inputSchema", {}))
+            for t in tools_raw
+        ]
         return McpServer(
-            id=d["id"], name=d["name"], url=d["url"],
+            id=d["id"],
+            name=d["name"],
+            url=d["url"],
             description=d.get("description", ""),
             transport=d.get("transport", "stdio"),
             connected=bool(d.get("connected")),
@@ -196,7 +247,9 @@ class McpServerRegistry:
 
     def list_servers(self, enabled_only: bool = False) -> list[dict]:
         if enabled_only:
-            rows = self._db.execute("SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY name").fetchall()
+            rows = self._db.execute(
+                "SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY name"
+            ).fetchall()
         else:
             rows = self._db.execute("SELECT * FROM mcp_servers ORDER BY name").fetchall()
         return [self._row_to_server(r).to_dict() for r in rows]
@@ -205,15 +258,29 @@ class McpServerRegistry:
         row = self._db.execute("SELECT * FROM mcp_servers WHERE id = ?", (server_id,)).fetchone()
         return self._row_to_server(row) if row else None
 
-    def add_server(self, name: str, url: str, description: str = "",
-                   transport: str = "stdio", config: dict | None = None,
-                   tools: list[dict] | None = None) -> McpServer:
+    def add_server(
+        self,
+        name: str,
+        url: str,
+        description: str = "",
+        transport: str = "stdio",
+        config: dict | None = None,
+        tools: list[dict] | None = None,
+    ) -> McpServer:
         srv_id = f"mcp-{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:6]}"
         now = time.time()
-        tools_list = [McpTool(t.get("name", ""), t.get("description", ""), t.get("inputSchema", {})) for t in (tools or [])]
+        tools_list = [
+            McpTool(t.get("name", ""), t.get("description", ""), t.get("inputSchema", {}))
+            for t in (tools or [])
+        ]
         srv = McpServer(
-            id=srv_id, name=name, url=url, description=description,
-            transport=transport, config=config or {}, tools=tools_list,
+            id=srv_id,
+            name=name,
+            url=url,
+            description=description,
+            transport=transport,
+            config=config or {},
+            tools=tools_list,
             created_at=now,
         )
         self._insert(srv)
@@ -238,7 +305,12 @@ class McpServerRegistry:
                 values.append(json.dumps(v))
             elif k == "tools":
                 set_parts.append("tools_json = ?")
-                tools_list = [McpTool(t.get("name", ""), t.get("description", ""), t.get("inputSchema", {})) if isinstance(t, dict) else t for t in v]
+                tools_list = [
+                    McpTool(t.get("name", ""), t.get("description", ""), t.get("inputSchema", {}))
+                    if isinstance(t, dict)
+                    else t
+                    for t in v
+                ]
                 values.append(json.dumps([t.to_dict() for t in tools_list]))
             elif k == "enabled":
                 set_parts.append("enabled = ?")
@@ -279,9 +351,7 @@ class McpServerRegistry:
         if not srv:
             return {"success": False, "error": "Server not found"}
 
-        self._db.execute(
-            "UPDATE mcp_servers SET connected = 0 WHERE id = ?", (server_id,)
-        )
+        self._db.execute("UPDATE mcp_servers SET connected = 0 WHERE id = ?", (server_id,))
         self._db.commit()
         return {"success": True, "server_id": server_id, "connected": False}
 
@@ -293,12 +363,16 @@ class McpServerRegistry:
             srv = self.get_server(server_id)
             if not srv:
                 return []
-            return [{"server_id": srv.id, "server_name": srv.name, **t.to_dict()} for t in srv.tools]
+            return [
+                {"server_id": srv.id, "server_name": srv.name, **t.to_dict()} for t in srv.tools
+            ]
 
         all_tools = []
         for srv_dict in self.list_servers(enabled_only=True):
             for t in srv_dict.get("tools", []):
-                all_tools.append({"server_id": srv_dict["id"], "server_name": srv_dict["name"], **t})
+                all_tools.append(
+                    {"server_id": srv_dict["id"], "server_name": srv_dict["name"], **t}
+                )
         return all_tools
 
     def get_stats(self) -> dict:

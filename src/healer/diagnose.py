@@ -3,23 +3,24 @@
 Monitors organ health, diagnoses failures, attempts automatic recovery,
 and notifies through OpenEcho when issues are detected or resolved.
 """
+
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Callable, Awaitable
+from enum import StrEnum
 
 import httpx
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
     RECOVERED = "recovered"
 
 
-class Action(str, Enum):
+class Action(StrEnum):
     NONE = "none"
     RESTART = "restart"
     CLEAR_CACHE = "clear_cache"
@@ -118,9 +119,7 @@ class OrganHealer:
         self._max_history = 500
         self._custom_handlers: dict[str, Callable[[], Awaitable[bool]]] = {}
 
-    def register_handler(
-        self, organ: str, handler: Callable[[], Awaitable[bool]]
-    ):
+    def register_handler(self, organ: str, handler: Callable[[], Awaitable[bool]]):
         """Register a custom healing handler for an organ."""
         self._custom_handlers[organ] = handler
 
@@ -191,9 +190,7 @@ class OrganHealer:
         self._record(result)
         return result
 
-    async def diagnose_all(
-        self, organs: dict[str, str]
-    ) -> list[DiagnosisResult]:
+    async def diagnose_all(self, organs: dict[str, str]) -> list[DiagnosisResult]:
         """Diagnose all organs in parallel. organs = {name: health_endpoint}."""
         tasks = [self.diagnose(name, ep) for name, ep in organs.items()]
         return await asyncio.gather(*tasks)
@@ -242,9 +239,7 @@ class OrganHealer:
 
         return result
 
-    async def heal_all(
-        self, results: list[DiagnosisResult]
-    ) -> list[DiagnosisResult]:
+    async def heal_all(self, results: list[DiagnosisResult]) -> list[DiagnosisResult]:
         """Attempt to heal all failed organs."""
         tasks = []
         for r in results:
@@ -259,9 +254,7 @@ class OrganHealer:
 
     # ── Diagnosis + Heal combined ─────────────────────────────
 
-    async def diagnose_and_heal(
-        self, organ: str, endpoint: str
-    ) -> DiagnosisResult:
+    async def diagnose_and_heal(self, organ: str, endpoint: str) -> DiagnosisResult:
         """Diagnose an organ, then attempt healing if unhealthy."""
         result = await self.diagnose(organ, endpoint)
         if not result.healthy:
@@ -302,9 +295,7 @@ class OrganHealer:
         if recovered:
             title_parts.append(f"✅ {len(recovered)} recovered")
             for r in recovered:
-                content_parts.append(
-                    f"✅ **{r.organ}**: recovered via {r.action_taken.value}"
-                )
+                content_parts.append(f"✅ **{r.organ}**: recovered via {r.action_taken.value}")
 
         title = " | ".join(title_parts)
         content = "\n\n".join(content_parts)
@@ -336,13 +327,15 @@ class OrganHealer:
         actions_log = []
         for r in results:
             if r.action_taken != Action.NONE:
-                actions_log.append({
-                    "organ": r.organ,
-                    "action": r.action_taken.value,
-                    "success": r.action_success,
-                    "root_cause": r.root_cause,
-                    "timestamp": r.timestamp,
-                })
+                actions_log.append(
+                    {
+                        "organ": r.organ,
+                        "action": r.action_taken.value,
+                        "success": r.action_success,
+                        "root_cause": r.root_cause,
+                        "timestamp": r.timestamp,
+                    }
+                )
 
         if not actions_log:
             return
@@ -400,8 +393,12 @@ class OrganHealer:
             "failed": failed,
             "actions_taken": actions_taken,
             "actions_succeeded": actions_succeeded,
-            "success_rate": round(actions_succeeded / actions_taken * 100, 1) if actions_taken else 0,
-            "organ_failure_frequency": dict(sorted(organ_failures.items(), key=lambda x: -x[1])[:10]),
+            "success_rate": round(actions_succeeded / actions_taken * 100, 1)
+            if actions_taken
+            else 0,
+            "organ_failure_frequency": dict(
+                sorted(organ_failures.items(), key=lambda x: -x[1])[:10]
+            ),
             "recent_healthy_rate": self._recent_healthy_rate(),
         }
 
@@ -410,7 +407,7 @@ class OrganHealer:
     def _record(self, result: DiagnosisResult):
         self._history.append(result)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
     def _recommend_action(self, organ: str, result: DiagnosisResult) -> Action:
         """Determine the best recovery action based on symptoms."""

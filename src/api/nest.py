@@ -1,9 +1,10 @@
 """OpenNest API — 细胞巢穴：多租户隔离、资源配额、向量空间逻辑隔离。"""
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.nest.tenant import TenantManager
 from src.nest.isolation import IsolationEngine, ResourceType
+from src.nest.tenant import TenantManager
 
 router = APIRouter()
 
@@ -13,6 +14,7 @@ isolation = IsolationEngine()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class TenantCreateRequest(BaseModel):
     name: str
@@ -61,6 +63,7 @@ class AccessCheckRequest(BaseModel):
 
 
 # ── Tenant CRUD ────────────────────────────────────────────
+
 
 @router.post("/tenants")
 async def create_tenant(req: TenantCreateRequest):
@@ -123,6 +126,7 @@ async def delete_tenant(tenant_id: str):
 
 # ── Tenant Actions ─────────────────────────────────────────
 
+
 @router.post("/tenants/{tenant_id}/suspend")
 async def suspend_tenant(tenant_id: str, reason: str = Query(default="")):
     """Suspend a tenant."""
@@ -140,6 +144,7 @@ async def reactivate_tenant(tenant_id: str):
 
 
 # ── Resource Quotas ────────────────────────────────────────
+
 
 @router.get("/tenants/{tenant_id}/quota")
 async def get_quota(tenant_id: str):
@@ -165,12 +170,15 @@ async def check_quota(tenant_id: str, req: QuotaCheckRequest):
 @router.post("/tenants/{tenant_id}/usage")
 async def record_usage(tenant_id: str, req: UsageRecordRequest):
     """Record resource usage for a tenant."""
-    if not manager.record_usage(tenant_id, req.storage_delta, req.document_delta, req.api_calls, req.tokens):
+    if not manager.record_usage(
+        tenant_id, req.storage_delta, req.document_delta, req.api_calls, req.tokens
+    ):
         raise HTTPException(404, "Tenant not found")
     return {"message": "recorded"}
 
 
 # ── Isolation Engine ───────────────────────────────────────
+
 
 @router.post("/tenants/{tenant_id}/access-check")
 async def check_access(tenant_id: str, req: AccessCheckRequest):
@@ -181,7 +189,10 @@ async def check_access(tenant_id: str, req: AccessCheckRequest):
     try:
         rt = ResourceType(req.resource_type)
     except ValueError:
-        raise HTTPException(400, f"Invalid resource type: {req.resource_type}. Valid: {[r.value for r in ResourceType]}")
+        raise HTTPException(
+            400,
+            f"Invalid resource type: {req.resource_type}. Valid: {[r.value for r in ResourceType]}",
+        )
     return isolation.check_access(
         tenant_namespace=tenant.namespace,
         resource_type=rt,
@@ -222,10 +233,15 @@ async def get_audit_log(
     limit: int = Query(default=100, ge=1, le=1000),
 ):
     """Get access audit log."""
-    return {"entries": isolation.get_access_log(tenant_id=tenant_id, action=action, allowed=allowed, limit=limit)}
+    return {
+        "entries": isolation.get_access_log(
+            tenant_id=tenant_id, action=action, allowed=allowed, limit=limit
+        )
+    }
 
 
 # ── Health / Stats ─────────────────────────────────────────
+
 
 @router.get("/health")
 async def nest_health():

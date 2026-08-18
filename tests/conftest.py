@@ -1,7 +1,7 @@
 """Shared test fixtures for OpenSoul integration tests."""
 
-import pytest
 import httpx
+import pytest
 
 BASE_URL = "http://localhost:8090"
 

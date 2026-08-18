@@ -5,25 +5,25 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import time
 import threading
-import urllib.request
+import time
 import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class ConnectorType(str, Enum):
-    WEBHOOK_IN = "webhook_in"      # Receive webhooks from external
-    WEBHOOK_OUT = "webhook_out"    # Send webhooks to external
-    REST_API = "rest_api"          # REST API integration
-    OA_SYSTEM = "oa_system"        # OA/ERP/etc
+class ConnectorType(StrEnum):
+    WEBHOOK_IN = "webhook_in"  # Receive webhooks from external
+    WEBHOOK_OUT = "webhook_out"  # Send webhooks to external
+    REST_API = "rest_api"  # REST API integration
+    OA_SYSTEM = "oa_system"  # OA/ERP/etc
     CUSTOM = "custom"
 
 
-class ConnectorStatus(str, Enum):
+class ConnectorStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     ERROR = "error"
@@ -144,7 +144,14 @@ class IntegrationManager:
         with self._lock:
             return self._connectors.pop(connector_id, None) is not None
 
-    def record_event(self, connector_id: str, method: str = "POST", headers: dict | None = None, payload: Any = None, source_ip: str = "") -> WebhookEvent:
+    def record_event(
+        self,
+        connector_id: str,
+        method: str = "POST",
+        headers: dict | None = None,
+        payload: Any = None,
+        source_ip: str = "",
+    ) -> WebhookEvent:
         """Record an incoming webhook event."""
         event = WebhookEvent(
             event_id=f"evt-{uuid.uuid4().hex[:8]}",
@@ -159,7 +166,7 @@ class IntegrationManager:
         with self._lock:
             self._events.append(event)
             if len(self._events) > self._max_events:
-                self._events = self._events[-self._max_events:]
+                self._events = self._events[-self._max_events :]
 
             connector = self._connectors.get(connector_id)
             if connector:
@@ -192,7 +199,9 @@ class IntegrationManager:
                 ).hexdigest()
                 headers["X-Signature"] = f"sha256={signature}"
 
-            req = urllib.request.Request(connector.endpoint, data=body, headers=headers, method="POST")
+            req = urllib.request.Request(
+                connector.endpoint, data=body, headers=headers, method="POST"
+            )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 connector.trigger_count += 1
                 connector.last_triggered = time.time()
@@ -224,7 +233,9 @@ class IntegrationManager:
         with self._lock:
             return {
                 "total_connectors": len(self._connectors),
-                "active": sum(1 for c in self._connectors.values() if c.status == ConnectorStatus.ACTIVE),
+                "active": sum(
+                    1 for c in self._connectors.values() if c.status == ConnectorStatus.ACTIVE
+                ),
                 "total_events": len(self._events),
                 "by_type": {
                     t.value: sum(1 for c in self._connectors.values() if c.type == t)

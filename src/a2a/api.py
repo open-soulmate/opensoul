@@ -9,8 +9,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from src.a2a.models import (
-    JSONRPCRequest, JSONRPCResponse, JSONRPCError,
-    Message, ErrorCode,
+    ErrorCode,
+    JSONRPCRequest,
+    JSONRPCResponse,
+    Message,
 )
 from src.a2a.task_manager import task_manager
 
@@ -34,8 +36,7 @@ async def a2a_endpoint(request: Request):
         return JSONResponse(
             status_code=200,
             content=JSONRPCResponse(
-                id=0,
-                error={"code": ErrorCode.PARSE_ERROR, "message": f"Parse error: {e}"}
+                id=0, error={"code": ErrorCode.PARSE_ERROR, "message": f"Parse error: {e}"}
             ).model_dump(exclude_none=True),
         )
 
@@ -49,8 +50,7 @@ async def a2a_endpoint(request: Request):
         return JSONResponse(
             status_code=200,
             content=JSONRPCResponse(
-                id=rpc_request.id,
-                error={"code": ErrorCode.INTERNAL_ERROR, "message": str(e)}
+                id=rpc_request.id, error={"code": ErrorCode.INTERNAL_ERROR, "message": str(e)}
             ).model_dump(exclude_none=True),
         )
 

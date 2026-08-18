@@ -4,9 +4,9 @@ Uses fuzzy string matching (normalized Levenshtein ratio) to find
 cached responses for similar queries, avoiding redundant LLM calls.
 """
 
-import time
 import hashlib
 import threading
+import time
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
@@ -14,6 +14,7 @@ from difflib import SequenceMatcher
 @dataclass
 class CacheEntry:
     """A cached Q&A pair."""
+
     entry_id: str
     query: str
     query_normalized: str
@@ -185,7 +186,9 @@ class ReflexCache:
                     by_category[cat] = by_category.get(cat, 0) + 1
                     by_source[e.source] = by_source.get(e.source, 0) + 1
 
-        hit_rate = round(self._total_hits / self._total_queries * 100, 1) if self._total_queries else 0
+        hit_rate = (
+            round(self._total_hits / self._total_queries * 100, 1) if self._total_queries else 0
+        )
 
         return {
             "total_entries": total,
@@ -211,8 +214,11 @@ class ReflexCache:
             return
         # Score = importance * log(1 + hits) — lower = evict first
         import math
+
         worst_id = min(
             self._entries,
-            key=lambda eid: self._entries[eid].importance * math.log1p(self._entries[eid].hit_count),
+            key=lambda eid: (
+                self._entries[eid].importance * math.log1p(self._entries[eid].hit_count)
+            ),
         )
         del self._entries[worst_id]

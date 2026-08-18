@@ -1,7 +1,5 @@
 """Integration tests for OpenImmune (免疫) — security, rate limiting, audit."""
 
-import pytest
-
 
 class TestImmuneHealth:
     def test_health(self, client):
@@ -17,9 +15,12 @@ class TestImmuneHealth:
 
 class TestImmuneModeration:
     def test_moderate_clean_content(self, client):
-        resp = client.post("/api/immune/moderate", json={
-            "text": "Hello, this is a normal message.",
-        })
+        resp = client.post(
+            "/api/immune/moderate",
+            json={
+                "text": "Hello, this is a normal message.",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "is_safe" in data
@@ -32,9 +33,12 @@ class TestImmuneModeration:
 
 class TestImmuneRateLimit:
     def test_rate_limit_check(self, client):
-        resp = client.post("/api/immune/rate-limit/check", json={
-            "key": "test_user_integration",
-        })
+        resp = client.post(
+            "/api/immune/rate-limit/check",
+            json={
+                "key": "test_user_integration",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "allowed" in data
@@ -46,11 +50,14 @@ class TestImmuneRateLimit:
         assert "tracked_keys" in data
 
     def test_rate_limit_config_update(self, client):
-        resp = client.put("/api/immune/rate-limit/config", json={
-            "requests_per_minute": 60,
-            "requests_per_hour": 1000,
-            "burst_size": 20,
-        })
+        resp = client.put(
+            "/api/immune/rate-limit/config",
+            json={
+                "requests_per_minute": 60,
+                "requests_per_hour": 1000,
+                "burst_size": 20,
+            },
+        )
         assert resp.status_code == 200
 
 

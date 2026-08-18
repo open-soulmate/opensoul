@@ -6,10 +6,10 @@ Reads directly from the Hermes state SQLite database.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
-import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -36,7 +36,7 @@ def _ts_to_iso(ts):
     if ts is None:
         return None
     try:
-        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(ts, tz=UTC).isoformat()
     except (ValueError, OSError):
         return str(ts)
 
@@ -52,30 +52,35 @@ async def list_sessions(
         return {"sessions": [], "total": 0}
 
     try:
-        rows = db.execute("""
+        rows = db.execute(
+            """
             SELECT id, title, started_at, last_activity_at, source,
                    message_count, input_tokens, output_tokens
             FROM sessions
             WHERE archived = 0
             ORDER BY last_activity_at DESC
             LIMIT ? OFFSET ?
-        """, (limit, offset)).fetchall()
+        """,
+            (limit, offset),
+        ).fetchall()
 
         count_row = db.execute("SELECT COUNT(*) as cnt FROM sessions WHERE archived = 0").fetchone()
         total = count_row["cnt"] if count_row else 0
 
         sessions = []
         for r in rows:
-            sessions.append({
-                "id": r["id"],
-                "title": r["title"] or "Untitled",
-                "created_at": _ts_to_iso(r["started_at"]),
-                "updated_at": _ts_to_iso(r["last_activity_at"]),
-                "source": r["source"],
-                "message_count": r["message_count"] or 0,
-                "input_tokens": r["input_tokens"] or 0,
-                "output_tokens": r["output_tokens"] or 0,
-            })
+            sessions.append(
+                {
+                    "id": r["id"],
+                    "title": r["title"] or "Untitled",
+                    "created_at": _ts_to_iso(r["started_at"]),
+                    "updated_at": _ts_to_iso(r["last_activity_at"]),
+                    "source": r["source"],
+                    "message_count": r["message_count"] or 0,
+                    "input_tokens": r["input_tokens"] or 0,
+                    "output_tokens": r["output_tokens"] or 0,
+                }
+            )
 
         return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
     except Exception as e:
@@ -100,16 +105,20 @@ async def search_sessions(
 
     try:
         # Search session titles
-        title_matches = db.execute("""
+        title_matches = db.execute(
+            """
             SELECT DISTINCT s.id, s.title, s.started_at, s.last_activity_at, s.source
             FROM sessions s
             WHERE s.archived = 0 AND s.title LIKE ?
             ORDER BY s.started_at DESC
             LIMIT 20
-        """, (f"%{q}%",)).fetchall()
+        """,
+            (f"%{q}%",),
+        ).fetchall()
 
         # Search message content
-        msg_matches = db.execute("""
+        msg_matches = db.execute(
+            """
             SELECT DISTINCT m.session_id, s.title, s.started_at, s.last_activity_at, s.source,
                    m.content as matched_content
             FROM messages m
@@ -117,7 +126,9 @@ async def search_sessions(
             WHERE s.archived = 0 AND m.active = 1 AND m.content LIKE ?
             ORDER BY s.started_at DESC
             LIMIT 20
-        """, (f"%{q}%",)).fetchall()
+        """,
+            (f"%{q}%",),
+        ).fetchall()
 
         # Merge results, dedup by session_id
         seen = set()
@@ -126,13 +137,17 @@ async def search_sessions(
         for r in title_matches:
             if r["id"] not in seen:
                 seen.add(r["id"])
-                results.append({
-                    "id": r["id"], "title": r["title"],
-                    "created_at": _ts_to_iso(r["started_at"]),
-                    "updated_at": _ts_to_iso(r["last_activity_at"]),
-                    "source": r["source"], "match_type": "title",
-                    "snippet": None,
-                })
+                results.append(
+                    {
+                        "id": r["id"],
+                        "title": r["title"],
+                        "created_at": _ts_to_iso(r["started_at"]),
+                        "updated_at": _ts_to_iso(r["last_activity_at"]),
+                        "source": r["source"],
+                        "match_type": "title",
+                        "snippet": None,
+                    }
+                )
 
         for r in msg_matches:
             if r["session_id"] not in seen:
@@ -141,15 +156,23 @@ async def search_sessions(
                 idx = content.lower().find(q.lower())
                 start = max(0, idx - 40)
                 end = min(len(content), idx + len(q) + 40)
-                snippet = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
+                snippet = (
+                    ("..." if start > 0 else "")
+                    + content[start:end]
+                    + ("..." if end < len(content) else "")
+                )
 
-                results.append({
-                    "id": r["session_id"], "title": r["title"],
-                    "created_at": _ts_to_iso(r["started_at"]),
-                    "updated_at": _ts_to_iso(r["last_activity_at"]),
-                    "source": r["source"], "match_type": "content",
-                    "snippet": snippet,
-                })
+                results.append(
+                    {
+                        "id": r["session_id"],
+                        "title": r["title"],
+                        "created_at": _ts_to_iso(r["started_at"]),
+                        "updated_at": _ts_to_iso(r["last_activity_at"]),
+                        "source": r["source"],
+                        "match_type": "content",
+                        "snippet": snippet,
+                    }
+                )
 
         return {"sessions": results, "query": q, "total": len(results)}
     except Exception as e:
@@ -170,11 +193,14 @@ async def get_session(
         raise HTTPException(status_code=404, detail="Session database not found")
 
     try:
-        row = db.execute("""
+        row = db.execute(
+            """
             SELECT id, title, started_at, last_activity_at, source,
                    message_count, input_tokens, output_tokens, estimated_cost_usd
             FROM sessions WHERE id = ? AND archived = 0
-        """, (session_id,)).fetchone()
+        """,
+            (session_id,),
+        ).fetchone()
 
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -246,12 +272,15 @@ async def get_session_messages(
         raise HTTPException(status_code=404, detail="Session database not found")
 
     try:
-        rows = db.execute("""
+        rows = db.execute(
+            """
             SELECT id, role, content, tool_calls, tool_name, timestamp
             FROM messages
             WHERE session_id = ? AND active = 1 AND compacted = 0
             ORDER BY id
-        """, (session_id,)).fetchall()
+        """,
+            (session_id,),
+        ).fetchall()
 
         messages = []
         for r in rows:
@@ -262,13 +291,15 @@ async def get_session_messages(
                 continue
             if role == "assistant" and not content.strip():
                 continue
-            messages.append({
-                "id": str(r["id"]),
-                "role": role,
-                "content": content,
-                "timestamp": _ts_to_iso(r["timestamp"]),
-                "source": "hermes-db",
-            })
+            messages.append(
+                {
+                    "id": str(r["id"]),
+                    "role": role,
+                    "content": content,
+                    "timestamp": _ts_to_iso(r["timestamp"]),
+                    "source": "hermes-db",
+                }
+            )
 
         return {"messages": messages, "total": len(messages)}
     except Exception as e:

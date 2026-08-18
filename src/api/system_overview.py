@@ -5,9 +5,10 @@ active agents, knowledge stats, and plugin status into one response.
 Designed for dashboard consumption — one call instead of many.
 """
 
-import time
 import asyncio
 import logging
+import time
+
 from fastapi import APIRouter
 
 router = APIRouter()
@@ -118,13 +119,16 @@ _CORE_ORGANS = [
 
 async def _check_organs() -> dict:
     """Check health of all organs in parallel, tracking response times."""
-    import httpx
     import time as _time
+
+    import httpx
+
     base = "http://127.0.0.1:8090"
     results = {}
     timings = {}
 
     async with httpx.AsyncClient(timeout=5.0) as client:
+
         async def _check(name: str, path: str):
             start = _time.time()
             try:
@@ -149,7 +153,11 @@ async def _check_organs() -> dict:
         "healthy_count": ok,
         "error_count": error_count,
         "total_count": len(results),
-        "status": "ok" if ok == len(results) else "degraded" if ok > len(results) // 2 else "critical",
+        "status": "ok"
+        if ok == len(results)
+        else "degraded"
+        if ok > len(results) // 2
+        else "critical",
         "latency": {
             "avg_ms": avg_ms,
             "slowest": [{"organ": name, "ms": ms} for name, ms in slowest],
@@ -161,6 +169,7 @@ async def _get_system_metrics() -> dict:
     """Get system resource metrics."""
     try:
         import psutil
+
         cpu = psutil.cpu_percent(interval=0.1)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
@@ -185,6 +194,7 @@ async def _get_knowledge_stats() -> dict:
     """Get knowledge base statistics."""
     try:
         from src.database.postgres import db_pool
+
         if db_pool:
             total = await db_pool.fetchval("SELECT COUNT(*) FROM knowledge") or 0
             return {"total_entries": total}
@@ -197,6 +207,7 @@ async def _get_plugin_stats() -> dict:
     """Get plugin statistics."""
     try:
         from src.plugin_loader import loaded_plugins
+
         return {
             "total_plugins": len(loaded_plugins),
             "active_plugins": sum(1 for p in loaded_plugins if p.get("has_backend")),
@@ -209,6 +220,7 @@ async def _get_gland_usage() -> dict:
     """Get model gateway usage summary."""
     try:
         from src.gland.token_meter import TokenMeter
+
         meter = TokenMeter()
         summary = meter.summary()
         return {
@@ -221,6 +233,7 @@ async def _get_gland_usage() -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def system_overview_health():
@@ -277,8 +290,10 @@ async def system_overview():
         "gland": gland,
     }
 
-from src.system.bootstrap import SystemBootstrap
+
 from pydantic import BaseModel
+
+from src.system.bootstrap import SystemBootstrap
 
 bootstrap = SystemBootstrap()
 
@@ -291,6 +306,7 @@ class BootstrapRequest(BaseModel):
 async def system_quick_status():
     """Ultra-lightweight status check — just the essentials."""
     from src.database.postgres import db_pool
+
     try:
         db_ok = db_pool is not None
     except Exception:
@@ -305,6 +321,7 @@ async def system_quick_status():
 
 
 # ── Bootstrap Endpoints ─────────────────────────────────────
+
 
 @router.get("/bootstrap/status")
 async def bootstrap_status():
@@ -335,11 +352,16 @@ async def run_bootstrap(req: BootstrapRequest = None):
     # Emit event to Nerve bus
     try:
         from src.nerve.event_bridge import push_event
-        push_event({
-            "organ": "system", "emoji": "🚀", "type": "bootstrap",
-            "summary": f"🔧 System bootstrap: {result['status']}",
-            "detail": result,
-        })
+
+        push_event(
+            {
+                "organ": "system",
+                "emoji": "🚀",
+                "type": "bootstrap",
+                "summary": f"🔧 System bootstrap: {result['status']}",
+                "detail": result,
+            }
+        )
     except Exception:
         pass
 

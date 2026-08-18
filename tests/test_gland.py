@@ -1,7 +1,5 @@
 """Integration tests for OpenGland (腺体) — model gateway."""
 
-import pytest
-
 
 class TestGlandHealth:
     def test_health(self, client):

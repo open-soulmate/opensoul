@@ -8,7 +8,6 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 @dataclass
@@ -106,7 +105,12 @@ class SandboxTemplateEngine:
                 "description": "用于测试不同Prompt策略的隔离环境",
                 "icon": "🧪",
                 "config": {"ttl_seconds": 1800, "log_level": "debug"},
-                "variables": {"model": "", "temperature": "0.7", "max_tokens": "2000", "system_prompt": ""},
+                "variables": {
+                    "model": "",
+                    "temperature": "0.7",
+                    "max_tokens": "2000",
+                    "system_prompt": "",
+                },
                 "tags": ["prompt", "experiment"],
                 "category": "agent",
             },
@@ -129,9 +133,15 @@ class SandboxTemplateEngine:
                    (template_id, name, description, icon, config, variables, tags, category, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    tpl["template_id"], tpl["name"], tpl["description"], tpl["icon"],
-                    json.dumps(tpl["config"]), json.dumps(tpl["variables"]),
-                    json.dumps(tpl["tags"]), tpl["category"], now,
+                    tpl["template_id"],
+                    tpl["name"],
+                    tpl["description"],
+                    tpl["icon"],
+                    json.dumps(tpl["config"]),
+                    json.dumps(tpl["variables"]),
+                    json.dumps(tpl["tags"]),
+                    tpl["category"],
+                    now,
                 ),
             )
         self._db.commit()
@@ -153,16 +163,30 @@ class SandboxTemplateEngine:
             """INSERT INTO sandbox_templates
                (template_id, name, description, icon, config, variables, tags, category, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (template_id, name, description, icon,
-             json.dumps(config or {}), json.dumps(variables or {}),
-             json.dumps(tags or []), category, now),
+            (
+                template_id,
+                name,
+                description,
+                icon,
+                json.dumps(config or {}),
+                json.dumps(variables or {}),
+                json.dumps(tags or []),
+                category,
+                now,
+            ),
         )
         self._db.commit()
 
         return SandboxTemplate(
-            template_id=template_id, name=name, description=description,
-            icon=icon, config=config or {}, variables=variables or {},
-            tags=tags or [], category=category, created_at=now,
+            template_id=template_id,
+            name=name,
+            description=description,
+            icon=icon,
+            config=config or {},
+            variables=variables or {},
+            tags=tags or [],
+            category=category,
+            created_at=now,
         )
 
     def get(self, template_id: str) -> SandboxTemplate | None:
@@ -172,10 +196,15 @@ class SandboxTemplateEngine:
         if not row:
             return None
         return SandboxTemplate(
-            template_id=row["template_id"], name=row["name"], description=row["description"],
-            icon=row["icon"], config=json.loads(row["config"]),
-            variables=json.loads(row["variables"]), tags=json.loads(row["tags"]),
-            category=row["category"], usage_count=row["usage_count"],
+            template_id=row["template_id"],
+            name=row["name"],
+            description=row["description"],
+            icon=row["icon"],
+            config=json.loads(row["config"]),
+            variables=json.loads(row["variables"]),
+            tags=json.loads(row["tags"]),
+            category=row["category"],
+            usage_count=row["usage_count"],
             created_at=row["created_at"],
         )
 
@@ -243,7 +272,9 @@ class SandboxTemplateEngine:
     def stats(self) -> dict:
         total = self._db.execute("SELECT COUNT(*) FROM sandbox_templates").fetchone()[0]
         by_category = {}
-        for row in self._db.execute("SELECT category, COUNT(*) as cnt FROM sandbox_templates GROUP BY category"):
+        for row in self._db.execute(
+            "SELECT category, COUNT(*) as cnt FROM sandbox_templates GROUP BY category"
+        ):
             by_category[row["category"]] = row["cnt"]
         return {
             "total_templates": total,

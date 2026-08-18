@@ -2,20 +2,18 @@
 
 import time
 import uuid
-import asyncio
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Callable
+from enum import StrEnum
 
 
-class SignalType(str, Enum):
-    TICK = "tick"           # Regular heartbeat tick
-    INTERVAL = "interval"   # Custom interval signal
-    CRON = "cron"           # Cron-style scheduled signal
-    ONCE = "once"           # One-shot delayed signal
+class SignalType(StrEnum):
+    TICK = "tick"  # Regular heartbeat tick
+    INTERVAL = "interval"  # Custom interval signal
+    CRON = "cron"  # Cron-style scheduled signal
+    ONCE = "once"  # One-shot delayed signal
 
 
-class SignalStatus(str, Enum):
+class SignalStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     COMPLETED = "completed"
@@ -60,9 +58,15 @@ class PulseEngine:
         self._total_ticks = 0
         self._running = False
 
-    def create_signal(self, name: str, signal_type: str, interval_ms: float,
-                      callback_url: str = "", payload: dict = None,
-                      max_fires: int = 0) -> PulseSignal:
+    def create_signal(
+        self,
+        name: str,
+        signal_type: str,
+        interval_ms: float,
+        callback_url: str = "",
+        payload: dict = None,
+        max_fires: int = 0,
+    ) -> PulseSignal:
         """Create a new pulse signal."""
         sig = PulseSignal(
             signal_id=f"pulse_{uuid.uuid4().hex[:12]}",

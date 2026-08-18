@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
-import time
 import threading
+import time
 from collections import deque
-from dataclasses import dataclass, field, asdict
-from enum import Enum
+from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 
 
-class AuditAction(str, Enum):
+class AuditAction(StrEnum):
     LOGIN = "login"
     LOGOUT = "logout"
     ACCESS_DENIED = "access_denied"

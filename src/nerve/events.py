@@ -1,7 +1,7 @@
 """Event data models for OpenNerve messaging."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -11,7 +11,7 @@ class EventBase(BaseModel):
     """Base class for all Nerve events."""
 
     event_type: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = ""
 
     def serialize(self) -> bytes:

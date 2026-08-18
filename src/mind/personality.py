@@ -3,19 +3,20 @@
 import json
 import os
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
 class Personality:
     """A conversation personality/role."""
+
     personality_id: str
     name: str
     description: str = ""
-    tone: str = "neutral"          # neutral, friendly, professional, humorous, empathetic, assertive
+    tone: str = "neutral"  # neutral, friendly, professional, humorous, empathetic, assertive
     language_style: str = "normal"  # formal, casual, normal, technical, poetic
-    emoji_usage: str = "moderate"   # none, minimal, moderate, heavy
-    response_length: str = "normal" # brief, normal, detailed, verbose
+    emoji_usage: str = "moderate"  # none, minimal, moderate, heavy
+    response_length: str = "normal"  # brief, normal, detailed, verbose
     traits: list[str] = field(default_factory=list)  # e.g. ["patient", "curious", "witty"]
     system_prompt_suffix: str = ""  # Extra system prompt to append
     builtin: bool = False
@@ -191,7 +192,12 @@ class PersonalityManager:
             return False
         p = self._user[personality_id]
         for k, v in updates.items():
-            if hasattr(p, k) and k not in ("personality_id", "builtin", "usage_count", "created_at"):
+            if hasattr(p, k) and k not in (
+                "personality_id",
+                "builtin",
+                "usage_count",
+                "created_at",
+            ):
                 setattr(p, k, v)
         self._save_user()
         return True

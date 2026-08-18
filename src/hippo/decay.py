@@ -10,10 +10,10 @@ Implements multiple forgetting curves inspired by Ebbinghaus:
 import math
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class DecayStrategy(str, Enum):
+class DecayStrategy(StrEnum):
     EXPONENTIAL = "exponential"
     LINEAR = "linear"
     IMPORTANCE_GATED = "importance_gated"
@@ -23,9 +23,10 @@ class DecayStrategy(str, Enum):
 @dataclass
 class DecayResult:
     """Result of a decay calculation."""
-    retention: float       # 0.0 (forgotten) to 1.0 (fresh)
-    should_archive: bool   # True if memory should be moved to long-term
-    should_forget: bool    # True if memory should be deleted
+
+    retention: float  # 0.0 (forgotten) to 1.0 (fresh)
+    should_archive: bool  # True if memory should be moved to long-term
+    should_forget: bool  # True if memory should be deleted
     strategy: str
 
 
@@ -73,7 +74,8 @@ class DecayEngine:
 
         return DecayResult(
             retention=round(retention, 4),
-            should_archive=retention <= self.archive_threshold and retention > self.forget_threshold,
+            should_archive=retention <= self.archive_threshold
+            and retention > self.forget_threshold,
             should_forget=retention <= self.forget_threshold,
             strategy=self.strategy.value,
         )

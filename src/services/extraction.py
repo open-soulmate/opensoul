@@ -27,6 +27,7 @@ Return only valid JSON, no markdown fences."""
 # Document text extraction
 # ---------------------------------------------------------------------------
 
+
 def extract_pdf(data: bytes) -> str:
     """Extract text from a PDF file."""
     try:
@@ -65,6 +66,7 @@ def extract_markdown(text: str) -> str:
     """Extract plain text from Markdown, preserving structure."""
     try:
         import markdown
+
         html = markdown.markdown(text)
         soup = BeautifulSoup(html, "html.parser")
         return soup.get_text(separator="\n")
@@ -124,6 +126,7 @@ def extract_text_from_file(data: bytes, content_type: str) -> str:
 # ---------------------------------------------------------------------------
 # LLM-based entity & relation extraction
 # ---------------------------------------------------------------------------
+
 
 async def extract_entities_and_relations(text: str) -> dict:
     """Use LLM to extract entities and relations from text."""

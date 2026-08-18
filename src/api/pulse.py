@@ -1,6 +1,5 @@
 """OpenPulse API — 脉搏：高精度时序节拍器、亚秒级周期性轮询、时间信号分发。"""
 
-import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -38,8 +37,12 @@ async def create_signal(req: SignalCreateRequest):
     if req.interval_ms < 1:
         raise HTTPException(400, "interval_ms must be >= 1")
     sig = engine.create_signal(
-        req.name, req.signal_type, req.interval_ms,
-        callback_url=req.callback_url, payload=req.payload, max_fires=req.max_fires,
+        req.name,
+        req.signal_type,
+        req.interval_ms,
+        callback_url=req.callback_url,
+        payload=req.payload,
+        max_fires=req.max_fires,
     )
     return {
         "signal_id": sig.signal_id,
