@@ -44,6 +44,7 @@ def _ensure_bootstrapped() -> None:
 
 # ── request / response schemas ──────────────────────────────────
 
+
 class ChatRequest(BaseModel):
     messages: list[dict]
     model: str | None = None
@@ -80,15 +81,13 @@ class BudgetUpdate(BaseModel):
 
 # ── endpoints ───────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def gland_health():
     """OpenGland health check."""
     _ensure_bootstrapped()
     providers = gateway.list_providers()
-    total_keys = sum(
-        len(gateway.key_manager._slots.get(p["name"], []))
-        for p in providers
-    )
+    total_keys = sum(len(gateway.key_manager._slots.get(p["name"], [])) for p in providers)
     return {
         "status": "ok",
         "component": "OpenGland",
@@ -238,6 +237,7 @@ async def set_budget(body: BudgetUpdate):
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def gland_stats():

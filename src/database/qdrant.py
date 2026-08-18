@@ -7,7 +7,14 @@ logger = logging.getLogger(__name__)
 
 try:
     from qdrant_client import QdrantClient
-    from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
+    from qdrant_client.models import (
+        Distance,
+        FieldCondition,
+        Filter,
+        MatchValue,
+        PointStruct,
+        VectorParams,
+    )
 except ImportError:
     QdrantClient = None
     Distance = FieldCondition = Filter = MatchValue = PointStruct = VectorParams = None
@@ -66,9 +73,7 @@ class QdrantStore:
         conditions = []
 
         if user_id:
-            conditions.append(
-                FieldCondition(key="user_id", match=MatchValue(value=str(user_id)))
-            )
+            conditions.append(FieldCondition(key="user_id", match=MatchValue(value=str(user_id))))
         if knowledge_id:
             conditions.append(
                 FieldCondition(key="knowledge_id", match=MatchValue(value=str(knowledge_id)))

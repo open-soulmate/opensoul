@@ -4,19 +4,20 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "OpenNerve"}
+
 
 DB_PATH = Path.home() / "opensoul" / "data" / "agent_collaboration.db"
 
@@ -25,6 +26,7 @@ _ws_connections: dict[str, WebSocket] = {}
 
 
 # ── Database ───────────────────────────────────────────────────────────
+
 
 def _get_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +73,7 @@ _init_db()
 
 
 # ── Pydantic models ────────────────────────────────────────────────────
+
 
 class AgentRegisterRequest(BaseModel):
     agent_id: str
@@ -123,10 +126,11 @@ class AgentStatus(BaseModel):
 
 # ── 1. POST /api/agents/register ──────────────────────────────────────
 
+
 @router.post("/register", response_model=AgentRegisterResponse)
 async def register_agent(req: AgentRegisterRequest):
     """Register an agent and receive a token for subsequent communication."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     token = uuid.uuid4().hex
 
     conn = _get_db()
@@ -157,6 +161,7 @@ async def register_agent(req: AgentRegisterRequest):
 
 # ── 2. POST /api/agents/message ───────────────────────────────────────
 
+
 @router.post("/message", response_model=MessageResponse)
 async def send_message(req: MessageRequest):
     """Send a message between agents; persisted to SQLite and forwarded via WebSocket if online."""
@@ -164,7 +169,7 @@ async def send_message(req: MessageRequest):
         raise HTTPException(status_code=400, detail="type must be task | result | query")
 
     msg_id = uuid.uuid4().hex
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     conn = _get_db()
     try:
@@ -181,14 +186,16 @@ async def send_message(req: MessageRequest):
     ws = _ws_connections.get(req.to_agent)
     if ws:
         try:
-            await ws.send_json({
-                "event": "message",
-                "message_id": msg_id,
-                "from_agent": req.from_agent,
-                "type": req.type,
-                "payload": req.payload,
-                "created_at": now,
-            })
+            await ws.send_json(
+                {
+                    "event": "message",
+                    "message_id": msg_id,
+                    "from_agent": req.from_agent,
+                    "type": req.type,
+                    "payload": req.payload,
+                    "created_at": now,
+                }
+            )
         except Exception:
             logger.warning("Failed to deliver WS message to %s", req.to_agent)
 
@@ -196,6 +203,7 @@ async def send_message(req: MessageRequest):
 
 
 # ── 3. POST /api/agents/handoff ───────────────────────────────────────
+
 
 @router.post("/handoff", response_model=HandoffResponse)
 async def handoff_context(req: HandoffRequest):
@@ -233,12 +241,14 @@ async def handoff_context(req: HandoffRequest):
 def _tokenize(text: str) -> list[str]:
     """Simple whitespace + punctuation splitter."""
     import re
+
     return [w for w in re.split(r"[^\w]+", text) if len(w) > 2]
 
 
 def _split_sections(text: str) -> list[tuple[str, str]]:
     """Split markdown-style text into (title, body) pairs."""
     import re
+
     parts = re.split(r"^(#{1,4}\s+.+)$", text, flags=re.MULTILINE)
     sections: list[tuple[str, str]] = []
     i = 0
@@ -256,6 +266,7 @@ def _split_sections(text: str) -> list[tuple[str, str]]:
 
 # ── 4. GET /api/agents/status ─────────────────────────────────────────
 
+
 @router.get("/status", response_model=list[AgentStatus])
 async def get_agent_status():
     """Return all registered agents with their current status."""
@@ -268,21 +279,24 @@ async def get_agent_status():
                 "SELECT capability FROM agent_capabilities WHERE agent_id = ?",
                 (row["agent_id"],),
             ).fetchall()
-            result.append(AgentStatus(
-                agent_id=row["agent_id"],
-                name=row["name"],
-                model=row["model"],
-                role=row["role"],
-                capabilities=[c["capability"] for c in caps],
-                status=row["status"],
-                last_seen=row["last_seen"],
-            ))
+            result.append(
+                AgentStatus(
+                    agent_id=row["agent_id"],
+                    name=row["name"],
+                    model=row["model"],
+                    role=row["role"],
+                    capabilities=[c["capability"] for c in caps],
+                    status=row["status"],
+                    last_seen=row["last_seen"],
+                )
+            )
         return result
     finally:
         conn.close()
 
 
 # ── 5. WebSocket /ws/agent/{agent_id} ─────────────────────────────────
+
 
 @router.websocket("/ws/agent/{agent_id}")
 async def agent_ws(websocket: WebSocket, agent_id: str):
@@ -292,9 +306,11 @@ async def agent_ws(websocket: WebSocket, agent_id: str):
     logger.info("Agent WS connected: %s", agent_id)
 
     # Mark agent online
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     conn = _get_db()
-    conn.execute("UPDATE agents SET status = 'online', last_seen = ? WHERE agent_id = ?", (now, agent_id))
+    conn.execute(
+        "UPDATE agents SET status = 'online', last_seen = ? WHERE agent_id = ?", (now, agent_id)
+    )
     conn.commit()
     conn.close()
 
@@ -310,13 +326,19 @@ async def agent_ws(websocket: WebSocket, agent_id: str):
                 target = data.get("to_agent")
                 if target:
                     msg_id = uuid.uuid4().hex
-                    msg_now = datetime.now(timezone.utc).isoformat()
+                    msg_now = datetime.now(UTC).isoformat()
                     conn = _get_db()
                     conn.execute(
                         "INSERT INTO agent_messages (id, from_agent, to_agent, msg_type, payload, created_at) "
                         "VALUES (?, ?, ?, ?, ?, ?)",
-                        (msg_id, agent_id, target, data.get("type", "query"),
-                         json.dumps(data.get("payload", {})), msg_now),
+                        (
+                            msg_id,
+                            agent_id,
+                            target,
+                            data.get("type", "query"),
+                            json.dumps(data.get("payload", {})),
+                            msg_now,
+                        ),
                     )
                     conn.commit()
                     conn.close()
@@ -324,24 +346,30 @@ async def agent_ws(websocket: WebSocket, agent_id: str):
                     target_ws = _ws_connections.get(target)
                     if target_ws:
                         try:
-                            await target_ws.send_json({
-                                "event": "message",
-                                "message_id": msg_id,
-                                "from_agent": agent_id,
-                                "type": data.get("type", "query"),
-                                "payload": data.get("payload", {}),
-                                "created_at": msg_now,
-                            })
+                            await target_ws.send_json(
+                                {
+                                    "event": "message",
+                                    "message_id": msg_id,
+                                    "from_agent": agent_id,
+                                    "type": data.get("type", "query"),
+                                    "payload": data.get("payload", {}),
+                                    "created_at": msg_now,
+                                }
+                            )
                         except Exception:
                             pass
             elif event_type == "heartbeat":
-                hb_now = datetime.now(timezone.utc).isoformat()
+                hb_now = datetime.now(UTC).isoformat()
                 conn = _get_db()
-                conn.execute("UPDATE agents SET last_seen = ? WHERE agent_id = ?", (hb_now, agent_id))
+                conn.execute(
+                    "UPDATE agents SET last_seen = ? WHERE agent_id = ?", (hb_now, agent_id)
+                )
                 conn.commit()
                 conn.close()
             else:
-                await websocket.send_json({"event": "error", "detail": f"Unknown event: {event_type}"})
+                await websocket.send_json(
+                    {"event": "error", "detail": f"Unknown event: {event_type}"}
+                )
 
     except WebSocketDisconnect:
         logger.info("Agent WS disconnected: %s", agent_id)
@@ -349,8 +377,11 @@ async def agent_ws(websocket: WebSocket, agent_id: str):
         logger.warning("Agent WS error for %s: %s", agent_id, exc)
     finally:
         _ws_connections.pop(agent_id, None)
-        offline_now = datetime.now(timezone.utc).isoformat()
+        offline_now = datetime.now(UTC).isoformat()
         conn = _get_db()
-        conn.execute("UPDATE agents SET status = 'offline', last_seen = ? WHERE agent_id = ?", (offline_now, agent_id))
+        conn.execute(
+            "UPDATE agents SET status = 'offline', last_seen = ? WHERE agent_id = ?",
+            (offline_now, agent_id),
+        )
         conn.commit()
         conn.close()

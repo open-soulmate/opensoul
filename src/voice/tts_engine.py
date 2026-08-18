@@ -1,17 +1,16 @@
 """TTS Engine — 文字转语音引擎，支持多后端。"""
 
-import asyncio
-import io
-import os
-import time
 import hashlib
+import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 
 
 @dataclass
 class TTSResult:
     """Result of a TTS synthesis."""
+
     audio_data: bytes
     format: str = "mp3"
     duration_seconds: float = 0.0
@@ -30,6 +29,7 @@ class TTSResult:
 @dataclass
 class TTSJob:
     """A queued TTS job."""
+
     job_id: str
     text: str
     voice_id: str
@@ -46,12 +46,14 @@ HAS_PYTTSX3 = False
 
 try:
     import edge_tts
+
     HAS_EDGE_TTS = True
 except ImportError:
     pass
 
 try:
     import pyttsx3
+
     HAS_PYTTSX3 = True
 except ImportError:
     pass
@@ -178,7 +180,7 @@ class TTSEngine:
             self._total_characters += len(text)
             return result
 
-        except Exception as e:
+        except Exception:
             self._errors += 1
             # Return placeholder on error
             result = self._generate_placeholder(text, voice_id, start)
@@ -253,6 +255,7 @@ class TTSEngine:
         for i in range(num_samples):
             # Very quiet 440Hz tone
             import math
+
             val = int(100 * math.sin(2 * math.pi * 440 * i / sample_rate))
             samples.extend(struct.pack("<h", val))
 
@@ -260,9 +263,19 @@ class TTSEngine:
         data_size = len(samples)
         wav = struct.pack(
             "<4sI4s4sIHHIIHH4sI",
-            b"RIFF", 36 + data_size, b"WAVE",
-            b"fmt ", 16, 1, 1, sample_rate, sample_rate * 2, 2, 16,
-            b"data", data_size,
+            b"RIFF",
+            36 + data_size,
+            b"WAVE",
+            b"fmt ",
+            16,
+            1,
+            1,
+            sample_rate,
+            sample_rate * 2,
+            2,
+            16,
+            b"data",
+            data_size,
         ) + bytes(samples)
 
         return TTSResult(
@@ -306,11 +319,13 @@ class TTSEngine:
             fp = os.path.join(self._output_dir, name)
             if os.path.isfile(fp):
                 stat = os.stat(fp)
-                results.append({
-                    "filename": name,
-                    "size_bytes": stat.st_size,
-                    "created_at": stat.st_mtime,
-                })
+                results.append(
+                    {
+                        "filename": name,
+                        "size_bytes": stat.st_size,
+                        "created_at": stat.st_mtime,
+                    }
+                )
         return results[:100]
 
     def delete_output(self, filename: str) -> bool:

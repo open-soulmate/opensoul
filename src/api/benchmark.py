@@ -1,10 +1,11 @@
 """OpenBenchmark API — organ performance benchmarking with historical tracking."""
 
 import time
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.benchmark.engine import benchmark_engine, BENCHMARK_TARGETS
+from src.benchmark.engine import BENCHMARK_TARGETS, benchmark_engine
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ class BenchmarkRunRequest(BaseModel):
 
 # ── Health ──────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "OpenBenchmark"}
@@ -24,12 +26,14 @@ async def health():
 
 # ── Stats ───────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def stats():
     return benchmark_engine.stats()
 
 
 # ── Available Targets ───────────────────────────────────────
+
 
 @router.get("/targets")
 async def list_targets():
@@ -44,6 +48,7 @@ async def list_targets():
 
 
 # ── Run Benchmark ───────────────────────────────────────────
+
 
 @router.post("/run")
 async def run_benchmark(req: BenchmarkRunRequest):
@@ -63,11 +68,15 @@ async def run_benchmark(req: BenchmarkRunRequest):
 
 # ── Quick Benchmark (single organ) ──────────────────────────
 
+
 @router.post("/quick/{organ}")
 async def quick_benchmark(organ: str, iterations: int = Query(default=10, ge=1, le=100)):
     """Quick benchmark a single organ with default settings."""
     if organ not in BENCHMARK_TARGETS:
-        raise HTTPException(status_code=404, detail=f"Unknown organ: {organ}. Valid: {list(BENCHMARK_TARGETS.keys())}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown organ: {organ}. Valid: {list(BENCHMARK_TARGETS.keys())}",
+        )
 
     result = await benchmark_engine.run_benchmark(
         organs=[organ],
@@ -79,6 +88,7 @@ async def quick_benchmark(organ: str, iterations: int = Query(default=10, ge=1, 
 
 # ── Cancel Running Benchmark ────────────────────────────────
 
+
 @router.post("/cancel/{run_id}")
 async def cancel_benchmark(run_id: str):
     """Cancel a running benchmark."""
@@ -88,6 +98,7 @@ async def cancel_benchmark(run_id: str):
 
 
 # ── History ─────────────────────────────────────────────────
+
 
 @router.get("/history")
 async def get_history(
@@ -110,6 +121,7 @@ async def get_runs(limit: int = Query(default=20, ge=1, le=100)):
 
 # ── Latest / Comparison ─────────────────────────────────────
 
+
 @router.get("/latest")
 async def get_latest():
     """Get latest benchmark results for all tested organs."""
@@ -129,6 +141,7 @@ async def get_comparison():
 
 
 # ── Delete History ──────────────────────────────────────────
+
 
 @router.delete("/history")
 async def delete_history(organ: str = Query(default="", description="Delete by organ, or all")):

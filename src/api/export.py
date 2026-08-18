@@ -23,15 +23,15 @@ async def export_json(user_id: UUID):
     entities = await db_pool.fetch(
         "SELECT * FROM entities WHERE user_id = $1 ORDER BY name", user_id
     )
-    tags = await db_pool.fetch(
-        "SELECT * FROM tags WHERE user_id = $1 ORDER BY name", user_id
-    )
+    tags = await db_pool.fetch("SELECT * FROM tags WHERE user_id = $1 ORDER BY name", user_id)
 
-    return JSONResponse({
-        "knowledge": [dict(r) for r in knowledge],
-        "entities": [dict(r) for r in entities],
-        "tags": [dict(r) for r in tags],
-    })
+    return JSONResponse(
+        {
+            "knowledge": [dict(r) for r in knowledge],
+            "entities": [dict(r) for r in entities],
+            "tags": [dict(r) for r in tags],
+        }
+    )
 
 
 @router.get("/markdown")
@@ -48,13 +48,13 @@ async def export_markdown(user_id: UUID):
     entities = await db_pool.fetch(
         "SELECT * FROM entities WHERE user_id = $1 ORDER BY name", user_id
     )
-    tags = await db_pool.fetch(
-        "SELECT * FROM tags WHERE user_id = $1 ORDER BY name", user_id
-    )
+    tags = await db_pool.fetch("SELECT * FROM tags WHERE user_id = $1 ORDER BY name", user_id)
 
-    return JSONResponse({
-        "knowledge": [dict(r) for r in knowledge],
-        "entities": [dict(r) for r in entities],
-        "tags": [dict(r) for r in tags],
-        "format": "markdown",
-    })
+    return JSONResponse(
+        {
+            "knowledge": [dict(r) for r in knowledge],
+            "entities": [dict(r) for r in entities],
+            "tags": [dict(r) for r in tags],
+            "format": "markdown",
+        }
+    )

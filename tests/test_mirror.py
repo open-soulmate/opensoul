@@ -1,7 +1,5 @@
 """Integration tests for OpenMirror (镜像) — sandbox testing."""
 
-import pytest
-
 
 class TestMirrorHealth:
     def test_health(self, client):
@@ -15,11 +13,14 @@ class TestMirrorHealth:
 class TestMirrorSandbox:
     def test_create_list_delete_sandbox(self, client):
         # Create
-        resp = client.post("/api/mirror/sandboxes", json={
-            "name": "test_sandbox",
-            "description": "Integration test sandbox",
-            "config": {"isolated": True},
-        })
+        resp = client.post(
+            "/api/mirror/sandboxes",
+            json={
+                "name": "test_sandbox",
+                "description": "Integration test sandbox",
+                "config": {"isolated": True},
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         sid = data["sandbox_id"]
@@ -38,18 +39,24 @@ class TestMirrorSandbox:
 
     def test_sandbox_variables(self, client):
         # Create sandbox
-        resp = client.post("/api/mirror/sandboxes", json={
-            "name": "var_test",
-            "config": {},
-        })
+        resp = client.post(
+            "/api/mirror/sandboxes",
+            json={
+                "name": "var_test",
+                "config": {},
+            },
+        )
         assert resp.status_code == 200
         sid = resp.json()["sandbox_id"]
 
         # Set variable
-        resp = client.post(f"/api/mirror/sandboxes/{sid}/variables", json={
-            "key": "test_var",
-            "value": "hello",
-        })
+        resp = client.post(
+            f"/api/mirror/sandboxes/{sid}/variables",
+            json={
+                "key": "test_var",
+                "value": "hello",
+            },
+        )
         assert resp.status_code == 200
 
         # Get variables

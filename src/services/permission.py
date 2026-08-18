@@ -1,6 +1,7 @@
-import casbin
 import logging
 from pathlib import Path
+
+import casbin
 
 logger = logging.getLogger(__name__)
 

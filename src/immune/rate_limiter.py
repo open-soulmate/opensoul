@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import time
 import threading
-from collections import defaultdict
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
 
 
 @dataclass
@@ -54,7 +53,9 @@ class RateLimiter:
         """Check if request is allowed. Returns {allowed, retry_after, ...}."""
         with self._lock:
             if key not in self._minute_windows:
-                self._minute_windows[key] = SlidingWindowCounter(60, self.config.requests_per_minute)
+                self._minute_windows[key] = SlidingWindowCounter(
+                    60, self.config.requests_per_minute
+                )
                 self._hour_windows[key] = SlidingWindowCounter(3600, self.config.requests_per_hour)
 
         minute_ok = self._minute_windows[key].allow()

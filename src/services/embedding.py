@@ -16,9 +16,7 @@ def _get_api_key() -> str:
     return settings.embedding_api_key or settings.llm_api_key
 
 
-async def _call_embedding_api(
-    client: httpx.AsyncClient, texts: list[str]
-) -> list[list[float]]:
+async def _call_embedding_api(client: httpx.AsyncClient, texts: list[str]) -> list[list[float]]:
     """Call the embedding API with retry logic."""
     api_key = _get_api_key()
     url = f"{settings.embedding_base_url}/embeddings"
@@ -39,9 +37,14 @@ async def _call_embedding_api(
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             last_exc = exc
             if attempt < MAX_RETRIES - 1:
-                delay = RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning("Embedding API error (attempt %d/%d): %s, retrying in %.1fs",
-                               attempt + 1, MAX_RETRIES, exc, delay)
+                delay = RETRY_BASE_DELAY * (2**attempt)
+                logger.warning(
+                    "Embedding API error (attempt %d/%d): %s, retrying in %.1fs",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    exc,
+                    delay,
+                )
                 await asyncio.sleep(delay)
 
     raise RuntimeError(f"Embedding API failed after {MAX_RETRIES} retries: {last_exc}")

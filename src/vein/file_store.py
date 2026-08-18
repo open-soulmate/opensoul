@@ -6,14 +6,12 @@ Supports streaming reads, atomic writes, and file version history.
 
 import hashlib
 import os
-import shutil
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
-from src.vein.versioning import VersionManager, FileVersion
+from src.vein.versioning import FileVersion, VersionManager
 
 
 @dataclass
@@ -88,7 +86,9 @@ class FileStore:
                 blob_path.write_bytes(data)
 
                 # Record version
-                self._versions.record_version(fid, content_hash, size, change_summary or "File updated")
+                self._versions.record_version(
+                    fid, content_hash, size, change_summary or "File updated"
+                )
 
             # Update the existing record
             self._db.execute(
@@ -267,7 +267,9 @@ class FileStore:
 
         # Record the rollback as a new version
         self._versions.record_version(
-            file_id, version.content_hash, version.size,
+            file_id,
+            version.content_hash,
+            version.size,
             f"Rollback to version {version_number}",
         )
 

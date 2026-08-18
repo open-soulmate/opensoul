@@ -17,12 +17,16 @@ def _row_to_entity(row) -> dict:
 async def create_entity(data: EntityCreate, user_id: UUID) -> dict:
     import json as _json
     import uuid as _uuid
+
     entity_id = str(_uuid.uuid4())
-    props = _json.dumps(data.properties) if isinstance(data.properties, dict) else data.properties
+    _json.dumps(data.properties) if isinstance(data.properties, dict) else data.properties
     await db_pool.execute(
         "INSERT INTO entities (id, name, type, description, properties, user_id) "
         "VALUES ($1, $2, $3, $4, $5, $6)",
-        entity_id, data.name, data.entity_type, data.description,
+        entity_id,
+        data.name,
+        data.entity_type,
+        data.description,
         json.dumps(data.properties) if data.properties else None,
         str(user_id),
     )
@@ -54,17 +58,24 @@ async def get_entity_with_relations(entity_id: UUID, user_id: UUID) -> dict | No
     return entity
 
 
-async def list_entities(user_id: UUID, entity_type: str | None = None, offset: int = 0, limit: int = 50) -> list[dict]:
+async def list_entities(
+    user_id: UUID, entity_type: str | None = None, offset: int = 0, limit: int = 50
+) -> list[dict]:
     if entity_type:
         rows = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 AND type = $2 "
             "ORDER BY name LIMIT $4 OFFSET $3",
-            str(user_id), entity_type, offset, limit,
+            str(user_id),
+            entity_type,
+            offset,
+            limit,
         )
     else:
         rows = await db_pool.fetch(
             "SELECT * FROM entities WHERE user_id = $1 ORDER BY name LIMIT $3 OFFSET $2",
-            str(user_id), offset, limit,
+            str(user_id),
+            offset,
+            limit,
         )
     return [_row_to_entity(r) for r in rows]
 

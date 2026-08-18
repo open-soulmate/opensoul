@@ -6,20 +6,21 @@ Handles:
 - Result tracking and screenshots
 - Template instantiation with variable substitution
 """
+
 from __future__ import annotations
 
 import re
-import time
 import threading
+import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 
-from src.limb.tasks import Action, ActionType, TaskTemplate, StepResult, BUILTIN_TEMPLATES
+from src.limb.tasks import BUILTIN_TEMPLATES, Action, ActionType, StepResult, TaskTemplate
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -37,6 +38,7 @@ class TaskPriority(int, Enum):
 @dataclass
 class RPATask:
     """A single RPA task with ordered steps."""
+
     task_id: str
     name: str
     actions: list[Action]
@@ -159,15 +161,17 @@ class RPAExecutor:
             # Substitute variables in target and value
             target = self._substitute(action.target, vars)
             value = self._substitute(action.value, vars)
-            actions.append(Action(
-                action_type=action.action_type,
-                target=target,
-                value=value,
-                description=action.description,
-                timeout=action.timeout,
-                retry=action.retry,
-                optional=action.optional,
-            ))
+            actions.append(
+                Action(
+                    action_type=action.action_type,
+                    target=target,
+                    value=value,
+                    description=action.description,
+                    timeout=action.timeout,
+                    retry=action.retry,
+                    optional=action.optional,
+                )
+            )
 
         return self.create_task(
             name=name or template.name,
@@ -386,7 +390,9 @@ class RPAExecutor:
                 "total_executed": self._total_executed,
                 "total_succeeded": self._total_succeeded,
                 "total_failed": self._total_failed,
-                "success_rate": round(self._total_succeeded / self._total_executed * 100, 1) if self._total_executed else 0,
+                "success_rate": round(self._total_succeeded / self._total_executed * 100, 1)
+                if self._total_executed
+                else 0,
                 "templates": len(self._templates),
             }
 
@@ -397,22 +403,26 @@ class RPAExecutor:
 
     def _record_history(self, task: RPATask):
         self._total_executed += 1
-        self._history.append({
-            "task_id": task.task_id,
-            "name": task.name,
-            "status": task.status.value,
-            "steps": len(task.results),
-            "elapsed_seconds": task.elapsed_seconds,
-            "error": task.error,
-            "completed_at": task.completed_at,
-        })
+        self._history.append(
+            {
+                "task_id": task.task_id,
+                "name": task.name,
+                "status": task.status.value,
+                "steps": len(task.results),
+                "elapsed_seconds": task.elapsed_seconds,
+                "error": task.error,
+                "completed_at": task.completed_at,
+            }
+        )
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
     @staticmethod
     def _substitute(text: str, variables: dict) -> str:
         """Replace {{var}} placeholders with variable values."""
+
         def replace(match):
             key = match.group(1).strip()
             return str(variables.get(key, match.group(0)))
+
         return re.sub(r"\{\{(\w+)\}\}", replace, text)

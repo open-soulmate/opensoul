@@ -29,7 +29,9 @@ Rules:
 - Aim for 3-8 tasks for a typical goal
 - Return ONLY the JSON array, no other text"""
 
-    def __init__(self, base_url: str | None = None, api_key: str | None = None, model: str | None = None):
+    def __init__(
+        self, base_url: str | None = None, api_key: str | None = None, model: str | None = None
+    ):
         self.base_url = base_url or settings.llm_base_url
         self.api_key = api_key or settings.llm_api_key
         self.model = model or settings.llm_model
@@ -60,11 +62,13 @@ Rules:
 
         tasks = []
         for t in raw_tasks:
-            tasks.append(Task(
-                description=t["description"],
-                dependencies=t.get("dependencies", []),
-                priority=t.get("priority", 2),
-            ))
+            tasks.append(
+                Task(
+                    description=t["description"],
+                    dependencies=t.get("dependencies", []),
+                    priority=t.get("priority", 2),
+                )
+            )
         return tasks
 
     @staticmethod
@@ -72,7 +76,7 @@ Rules:
         text = text.strip()
         if text.startswith("```"):
             first_newline = text.index("\n")
-            text = text[first_newline + 1:]
+            text = text[first_newline + 1 :]
         if text.endswith("```"):
             text = text[:-3]
         return text.strip()

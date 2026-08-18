@@ -4,24 +4,26 @@ Supports built-in sources (ClawHub, Tencent SkillHub, etc.) and custom sources.
 OpenMate polls this endpoint to sync skills/agents.
 """
 
-import json
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.api.user import get_current_user
+
 DB_PATH = Path("data/opensoul.db")
 
 router = APIRouter()
 
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "OpenMarketplace"}
+
+
 logger = logging.getLogger(__name__)
 
 # Built-in skill sources
@@ -120,6 +122,7 @@ BUILTIN_AGENT_SOURCES = [
 
 # ─── Pydantic Models ─────────────────────────────────────────────
 
+
 class SourceCreate(BaseModel):
     name: str
     type: str  # hermes, openclaw, tencent, aliyun, github, custom
@@ -131,15 +134,16 @@ class SourceCreate(BaseModel):
 
 
 class SourceUpdate(BaseModel):
-    name: Optional[str] = None
-    url: Optional[str] = None
-    description: Optional[str] = None
-    enabled: Optional[bool] = None
-    auto_sync: Optional[bool] = None
-    sync_interval: Optional[int] = None
+    name: str | None = None
+    url: str | None = None
+    description: str | None = None
+    enabled: bool | None = None
+    auto_sync: bool | None = None
+    sync_interval: int | None = None
 
 
 # ─── Database Setup ───────────────────────────────────────────────
+
 
 def init_marketplace_tables(db: sqlite3.Connection):
     """Create marketplace tables if not exist"""
@@ -211,18 +215,41 @@ def init_marketplace_tables(db: sqlite3.Connection):
 def seed_builtin_sources(db: sqlite3.Connection):
     """Insert built-in sources if not exist"""
     for src in BUILTIN_SKILL_SOURCES:
-        db.execute("""
+        db.execute(
+            """
             INSERT OR IGNORE INTO skill_sources (id, name, type, url, description, enabled, builtin, auto_sync, sync_interval)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (src["id"], src["name"], src["type"], src["url"], src["description"],
-              1 if src["enabled"] else 0, 1, 1 if src["auto_sync"] else 0, src["sync_interval"]))
+        """,
+            (
+                src["id"],
+                src["name"],
+                src["type"],
+                src["url"],
+                src["description"],
+                1 if src["enabled"] else 0,
+                1,
+                1 if src["auto_sync"] else 0,
+                src["sync_interval"],
+            ),
+        )
 
     for src in BUILTIN_AGENT_SOURCES:
-        db.execute("""
+        db.execute(
+            """
             INSERT OR IGNORE INTO agent_sources (id, name, type, url, description, enabled, builtin, auto_update)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (src["id"], src["name"], src["type"], src["url"], src["description"],
-              1 if src["enabled"] else 0, 1, 1 if src["auto_update"] else 0))
+        """,
+            (
+                src["id"],
+                src["name"],
+                src["type"],
+                src["url"],
+                src["description"],
+                1 if src["enabled"] else 0,
+                1,
+                1 if src["auto_update"] else 0,
+            ),
+        )
     db.commit()
 
 
@@ -236,6 +263,7 @@ def get_marketplace_db() -> sqlite3.Connection:
 
 # ─── Skill Sources API ───────────────────────────────────────────
 
+
 @router.get("/skills/sources")
 async def list_skill_sources(user_id: UUID = Depends(get_current_user)):
     """List all configured skill sources"""
@@ -243,12 +271,21 @@ async def list_skill_sources(user_id: UUID = Depends(get_current_user)):
     rows = db.execute("SELECT * FROM skill_sources ORDER BY builtin DESC, name").fetchall()
     sources = []
     for r in rows:
-        sources.append({
-            "id": r[0], "name": r[1], "type": r[2], "url": r[3],
-            "description": r[4], "enabled": bool(r[5]), "builtin": bool(r[6]),
-            "auto_sync": bool(r[7]), "sync_interval": r[8],
-            "last_sync": r[9], "skill_count": r[10],
-        })
+        sources.append(
+            {
+                "id": r[0],
+                "name": r[1],
+                "type": r[2],
+                "url": r[3],
+                "description": r[4],
+                "enabled": bool(r[5]),
+                "builtin": bool(r[6]),
+                "auto_sync": bool(r[7]),
+                "sync_interval": r[8],
+                "last_sync": r[9],
+                "skill_count": r[10],
+            }
+        )
     return {"sources": sources}
 
 
@@ -257,17 +294,30 @@ async def create_skill_source(src: SourceCreate, user_id: UUID = Depends(get_cur
     """Add a custom skill source"""
     db = get_marketplace_db()
     source_id = f"custom-{src.type}-{hash(src.url) % 10000:04d}"
-    db.execute("""
+    db.execute(
+        """
         INSERT OR REPLACE INTO skill_sources (id, name, type, url, description, enabled, builtin, auto_sync, sync_interval)
         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-    """, (source_id, src.name, src.type, src.url, src.description,
-          1 if src.enabled else 0, 1 if src.auto_sync else 0, src.sync_interval))
+    """,
+        (
+            source_id,
+            src.name,
+            src.type,
+            src.url,
+            src.description,
+            1 if src.enabled else 0,
+            1 if src.auto_sync else 0,
+            src.sync_interval,
+        ),
+    )
     db.commit()
     return {"success": True, "id": source_id}
 
 
 @router.put("/skills/sources/{source_id}")
-async def update_skill_source(source_id: str, update: SourceUpdate, user_id: UUID = Depends(get_current_user)):
+async def update_skill_source(
+    source_id: str, update: SourceUpdate, user_id: UUID = Depends(get_current_user)
+):
     """Update a skill source configuration"""
     db = get_marketplace_db()
     existing = db.execute("SELECT id FROM skill_sources WHERE id = ?", (source_id,)).fetchone()
@@ -324,6 +374,7 @@ async def sync_skill_source(source_id: str, user_id: UUID = Depends(get_current_
 
 # ─── Agent Sources API ───────────────────────────────────────────
 
+
 @router.get("/agents/sources")
 async def list_agent_sources(user_id: UUID = Depends(get_current_user)):
     """List all configured agent sources"""
@@ -331,11 +382,20 @@ async def list_agent_sources(user_id: UUID = Depends(get_current_user)):
     rows = db.execute("SELECT * FROM agent_sources ORDER BY builtin DESC, name").fetchall()
     sources = []
     for r in rows:
-        sources.append({
-            "id": r[0], "name": r[1], "type": r[2], "url": r[3],
-            "description": r[4], "enabled": bool(r[5]), "builtin": bool(r[6]),
-            "auto_update": bool(r[7]), "last_sync": r[8], "agent_count": r[9],
-        })
+        sources.append(
+            {
+                "id": r[0],
+                "name": r[1],
+                "type": r[2],
+                "url": r[3],
+                "description": r[4],
+                "enabled": bool(r[5]),
+                "builtin": bool(r[6]),
+                "auto_update": bool(r[7]),
+                "last_sync": r[8],
+                "agent_count": r[9],
+            }
+        )
     return {"sources": sources}
 
 
@@ -344,17 +404,29 @@ async def create_agent_source(src: SourceCreate, user_id: UUID = Depends(get_cur
     """Add a custom agent source"""
     db = get_marketplace_db()
     source_id = f"custom-agent-{hash(src.url) % 10000:04d}"
-    db.execute("""
+    db.execute(
+        """
         INSERT OR REPLACE INTO agent_sources (id, name, type, url, description, enabled, builtin, auto_update)
         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-    """, (source_id, src.name, src.type, src.url, src.description,
-          1 if src.enabled else 0, 1 if src.auto_sync else 0))
+    """,
+        (
+            source_id,
+            src.name,
+            src.type,
+            src.url,
+            src.description,
+            1 if src.enabled else 0,
+            1 if src.auto_sync else 0,
+        ),
+    )
     db.commit()
     return {"success": True, "id": source_id}
 
 
 @router.put("/agents/sources/{source_id}")
-async def update_agent_source(source_id: str, update: SourceUpdate, user_id: UUID = Depends(get_current_user)):
+async def update_agent_source(
+    source_id: str, update: SourceUpdate, user_id: UUID = Depends(get_current_user)
+):
     """Update an agent source configuration"""
     db = get_marketplace_db()
     existing = db.execute("SELECT id FROM agent_sources WHERE id = ?", (source_id,)).fetchone()
@@ -398,6 +470,7 @@ async def delete_agent_source(source_id: str, user_id: UUID = Depends(get_curren
 
 # ─── Sync API (for OpenMate to poll) ─────────────────────────────
 
+
 @router.get("/sync/skills")
 async def get_synced_skills(user_id: UUID = Depends(get_current_user)):
     """Get all available skills from enabled sources (OpenMate polls this)"""
@@ -413,11 +486,20 @@ async def get_synced_skills(user_id: UUID = Depends(get_current_user)):
 
     skills = []
     for r in rows:
-        skills.append({
-            "id": r[0], "name": r[2], "description": r[3], "category": r[4],
-            "version": r[5], "downloads": r[6], "rating": r[7],
-            "source_id": r[8], "source_name": r[9], "source_type": r[10],
-        })
+        skills.append(
+            {
+                "id": r[0],
+                "name": r[2],
+                "description": r[3],
+                "category": r[4],
+                "version": r[5],
+                "downloads": r[6],
+                "rating": r[7],
+                "source_id": r[8],
+                "source_name": r[9],
+                "source_type": r[10],
+            }
+        )
     return {"skills": skills, "total": len(skills)}
 
 
@@ -436,14 +518,23 @@ async def get_synced_agents(user_id: UUID = Depends(get_current_user)):
 
     agents = []
     for r in rows:
-        agents.append({
-            "id": r[0], "name": r[1], "description": r[2], "category": r[3],
-            "icon": r[4], "version": r[5], "source_id": r[6], "source_name": r[7],
-        })
+        agents.append(
+            {
+                "id": r[0],
+                "name": r[1],
+                "description": r[2],
+                "category": r[3],
+                "icon": r[4],
+                "version": r[5],
+                "source_id": r[6],
+                "source_name": r[7],
+            }
+        )
     return {"agents": agents, "total": len(agents)}
 
 
 # ─── Admin Stats ─────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def get_marketplace_stats(user_id: UUID = Depends(get_current_user)):

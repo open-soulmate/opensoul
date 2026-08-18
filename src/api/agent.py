@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field
 
 from src.database.postgres import db_pool
 from src.middleware.auth import get_current_user, require_agent, require_role
-from src.services.rag import rag_query
-from src.services import knowledge as knowledge_service
 from src.models.knowledge import KnowledgeCreate
+from src.services import knowledge as knowledge_service
+from src.services.rag import rag_query
 
 router = APIRouter()
 
@@ -39,6 +39,7 @@ async def agent_stats():
 
 # ── Request / Response models ──────────────────────────────────────────
 
+
 class AgentRegisterRequest(BaseModel):
     name: str
     agent_type: str = "generic"
@@ -66,6 +67,7 @@ class AgentReportRequest(BaseModel):
 
 # ── Agent node management ──────────────────────────────────────────────
 
+
 @router.post("/register", response_model=AgentRegisterResponse)
 async def register_agent(
     req: AgentRegisterRequest,
@@ -79,7 +81,12 @@ async def register_agent(
         "INSERT INTO agents (id, name, agent_type, capabilities, metadata, token, status) "
         "VALUES ($1, $2, $3, $4, $5, $6, 'active') "
         "RETURNING id, name, token, created_at as registered_at",
-        agent_id, req.name, req.agent_type, req.capabilities, req.metadata, token,
+        agent_id,
+        req.name,
+        req.agent_type,
+        req.capabilities,
+        req.metadata,
+        token,
     )
     if not row:
         raise HTTPException(status_code=500, detail="Failed to register agent")
@@ -94,14 +101,15 @@ async def agent_heartbeat(
     """Update agent heartbeat — requires valid X-Agent-Token header."""
     result = await db_pool.execute(
         "UPDATE agents SET status = $1, last_heartbeat = NOW() WHERE id = $2",
-        req.status, req.agent_id,
+        req.status,
+        req.agent_id,
     )
     if "UPDATE 0" in result:
         raise HTTPException(status_code=404, detail="Agent not found")
     return {
         "agent_id": req.agent_id,
         "status": req.status,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -113,7 +121,9 @@ async def agent_report(
     """Agent reports Soma-collected data — stored and queued for processing."""
     await db_pool.execute(
         "INSERT INTO agent_reports (agent_id, report_type, data) VALUES ($1, $2, $3)",
-        req.agent_id, req.report_type, req.data,
+        req.agent_id,
+        req.report_type,
+        req.data,
     )
     return {"status": "received", "agent_id": req.agent_id}
 
@@ -135,7 +145,7 @@ async def list_agent_nodes(
             "SELECT id, name, agent_type, capabilities, status, last_heartbeat, created_at "
             "FROM agents ORDER BY created_at DESC"
         )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = []
     for r in rows:
         d = dict(r)
@@ -143,7 +153,9 @@ async def list_agent_nodes(
         if hb and (now - hb).total_seconds() < 120:
             d["online"] = True
         else:
-            d["online"] = d["status"] == "active" and hb is not None and (now - hb).total_seconds() < 120
+            d["online"] = (
+                d["status"] == "active" and hb is not None and (now - hb).total_seconds() < 120
+            )
         result.append(d)
     return result
 
@@ -161,6 +173,7 @@ async def delete_agent_node(
 
 
 # ── Agent memory operations ────────────────────────────────────────────
+
 
 class AgentRememberRequest(BaseModel):
     title: str

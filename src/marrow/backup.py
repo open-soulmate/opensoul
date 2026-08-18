@@ -5,10 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import tarfile
-import time
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,6 +28,7 @@ class BackupManifest:
 @dataclass
 class ScheduledBackup:
     """A scheduled backup job."""
+
     schedule_id: str
     name: str
     source_dirs: list[str]
@@ -65,17 +65,20 @@ class BackupManager:
                 self._manifests = {}
 
     def _save_manifests(self):
-        data = {k: {
-            "backup_id": v.backup_id,
-            "name": v.name,
-            "created_at": v.created_at,
-            "size_bytes": v.size_bytes,
-            "file_count": v.file_count,
-            "description": v.description,
-            "tags": v.tags,
-            "checksum": v.checksum,
-            "status": v.status,
-        } for k, v in self._manifests.items()}
+        data = {
+            k: {
+                "backup_id": v.backup_id,
+                "name": v.name,
+                "created_at": v.created_at,
+                "size_bytes": v.size_bytes,
+                "file_count": v.file_count,
+                "description": v.description,
+                "tags": v.tags,
+                "checksum": v.checksum,
+                "status": v.status,
+            }
+            for k, v in self._manifests.items()
+        }
         self._manifest_file.write_text(json.dumps(data, indent=2))
 
     def create_backup(
@@ -242,21 +245,24 @@ class BackupScheduler:
                 self._schedules = {}
 
     def _save_schedules(self):
-        data = {k: {
-            "schedule_id": v.schedule_id,
-            "name": v.name,
-            "source_dirs": v.source_dirs,
-            "cron_expr": v.cron_expr,
-            "interval_seconds": v.interval_seconds,
-            "description": v.description,
-            "tags": v.tags,
-            "enabled": v.enabled,
-            "created_at": v.created_at,
-            "last_run_at": v.last_run_at,
-            "next_run_at": v.next_run_at,
-            "run_count": v.run_count,
-            "last_backup_id": v.last_backup_id,
-        } for k, v in self._schedules.items()}
+        data = {
+            k: {
+                "schedule_id": v.schedule_id,
+                "name": v.name,
+                "source_dirs": v.source_dirs,
+                "cron_expr": v.cron_expr,
+                "interval_seconds": v.interval_seconds,
+                "description": v.description,
+                "tags": v.tags,
+                "enabled": v.enabled,
+                "created_at": v.created_at,
+                "last_run_at": v.last_run_at,
+                "next_run_at": v.next_run_at,
+                "run_count": v.run_count,
+                "last_backup_id": v.last_backup_id,
+            }
+            for k, v in self._schedules.items()
+        }
         self._manifest_file.write_text(json.dumps(data, indent=2))
 
     def create_schedule(
@@ -346,9 +352,17 @@ class BackupScheduler:
             due = [s for s in self._schedules.values() if s.enabled and s.next_run_at <= now]
 
         for schedule in due:
-            valid_dirs: list[str | Path] = [d for d in schedule.source_dirs if os.path.exists(os.path.expanduser(d))]
+            valid_dirs: list[str | Path] = [
+                d for d in schedule.source_dirs if os.path.exists(os.path.expanduser(d))
+            ]
             if not valid_dirs:
-                results.append({"schedule_id": schedule.schedule_id, "success": False, "error": "No valid source dirs"})
+                results.append(
+                    {
+                        "schedule_id": schedule.schedule_id,
+                        "success": False,
+                        "error": "No valid source dirs",
+                    }
+                )
                 continue
 
             manifest = self._manager.create_backup(
@@ -365,13 +379,15 @@ class BackupScheduler:
                 schedule.last_backup_id = manifest.backup_id
                 self._save_schedules()
 
-            results.append({
-                "schedule_id": schedule.schedule_id,
-                "success": True,
-                "backup_id": manifest.backup_id,
-                "name": manifest.name,
-                "size_bytes": manifest.size_bytes,
-            })
+            results.append(
+                {
+                    "schedule_id": schedule.schedule_id,
+                    "success": True,
+                    "backup_id": manifest.backup_id,
+                    "name": manifest.name,
+                    "size_bytes": manifest.size_bytes,
+                }
+            )
 
         return results
 

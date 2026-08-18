@@ -4,9 +4,10 @@ Chains: Vein → Immune → Sense → Soul (Knowledge)
 One upload, automatic multi-organ processing.
 """
 
-import time
 import logging
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+import time
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from src.nerve.event_bridge import push_event
@@ -17,8 +18,10 @@ logger = logging.getLogger(__name__)
 
 # ── Request Schemas ────────────────────────────────────────
 
+
 class PipelineRunRequest(BaseModel):
     """Run a pipeline on an existing Vein file."""
+
     file_id: str
     pipeline: str = "auto"  # "auto", "ocr", "asr", "text", "full"
     user_id: str = "default"
@@ -51,9 +54,13 @@ def _detect_pipeline(mime_type: str, filename: str) -> str:
         return "video"
     # Text-based files
     text_types = {
-        "text/", "application/json", "application/xml",
-        "application/javascript", "application/x-yaml",
-        "application/yaml", "application/pdf",
+        "text/",
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/x-yaml",
+        "application/yaml",
+        "application/pdf",
         "application/msword",
         "application/vnd.openxmlformats-officedocument",
     }
@@ -76,6 +83,7 @@ async def _step_immune_scan(text: str) -> dict:
     """Run content through Immune system."""
     try:
         from src.immune.moderator import ContentModerator
+
         moderator = ContentModerator()
         result = moderator.moderate(text)
         return {
@@ -91,11 +99,14 @@ async def _step_immune_scan(text: str) -> dict:
         return {"step": "immune", "status": "skipped", "error": str(e)}
 
 
-async def _step_sense_extract(data: bytes, mime_type: str, filename: str, pipeline_type: str) -> dict:
+async def _step_sense_extract(
+    data: bytes, mime_type: str, filename: str, pipeline_type: str
+) -> dict:
     """Run content through Sense system for extraction."""
     try:
         if pipeline_type == "ocr":
             from src.sense.ocr import OCREngine
+
             engine = OCREngine()
             result = engine.image_to_text(data)
             return {
@@ -108,8 +119,11 @@ async def _step_sense_extract(data: bytes, mime_type: str, filename: str, pipeli
             }
         elif pipeline_type == "asr":
             from src.sense.asr import ASREngine
+
             engine = ASREngine()
-            result = await engine.transcribe_async(data, format=filename.rsplit(".", 1)[-1] if "." in filename else "wav")
+            result = await engine.transcribe_async(
+                data, format=filename.rsplit(".", 1)[-1] if "." in filename else "wav"
+            )
             return {
                 "step": "sense-asr",
                 "status": "ok",
@@ -139,6 +153,7 @@ async def _step_sense_extract(data: bytes, mime_type: str, filename: str, pipeli
             }
         elif pipeline_type == "video":
             from src.sense.multimodal import MultimodalAnalyzer
+
             analyzer = MultimodalAnalyzer()
             result = analyzer.analyze_video(data)
             return {
@@ -151,7 +166,11 @@ async def _step_sense_extract(data: bytes, mime_type: str, filename: str, pipeli
                 "codec": result.codec,
             }
         else:
-            return {"step": "sense", "status": "skipped", "reason": f"Unknown pipeline: {pipeline_type}"}
+            return {
+                "step": "sense",
+                "status": "skipped",
+                "reason": f"Unknown pipeline: {pipeline_type}",
+            }
     except Exception as e:
         logger.warning(f"Sense extraction failed: {e}")
         return {"step": "sense", "status": "error", "error": str(e)}
@@ -160,11 +179,12 @@ async def _step_sense_extract(data: bytes, mime_type: str, filename: str, pipeli
 async def _step_knowledge_import(title: str, content: str, tags: list[str], user_id: str) -> dict:
     """Import extracted content into the knowledge base."""
     try:
-        from src.services.knowledge import create_knowledge
+        import uuid
+
+        from src.database.postgres import db_pool
         from src.models.knowledge import KnowledgeCreate
         from src.services.auth import register_user
-        from src.database.postgres import db_pool
-        import uuid
+        from src.services.knowledge import create_knowledge
 
         if not content or len(content.strip()) < 10:
             return {"step": "knowledge", "status": "skipped", "reason": "Content too short"}
@@ -176,14 +196,10 @@ async def _step_knowledge_import(title: str, content: str, tags: list[str], user
             uid = uuid.uuid5(uuid.NAMESPACE_DNS, user_id)
 
         # Ensure the user exists in the database
-        existing = await db_pool.fetchrow(
-            "SELECT id FROM users WHERE id = $1", str(uid)
-        )
+        existing = await db_pool.fetchrow("SELECT id FROM users WHERE id = $1", str(uid))
         if not existing:
             # Try to find by username
-            by_name = await db_pool.fetchrow(
-                "SELECT id FROM users WHERE username = $1", user_id
-            )
+            by_name = await db_pool.fetchrow("SELECT id FROM users WHERE username = $1", user_id)
             if by_name:
                 uid = uuid.UUID(by_name["id"])
             else:
@@ -204,7 +220,11 @@ async def _step_knowledge_import(title: str, content: str, tags: list[str], user
                     if by_name:
                         uid = uuid.UUID(by_name["id"])
                     else:
-                        return {"step": "knowledge", "status": "error", "error": f"Cannot create user: {reg_err}"}
+                        return {
+                            "step": "knowledge",
+                            "status": "error",
+                            "error": f"Cannot create user: {reg_err}",
+                        }
 
         data = KnowledgeCreate(
             title=title,
@@ -231,6 +251,7 @@ async def _step_knowledge_import(title: str, content: str, tags: list[str], user
 
 
 # ── Pipeline Endpoints ────────────────────────────────────
+
 
 @router.post("/upload")
 async def pipeline_upload(
@@ -267,6 +288,7 @@ async def pipeline_upload(
     # Step 1: Store in Vein
     try:
         from src.vein.file_store import FileStore
+
         store = FileStore()
         meta = store.store(
             data=data,
@@ -274,14 +296,16 @@ async def pipeline_upload(
             mime_type=mime_type,
             tags=tag_list + ["pipeline", pipeline],
         )
-        steps.append({
-            "step": "vein",
-            "status": "ok",
-            "file_id": meta.file_id,
-            "name": meta.name,
-            "size": meta.size,
-            "content_hash": meta.content_hash,
-        })
+        steps.append(
+            {
+                "step": "vein",
+                "status": "ok",
+                "file_id": meta.file_id,
+                "name": meta.name,
+                "size": meta.size,
+                "content_hash": meta.content_hash,
+            }
+        )
         file_id = meta.file_id
     except Exception as e:
         steps.append({"step": "vein", "status": "error", "error": str(e)})
@@ -315,11 +339,15 @@ async def pipeline_upload(
                 "finished_at": time.time(),
                 "error": "Content blocked by Immune: high risk",
             }
-            push_event({
-                "organ": "pipeline", "emoji": "🔄", "type": "pipeline_blocked",
-                "summary": f"🚫 Pipeline blocked: high-risk content in {filename}",
-                "detail": {"pipeline_id": pipeline_id, "file_id": file_id},
-            })
+            push_event(
+                {
+                    "organ": "pipeline",
+                    "emoji": "🔄",
+                    "type": "pipeline_blocked",
+                    "summary": f"🚫 Pipeline blocked: high-risk content in {filename}",
+                    "detail": {"pipeline_id": pipeline_id, "file_id": file_id},
+                }
+            )
             return {
                 "pipeline_id": pipeline_id,
                 "status": "blocked",
@@ -358,17 +386,21 @@ async def pipeline_upload(
     _pipeline_history[pipeline_id] = result
 
     # Emit event
-    push_event({
-        "organ": "pipeline", "emoji": "🔄", "type": "pipeline_completed",
-        "summary": f"✅ Pipeline [{pipeline}] completed: {filename} ({round((finished_at - started_at) * 1000)}ms)",
-        "detail": {
-            "pipeline_id": pipeline_id,
-            "file_id": file_id,
-            "pipeline_type": pipeline,
-            "steps_completed": sum(1 for s in steps if s.get("status") == "ok"),
-            "steps_total": len(steps),
-        },
-    })
+    push_event(
+        {
+            "organ": "pipeline",
+            "emoji": "🔄",
+            "type": "pipeline_completed",
+            "summary": f"✅ Pipeline [{pipeline}] completed: {filename} ({round((finished_at - started_at) * 1000)}ms)",
+            "detail": {
+                "pipeline_id": pipeline_id,
+                "file_id": file_id,
+                "pipeline_type": pipeline,
+                "steps_completed": sum(1 for s in steps if s.get("status") == "ok"),
+                "steps_total": len(steps),
+            },
+        }
+    )
 
     return result
 
@@ -383,18 +415,21 @@ async def pipeline_run(req: PipelineRunRequest):
     # Load file from Vein
     try:
         from src.vein.file_store import FileStore
+
         store = FileStore()
         result = store.retrieve(req.file_id)
         if not result:
             raise HTTPException(404, "File not found in Vein")
         data, meta = result
-        steps.append({
-            "step": "vein",
-            "status": "ok",
-            "file_id": meta.file_id,
-            "name": meta.name,
-            "size": meta.size,
-        })
+        steps.append(
+            {
+                "step": "vein",
+                "status": "ok",
+                "file_id": meta.file_id,
+                "name": meta.name,
+                "size": meta.size,
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -444,11 +479,15 @@ async def pipeline_run(req: PipelineRunRequest):
 
     _pipeline_history[pipeline_id] = result
 
-    push_event({
-        "organ": "pipeline", "emoji": "🔄", "type": "pipeline_completed",
-        "summary": f"✅ Pipeline [{pipeline}] completed: {meta.name}",
-        "detail": {"pipeline_id": pipeline_id, "file_id": req.file_id},
-    })
+    push_event(
+        {
+            "organ": "pipeline",
+            "emoji": "🔄",
+            "type": "pipeline_completed",
+            "summary": f"✅ Pipeline [{pipeline}] completed: {meta.name}",
+            "detail": {"pipeline_id": pipeline_id, "file_id": req.file_id},
+        }
+    )
 
     return result
 
@@ -480,15 +519,36 @@ async def list_pipeline_types():
             {"key": "video", "label": "视频分析", "description": "视频→元数据+抽帧"},
         ],
         "stages": [
-            {"key": "vein", "label": "血管存储", "emoji": "🩸", "description": "文件存储+去重+版本控制"},
-            {"key": "sense", "label": "感官提取", "emoji": "👁", "description": "OCR/ASR/文本内容提取"},
-            {"key": "immune", "label": "免疫扫描", "emoji": "🛡", "description": "敏感数据检测+风控"},
-            {"key": "knowledge", "label": "知识入库", "emoji": "🧠", "description": "RAG向量化+全文索引"},
+            {
+                "key": "vein",
+                "label": "血管存储",
+                "emoji": "🩸",
+                "description": "文件存储+去重+版本控制",
+            },
+            {
+                "key": "sense",
+                "label": "感官提取",
+                "emoji": "👁",
+                "description": "OCR/ASR/文本内容提取",
+            },
+            {
+                "key": "immune",
+                "label": "免疫扫描",
+                "emoji": "🛡",
+                "description": "敏感数据检测+风控",
+            },
+            {
+                "key": "knowledge",
+                "label": "知识入库",
+                "emoji": "🧠",
+                "description": "RAG向量化+全文索引",
+            },
         ],
     }
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def pipeline_stats():
@@ -521,6 +581,7 @@ async def pipeline_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def pipeline_health():

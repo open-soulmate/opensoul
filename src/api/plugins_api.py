@@ -2,7 +2,8 @@
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Pydantic models ──────────────────────────────────────────────
+
 
 class PluginInstallRequest(BaseModel):
     name: str
@@ -39,6 +41,7 @@ class SidebarEntry(BaseModel):
 
 
 # ─── Helper ────────────────────────────────────────────────────────
+
 
 async def _ensure_table():
     await db_pool.execute(
@@ -68,13 +71,16 @@ def _row_to_dict(row) -> dict:
 
 # ─── Endpoints ─────────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def plugins_health():
     """OpenPlugins health check."""
     await _ensure_table()
     rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM plugins")
     total = rows[0]["cnt"] if rows else 0
-    enabled_rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM plugins WHERE status = 'enabled'")
+    enabled_rows = await db_pool.fetch(
+        "SELECT COUNT(*) as cnt FROM plugins WHERE status = 'enabled'"
+    )
     enabled = enabled_rows[0]["cnt"] if enabled_rows else 0
     return {
         "status": "ok",
@@ -97,9 +103,7 @@ async def list_plugins():
 async def get_sidebar_entries():
     """Return sidebar entries from all enabled plugins (DB + file-based)."""
     await _ensure_table()
-    rows = await db_pool.fetch(
-        "SELECT manifest_json FROM plugins WHERE status = 'enabled'"
-    )
+    rows = await db_pool.fetch("SELECT manifest_json FROM plugins WHERE status = 'enabled'")
     entries: list[SidebarEntry] = []
     for row in rows:
         try:
@@ -114,6 +118,7 @@ async def get_sidebar_entries():
 
     # Also include file-based plugins from ~/.openmate/plugins/
     from src.plugin_loader import loaded_plugins
+
     for plugin in loaded_plugins:
         for item in plugin.get("sidebar", []):
             try:
@@ -129,7 +134,7 @@ async def get_sidebar_entries():
 async def install_plugin(req: PluginInstallRequest):
     """Install a new plugin from manifest JSON."""
     await _ensure_table()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     existing = await db_pool.fetchrow("SELECT id FROM plugins WHERE name = $1", req.name)
     if existing:
@@ -138,7 +143,12 @@ async def install_plugin(req: PluginInstallRequest):
     row = await db_pool.fetchrow(
         """INSERT INTO plugins (name, version, description, type, manifest_json, status, installed_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, 'enabled', $6, $6) RETURNING *""",
-        req.name, req.version, req.description, req.type, json.dumps(req.manifest), now,
+        req.name,
+        req.version,
+        req.description,
+        req.type,
+        json.dumps(req.manifest),
+        now,
     )
     return _row_to_dict(row)
 
@@ -160,10 +170,12 @@ async def toggle_plugin(plugin_id: int, req: PluginPatchRequest):
     if req.status not in ("enabled", "disabled"):
         raise HTTPException(status_code=400, detail="status must be 'enabled' or 'disabled'")
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     row = await db_pool.fetchrow(
         "UPDATE plugins SET status = $1, updated_at = $2 WHERE id = $3 RETURNING *",
-        req.status, now, plugin_id,
+        req.status,
+        now,
+        plugin_id,
     )
     if not row:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -184,7 +196,7 @@ async def uninstall_plugin(plugin_id: int):
 async def update_plugin_config(plugin_id: int, req: PluginConfigRequest):
     """Update a plugin's manifest/configuration."""
     await _ensure_table()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     existing = await db_pool.fetchrow("SELECT manifest_json FROM plugins WHERE id = $1", plugin_id)
     if not existing:
@@ -199,6 +211,8 @@ async def update_plugin_config(plugin_id: int, req: PluginConfigRequest):
 
     row = await db_pool.fetchrow(
         "UPDATE plugins SET manifest_json = $1, updated_at = $2 WHERE id = $3 RETURNING *",
-        json.dumps(current_manifest), now, plugin_id,
+        json.dumps(current_manifest),
+        now,
+        plugin_id,
     )
     return _row_to_dict(row)

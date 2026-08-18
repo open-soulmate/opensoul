@@ -1,9 +1,9 @@
 import json
 from uuid import UUID
 
+from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
-from src.database.meilisearch import meili_client
 
 try:
     from qdrant_client.models import PointStruct
@@ -11,17 +11,23 @@ except ImportError:
     PointStruct = None
 from src.models.knowledge import KnowledgeCreate, KnowledgeUpdate
 from src.services.chunking import smart_chunk
-from src.services.extraction import extract_text_from_file
 from src.services.embedding import get_embeddings_batch
 
 
 async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
     import uuid as _uuid
+
     knowledge_id = str(_uuid.uuid4())
     await db_pool.execute(
         "INSERT INTO knowledge (id, title, content, source, content_type, metadata, user_id) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        knowledge_id, data.title, data.content, data.source, data.content_type, json.dumps(data.metadata or {}), str(user_id),
+        knowledge_id,
+        data.title,
+        data.content,
+        data.source,
+        data.content_type,
+        json.dumps(data.metadata or {}),
+        str(user_id),
     )
     row = await db_pool.fetchrow("SELECT * FROM knowledge WHERE id = $1", knowledge_id)
 
@@ -30,7 +36,9 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
         tag_id = str(_uuid.uuid4())
         await db_pool.execute(
             "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            tag_id, tag_name, str(user_id),
+            tag_id,
+            tag_name,
+            str(user_id),
         )
         tag = await db_pool.fetchrow(
             "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, str(user_id)
@@ -51,40 +59,53 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
         for chunk, embedding in zip(chunks, embeddings):
             point_id = f"{knowledge_id}_{chunk.index}"
             if PointStruct is not None:
-                points.append(PointStruct(
-                    id=point_id,
-                    vector=embedding,
-                    payload={
-                        "knowledge_id": str(knowledge_id),
-                        "chunk_index": chunk.index,
-                        "content": chunk.content,
-                        "user_id": str(user_id),
-                    },
-                ))
+                points.append(
+                    PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload={
+                            "knowledge_id": str(knowledge_id),
+                            "chunk_index": chunk.index,
+                            "content": chunk.content,
+                            "user_id": str(user_id),
+                        },
+                    )
+                )
             chunk_id = str(_uuid.uuid4())
             await db_pool.execute(
                 "INSERT INTO knowledge_chunks (id, knowledge_id, chunk_index, content, embedding_id, token_count) "
                 "VALUES ($1, $2, $3, $4, $5, $6)",
-                chunk_id, knowledge_id, chunk.index, chunk.content, point_id, len(chunk.content.split()),
+                chunk_id,
+                knowledge_id,
+                chunk.index,
+                chunk.content,
+                point_id,
+                len(chunk.content.split()),
             )
         if points:
             qdrant_client.upsert_points(points)
 
     # Index in Meilisearch (always, even if no chunks)
     if meili_client.AVAILABLE:
-        meili_client.add_documents([{
-            "id": str(knowledge_id),
-            "title": data.title,
-            "content": data.content[:5000],
-            "tags": data.tags,
-            "user_id": str(user_id),
-            "content_type": data.content_type,
-        }])
+        meili_client.add_documents(
+            [
+                {
+                    "id": str(knowledge_id),
+                    "title": data.title,
+                    "content": data.content[:5000],
+                    "tags": data.tags,
+                    "user_id": str(user_id),
+                    "content_type": data.content_type,
+                }
+            ]
+        )
 
     d = dict(row)
     if isinstance(d.get("metadata"), str):
-        try: d["metadata"] = json.loads(d["metadata"])
-        except: d["metadata"] = {}
+        try:
+            d["metadata"] = json.loads(d["metadata"])
+        except:
+            d["metadata"] = {}
     return d
 
 
@@ -100,8 +121,10 @@ async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
     )
     d = dict(row)
     if isinstance(d.get("metadata"), str):
-        try: d["metadata"] = json.loads(d["metadata"])
-        except: d["metadata"] = {}
+        try:
+            d["metadata"] = json.loads(d["metadata"])
+        except:
+            d["metadata"] = {}
     return d if row else None
 
 
@@ -118,12 +141,12 @@ async def list_knowledge(
     idx = 2
 
     if content_type:
-        conditions.append(f"k.content_type = ?")
+        conditions.append("k.content_type = ?")
         values.append(content_type)
         idx += 1
 
     if domain:
-        conditions.append(f"k.metadata IS NOT NULL")
+        conditions.append("k.metadata IS NOT NULL")
         values.append(domain)
         idx += 1
 
@@ -152,8 +175,10 @@ async def list_knowledge(
     for r in rows:
         d = dict(r)
         if isinstance(d.get("metadata"), str):
-            try: d["metadata"] = json.loads(d["metadata"])
-            except: d["metadata"] = {}
+            try:
+                d["metadata"] = json.loads(d["metadata"])
+            except:
+                d["metadata"] = {}
         result.append(d)
     return result
 
@@ -207,7 +232,8 @@ async def toggle_star(knowledge_id: UUID, user_id: UUID) -> dict | None:
     row = await db_pool.fetchrow(
         "UPDATE knowledge SET starred = NOT COALESCE(starred, FALSE), updated_at = NOW() "
         "WHERE id = $1 AND user_id = $2 RETURNING starred",
-        knowledge_id, str(user_id),
+        knowledge_id,
+        str(user_id),
     )
     if not row:
         return None
@@ -219,7 +245,8 @@ async def toggle_pin(knowledge_id: UUID, user_id: UUID) -> dict | None:
     row = await db_pool.fetchrow(
         "UPDATE knowledge SET pinned = NOT COALESCE(pinned, FALSE), updated_at = NOW() "
         "WHERE id = $1 AND user_id = $2 RETURNING pinned",
-        knowledge_id, str(user_id),
+        knowledge_id,
+        str(user_id),
     )
     if not row:
         return None

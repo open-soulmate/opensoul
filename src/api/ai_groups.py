@@ -1,10 +1,11 @@
 """AI群管理API — 基于Graph层四角色模型(advisor/executor/verifier/human)"""
+
 import json
 import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -106,14 +107,14 @@ class VerifyTaskRequest(BaseModel):
 
 
 class UpdateGroupRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
 
 
 class UpdateAgentRequest(BaseModel):
-    model: Optional[str] = None
-    temperature: Optional[float] = None
-    role: Optional[str] = None
+    model: str | None = None
+    temperature: float | None = None
+    role: str | None = None
 
 
 # ── Helper ───────────────────────────────────────────────
@@ -155,18 +156,18 @@ def auto_decompose_task(goal: str) -> list[dict]:
     return subtasks
 
 
-def select_agent_for_role(conn, group_id: str, role: str) -> Optional[str]:
+def select_agent_for_role(conn, group_id: str, role: str) -> str | None:
     """为指定角色选择可用Agent"""
     row = conn.execute(
         "SELECT agent_id FROM ai_group_agents WHERE group_id=? AND role=? AND status='online' LIMIT 1",
-        (group_id, role)
+        (group_id, role),
     ).fetchone()
     if row:
         return row["agent_id"]
     # 回退：选任意在线Agent
     row = conn.execute(
         "SELECT agent_id FROM ai_group_agents WHERE group_id=? AND status='online' LIMIT 1",
-        (group_id,)
+        (group_id,),
     ).fetchone()
     return row["agent_id"] if row else None
 
@@ -180,12 +181,20 @@ def create_group(req: CreateGroupRequest):
         now = datetime.now().isoformat()
         conn.execute(
             "INSERT INTO ai_groups (id, name, description, status, created_at) VALUES (?,?,?,?,?)",
-            (group_id, req.name, req.description, "active", now)
+            (group_id, req.name, req.description, "active", now),
         )
         for agent in req.agents:
             conn.execute(
                 "INSERT INTO ai_group_agents (id, group_id, agent_id, name, role, model, status) VALUES (?,?,?,?,?,?,?)",
-                (str(uuid.uuid4())[:8], group_id, agent.agent_id, agent.name, agent.role, agent.model, "online")
+                (
+                    str(uuid.uuid4())[:8],
+                    group_id,
+                    agent.agent_id,
+                    agent.name,
+                    agent.role,
+                    agent.model,
+                    "online",
+                ),
             )
         conn.commit()
         return {"id": group_id, "name": req.name, "status": "active"}
@@ -197,10 +206,14 @@ def create_group(req: CreateGroupRequest):
 def list_groups():
     conn = get_db()
     try:
-        groups = rows_to_list(conn.execute("SELECT * FROM ai_groups ORDER BY created_at DESC").fetchall())
+        groups = rows_to_list(
+            conn.execute("SELECT * FROM ai_groups ORDER BY created_at DESC").fetchall()
+        )
         for g in groups:
             g["agents"] = rows_to_list(
-                conn.execute("SELECT * FROM ai_group_agents WHERE group_id=?", (g["id"],)).fetchall()
+                conn.execute(
+                    "SELECT * FROM ai_group_agents WHERE group_id=?", (g["id"],)
+                ).fetchall()
             )
             g["task_count"] = conn.execute(
                 "SELECT COUNT(*) as c FROM ai_group_tasks WHERE group_id=?", (g["id"],)
@@ -214,14 +227,19 @@ def list_groups():
 def get_group(group_id: str):
     conn = get_db()
     try:
-        group = row_to_dict(conn.execute("SELECT * FROM ai_groups WHERE id=?", (group_id,)).fetchone())
+        group = row_to_dict(
+            conn.execute("SELECT * FROM ai_groups WHERE id=?", (group_id,)).fetchone()
+        )
         if not group:
             raise HTTPException(404, "AI群不存在")
         group["agents"] = rows_to_list(
             conn.execute("SELECT * FROM ai_group_agents WHERE group_id=?", (group_id,)).fetchall()
         )
         group["tasks"] = rows_to_list(
-            conn.execute("SELECT * FROM ai_group_tasks WHERE group_id=? ORDER BY created_at DESC", (group_id,)).fetchall()
+            conn.execute(
+                "SELECT * FROM ai_group_tasks WHERE group_id=? ORDER BY created_at DESC",
+                (group_id,),
+            ).fetchall()
         )
         return group
     finally:
@@ -242,8 +260,16 @@ def submit_task(group_id: str, req: SubmitTaskRequest):
         # 创建主任务
         conn.execute(
             "INSERT INTO ai_group_tasks (id, group_id, goal, constraints, completion_criteria, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (task_id, group_id, req.goal, json.dumps(req.constraints, ensure_ascii=False),
-             json.dumps(req.completion_criteria, ensure_ascii=False), "planning", now, now)
+            (
+                task_id,
+                group_id,
+                req.goal,
+                json.dumps(req.constraints, ensure_ascii=False),
+                json.dumps(req.completion_criteria, ensure_ascii=False),
+                "planning",
+                now,
+                now,
+            ),
         )
 
         # 自动分解子任务
@@ -252,7 +278,16 @@ def submit_task(group_id: str, req: SubmitTaskRequest):
             agent_id = select_agent_for_role(conn, group_id, st["role"])
             conn.execute(
                 "INSERT INTO ai_group_tasks (id, group_id, parent_task_id, goal, status, assigned_agent_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                (str(uuid.uuid4())[:8], group_id, task_id, st["goal"], "pending", agent_id, now, now)
+                (
+                    str(uuid.uuid4())[:8],
+                    group_id,
+                    task_id,
+                    st["goal"],
+                    "pending",
+                    agent_id,
+                    now,
+                    now,
+                ),
             )
 
         conn.commit()
@@ -266,11 +301,17 @@ def list_tasks(group_id: str):
     conn = get_db()
     try:
         tasks = rows_to_list(
-            conn.execute("SELECT * FROM ai_group_tasks WHERE group_id=? AND parent_task_id IS NULL ORDER BY created_at DESC", (group_id,)).fetchall()
+            conn.execute(
+                "SELECT * FROM ai_group_tasks WHERE group_id=? AND parent_task_id IS NULL ORDER BY created_at DESC",
+                (group_id,),
+            ).fetchall()
         )
         for t in tasks:
             t["subtasks"] = rows_to_list(
-                conn.execute("SELECT * FROM ai_group_tasks WHERE parent_task_id=? ORDER BY created_at", (t["id"],)).fetchall()
+                conn.execute(
+                    "SELECT * FROM ai_group_tasks WHERE parent_task_id=? ORDER BY created_at",
+                    (t["id"],),
+                ).fetchall()
             )
             t["constraints"] = json.loads(t.get("constraints", "[]"))
             t["completion_criteria"] = json.loads(t.get("completion_criteria", "[]"))
@@ -286,7 +327,7 @@ def assign_task(group_id: str, task_id: str, req: AssignTaskRequest):
         now = datetime.now().isoformat()
         conn.execute(
             "UPDATE ai_group_tasks SET assigned_agent_id=?, status='executing', updated_at=? WHERE id=? AND group_id=?",
-            (req.agent_id, now, task_id, group_id)
+            (req.agent_id, now, task_id, group_id),
         )
         conn.commit()
         return {"status": "executing", "assigned_to": req.agent_id}
@@ -301,7 +342,7 @@ def complete_task(group_id: str, task_id: str, req: CompleteTaskRequest):
         now = datetime.now().isoformat()
         conn.execute(
             "UPDATE ai_group_tasks SET result=?, quality_score=?, status='verifying', updated_at=? WHERE id=? AND group_id=?",
-            (req.result, req.quality_score, now, task_id, group_id)
+            (req.result, req.quality_score, now, task_id, group_id),
         )
         conn.commit()
         return {"status": "verifying", "quality_score": req.quality_score}
@@ -314,25 +355,27 @@ def verify_task(group_id: str, task_id: str, req: VerifyTaskRequest):
     conn = get_db()
     try:
         now = datetime.now().isoformat()
-        task = conn.execute("SELECT * FROM ai_group_tasks WHERE id=? AND group_id=?", (task_id, group_id)).fetchone()
+        task = conn.execute(
+            "SELECT * FROM ai_group_tasks WHERE id=? AND group_id=?", (task_id, group_id)
+        ).fetchone()
         if not task:
             raise HTTPException(404, "任务不存在")
 
         if req.passed:
             conn.execute(
                 "UPDATE ai_group_tasks SET status='completed', updated_at=? WHERE id=?",
-                (now, task_id)
+                (now, task_id),
             )
             # 检查所有子任务是否完成
             if task["parent_task_id"]:
                 pending = conn.execute(
                     "SELECT COUNT(*) as c FROM ai_group_tasks WHERE parent_task_id=? AND status!='completed'",
-                    (task["parent_task_id"],)
+                    (task["parent_task_id"],),
                 ).fetchone()["c"]
                 if pending == 0:
                     conn.execute(
                         "UPDATE ai_group_tasks SET status='completed', updated_at=? WHERE id=?",
-                        (now, task["parent_task_id"])
+                        (now, task["parent_task_id"]),
                     )
             conn.commit()
             return {"status": "completed"}
@@ -341,14 +384,19 @@ def verify_task(group_id: str, task_id: str, req: VerifyTaskRequest):
             if iteration >= task["max_iterations"]:
                 conn.execute(
                     "UPDATE ai_group_tasks SET status='failed', iteration=?, updated_at=? WHERE id=?",
-                    (iteration, now, task_id)
+                    (iteration, now, task_id),
                 )
                 conn.commit()
-                return {"status": "failed", "reason": req.reason, "iteration": iteration, "message": "已达最大迭代次数，升级到人工决策"}
+                return {
+                    "status": "failed",
+                    "reason": req.reason,
+                    "iteration": iteration,
+                    "message": "已达最大迭代次数，升级到人工决策",
+                }
             else:
                 conn.execute(
                     "UPDATE ai_group_tasks SET status='executing', iteration=?, result='', updated_at=? WHERE id=?",
-                    (iteration, now, task_id)
+                    (iteration, now, task_id),
                 )
                 conn.commit()
                 return {"status": "retry", "iteration": iteration, "reason": req.reason}
@@ -375,7 +423,15 @@ def add_agent(group_id: str, agent: AgentRole):
     try:
         conn.execute(
             "INSERT INTO ai_group_agents (id, group_id, agent_id, name, role, model, status) VALUES (?,?,?,?,?,?,?)",
-            (str(uuid.uuid4())[:8], group_id, agent.agent_id, agent.name, agent.role, agent.model, "online")
+            (
+                str(uuid.uuid4())[:8],
+                group_id,
+                agent.agent_id,
+                agent.name,
+                agent.role,
+                agent.model,
+                "online",
+            ),
         )
         conn.commit()
         return {"status": "added"}
@@ -412,8 +468,7 @@ def remove_agent(group_id: str, agent_id: str):
     conn = get_db()
     try:
         result = conn.execute(
-            "DELETE FROM ai_group_agents WHERE group_id=? AND agent_id=?",
-            (group_id, agent_id)
+            "DELETE FROM ai_group_agents WHERE group_id=? AND agent_id=?", (group_id, agent_id)
         )
         conn.commit()
         if result.rowcount == 0:
@@ -428,8 +483,7 @@ def update_agent(group_id: str, agent_id: str, req: UpdateAgentRequest):
     conn = get_db()
     try:
         agent = conn.execute(
-            "SELECT id FROM ai_group_agents WHERE group_id=? AND agent_id=?",
-            (group_id, agent_id)
+            "SELECT id FROM ai_group_agents WHERE group_id=? AND agent_id=?", (group_id, agent_id)
         ).fetchone()
         if not agent:
             raise HTTPException(404, "Agent不存在")
@@ -448,7 +502,7 @@ def update_agent(group_id: str, agent_id: str, req: UpdateAgentRequest):
         params.extend([group_id, agent_id])
         conn.execute(
             f"UPDATE ai_group_agents SET {', '.join(updates)} WHERE group_id=? AND agent_id=?",
-            params
+            params,
         )
         conn.commit()
         return {"status": "updated"}

@@ -1,7 +1,7 @@
 """Trajectory tracking API — records and replays agent execution events."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 # ── Request Schemas ──────────────────────────────────────────
+
 
 class EventCreateRequest(BaseModel):
     session_id: str
@@ -60,28 +61,35 @@ def _row_to_dict(row) -> dict:
 
 # ── POST /api/trajectory/events — 记录事件 ──────────────────
 
+
 @router.post("/events")
 async def record_event(req: EventCreateRequest):
     """Record a single trajectory event."""
     await _ensure_table()
-    ts = datetime.now(timezone.utc).isoformat()
-    cursor = await db_pool.execute(
+    ts = datetime.now(UTC).isoformat()
+    await db_pool.execute(
         """INSERT INTO trajectory_events
            (session_id, agent_id, event_type, content, metadata, timestamp)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        req.session_id, req.agent_id, req.event_type,
-        req.content, json.dumps(req.metadata), ts,
+        req.session_id,
+        req.agent_id,
+        req.event_type,
+        req.content,
+        json.dumps(req.metadata),
+        ts,
     )
     # Extract the autoincremented id from the result string
     # db_pool.execute returns "INSERT 0 {rowcount}"
     row = await db_pool.fetchrow(
         "SELECT * FROM trajectory_events WHERE session_id = ? AND timestamp = ? ORDER BY id DESC LIMIT 1",
-        req.session_id, ts,
+        req.session_id,
+        ts,
     )
     return _row_to_dict(row) if row else {"session_id": req.session_id, "timestamp": ts}
 
 
 # ── GET /api/trajectory/sessions — 列出所有有轨迹的会话 ─────
+
 
 @router.get("/sessions")
 async def list_sessions(
@@ -100,7 +108,8 @@ async def list_sessions(
            GROUP BY session_id
            ORDER BY last_event DESC
            LIMIT ? OFFSET ?""",
-        limit, offset,
+        limit,
+        offset,
     )
     total_row = await db_pool.fetchrow(
         "SELECT COUNT(DISTINCT session_id) as cnt FROM trajectory_events"
@@ -115,6 +124,7 @@ async def list_sessions(
 
 # ── GET /api/trajectory/sessions/{session_id} — 获取会话完整轨迹 ─
 
+
 @router.get("/sessions/{session_id}")
 async def get_session_trajectory(
     session_id: str,
@@ -127,7 +137,8 @@ async def get_session_trajectory(
            WHERE session_id = ?
            ORDER BY timestamp ASC
            LIMIT ?""",
-        session_id, limit,
+        session_id,
+        limit,
     )
     if not rows:
         raise HTTPException(404, "Session not found or has no events")
@@ -139,6 +150,7 @@ async def get_session_trajectory(
 
 
 # ── GET /api/trajectory/sessions/{session_id}/replay — 回放轨迹 ─
+
 
 @router.get("/sessions/{session_id}/replay")
 async def replay_session(
@@ -153,7 +165,8 @@ async def replay_session(
             """SELECT * FROM trajectory_events
                WHERE session_id = ? AND id >= ?
                ORDER BY timestamp ASC""",
-            session_id, from_event,
+            session_id,
+            from_event,
         )
     else:
         rows = await db_pool.fetch(
@@ -174,7 +187,9 @@ async def replay_session(
                 "agent_id": r["agent_id"],
                 "event_type": r["event_type"],
                 "content": r["content"],
-                "metadata": json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"],
+                "metadata": json.loads(r["metadata"])
+                if isinstance(r["metadata"], str)
+                else r["metadata"],
                 "timestamp": r["timestamp"],
             }
             for i, r in enumerate(rows)

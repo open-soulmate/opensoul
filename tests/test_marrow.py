@@ -1,7 +1,5 @@
 """Integration tests for OpenMarrow (骨髓) — backup, restore, export/import."""
 
-import pytest
-
 
 class TestMarrowHealth:
     def test_health(self, client):
@@ -19,11 +17,14 @@ class TestMarrowBackup:
         assert resp.status_code == 200
 
     def test_create_and_delete_backup(self, client):
-        resp = client.post("/api/marrow/backup", json={
-            "name": "test_backup_integration",
-            "description": "Created by integration test",
-            "source_dirs": ["/home/climbing/opensoul/data"],
-        })
+        resp = client.post(
+            "/api/marrow/backup",
+            json={
+                "name": "test_backup_integration",
+                "description": "Created by integration test",
+                "source_dirs": ["/home/climbing/opensoul/data"],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "backup_id" in data
@@ -44,10 +45,13 @@ class TestMarrowExport:
         assert resp.status_code == 200
 
     def test_export_data(self, client):
-        resp = client.post("/api/marrow/export", json={
-            "format": "json",
-            "data": [{"type": "knowledge", "name": "test"}],
-        })
+        resp = client.post(
+            "/api/marrow/export",
+            json={
+                "format": "json",
+                "data": [{"type": "knowledge", "name": "test"}],
+            },
+        )
         assert resp.status_code == 200
 
 
@@ -58,13 +62,16 @@ class TestMarrowSchedules:
         assert "schedules" in resp.json()
 
     def test_create_and_delete_schedule(self, client):
-        resp = client.post("/api/marrow/schedules", json={
-            "name": "test_schedule",
-            "source_dirs": ["/home/climbing/opensoul/data"],
-            "interval": "daily",
-            "description": "Integration test schedule",
-            "tags": ["test"],
-        })
+        resp = client.post(
+            "/api/marrow/schedules",
+            json={
+                "name": "test_schedule",
+                "source_dirs": ["/home/climbing/opensoul/data"],
+                "interval": "daily",
+                "description": "Integration test schedule",
+                "tags": ["test"],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "schedule_id" in data
@@ -93,11 +100,14 @@ class TestMarrowSchedules:
         assert resp.status_code == 200
 
     def test_create_schedule_invalid_interval(self, client):
-        resp = client.post("/api/marrow/schedules", json={
-            "name": "bad_schedule",
-            "source_dirs": ["/tmp"],
-            "interval": "invalid",
-        })
+        resp = client.post(
+            "/api/marrow/schedules",
+            json={
+                "name": "bad_schedule",
+                "source_dirs": ["/tmp"],
+                "interval": "invalid",
+            },
+        )
         assert resp.status_code == 400
 
     def test_health_includes_scheduler(self, client):

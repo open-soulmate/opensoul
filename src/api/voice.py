@@ -1,6 +1,7 @@
 """OpenVoice API — 声带系统：TTS文字转语音、语音角色管理。"""
 
 import time
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -17,15 +18,16 @@ profiles = ProfileManager()
 
 # ── Request Schemas ────────────────────────────────────────
 
+
 class SynthesizeRequest(BaseModel):
     text: str
-    profile_id: str = ""         # Use a saved profile
-    voice_id: str = ""           # Or directly specify voice
+    profile_id: str = ""  # Use a saved profile
+    voice_id: str = ""  # Or directly specify voice
     rate: str = "+0%"
     pitch: str = "+0Hz"
     volume: str = "+0%"
-    engine: str = ""             # Force engine, or auto
-    save_output: bool = False    # Save to output directory
+    engine: str = ""  # Force engine, or auto
+    save_output: bool = False  # Save to output directory
     output_name: str = ""
 
 
@@ -53,6 +55,7 @@ class ProfileUpdateRequest(BaseModel):
 
 
 # ── TTS Endpoints ──────────────────────────────────────────
+
 
 @router.post("/synthesize")
 async def synthesize_text(req: SynthesizeRequest):
@@ -169,6 +172,7 @@ async def list_voices(language: str = Query(default="")):
 
 # ── Profile Endpoints ──────────────────────────────────────
 
+
 @router.get("/profiles")
 async def list_profiles(language: str = Query(default="")):
     """List all voice profiles."""
@@ -249,6 +253,7 @@ async def delete_profile(profile_id: str):
 
 # ── Output Endpoints ───────────────────────────────────────
 
+
 @router.get("/outputs")
 async def list_outputs():
     """List saved TTS output files."""
@@ -264,6 +269,7 @@ async def delete_output(filename: str):
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def voice_health():

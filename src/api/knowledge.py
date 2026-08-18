@@ -1,15 +1,15 @@
-import json
 import os
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 
-from src.models.knowledge import KnowledgeCreate, KnowledgeUpdate, KnowledgeResponse
+from src.database.postgres import db_pool
+from src.models.knowledge import KnowledgeCreate, KnowledgeResponse, KnowledgeUpdate
 from src.services import knowledge as knowledge_service
 from src.services.extraction import extract_text_from_file
-from src.database.postgres import db_pool
 
 router = APIRouter()
+
 
 @router.get("/health")
 async def health():
@@ -21,9 +21,12 @@ async def knowledge_stats():
     """Get knowledge base statistics."""
     try:
         total = await db_pool.fetchval("SELECT COUNT(*) FROM knowledge") or 0
-        recent = await db_pool.fetchval(
-            "SELECT COUNT(*) FROM knowledge WHERE created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')"
-        ) or 0
+        recent = (
+            await db_pool.fetchval(
+                "SELECT COUNT(*) FROM knowledge WHERE created_at > EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')"
+            )
+            or 0
+        )
         by_user = await db_pool.fetch(
             "SELECT user_id, COUNT(*) as cnt FROM knowledge GROUP BY user_id ORDER BY cnt DESC LIMIT 10"
         )
@@ -35,7 +38,13 @@ async def knowledge_stats():
             "top_users": [{"user_id": r["user_id"], "count": r["cnt"]} for r in (by_user or [])],
         }
     except Exception:
-        return {"status": "ok", "component": "OpenKnowledge", "total_entries": 0, "recent_24h": 0, "top_users": []}
+        return {
+            "status": "ok",
+            "component": "OpenKnowledge",
+            "total_entries": 0,
+            "recent_24h": 0,
+            "top_users": [],
+        }
 
 
 # Supported file types for upload
@@ -131,8 +140,12 @@ async def list_knowledge(
 ):
     """List knowledge items with pagination and filters."""
     return await knowledge_service.list_knowledge(
-        user_id, offset=offset, limit=limit,
-        content_type=content_type, domain=domain, tag=tag,
+        user_id,
+        offset=offset,
+        limit=limit,
+        content_type=content_type,
+        domain=domain,
+        tag=tag,
     )
 
 
@@ -230,7 +243,9 @@ async def upload_files_bulk(
 
             item_title = os.path.splitext(file.filename)[0]
             item_tags = list(tag_list)
-            item_tags.extend(t for t in _guess_tags(file.filename, content_type) if t not in item_tags)
+            item_tags.extend(
+                t for t in _guess_tags(file.filename, content_type) if t not in item_tags
+            )
 
             create_data = KnowledgeCreate(
                 title=item_title,
@@ -246,12 +261,14 @@ async def upload_files_bulk(
                 },
             )
             row = await knowledge_service.create_knowledge(create_data, user_id)
-            results["created"].append({
-                "id": str(row["id"]),
-                "filename": file.filename,
-                "title": item_title,
-                "chars": len(extracted_text),
-            })
+            results["created"].append(
+                {
+                    "id": str(row["id"]),
+                    "filename": file.filename,
+                    "title": item_title,
+                    "chars": len(extracted_text),
+                }
+            )
         except Exception as e:
             results["failed"].append({"filename": file.filename, "error": str(e)})
 

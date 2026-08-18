@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import threading
+import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
 
 
 @dataclass
@@ -171,9 +170,7 @@ class CourseEngine:
             self._save_course(course)
         return chapter
 
-    def update_chapter(
-        self, course_id: str, chapter_id: str, **kwargs
-    ) -> Chapter | None:
+    def update_chapter(self, course_id: str, chapter_id: str, **kwargs) -> Chapter | None:
         course = self._courses.get(course_id)
         if not course:
             return None
@@ -206,9 +203,7 @@ class CourseEngine:
                 return True
         return False
 
-    def mark_chapter(
-        self, course_id: str, chapter_id: str, completed: bool
-    ) -> Chapter | None:
+    def mark_chapter(self, course_id: str, chapter_id: str, completed: bool) -> Chapter | None:
         course = self._courses.get(course_id)
         if not course:
             return None
@@ -257,9 +252,7 @@ class CourseEngine:
     def stats(self) -> dict:
         courses = list(self._courses.values())
         total_chapters = sum(len(c.chapters) for c in courses)
-        completed_chapters = sum(
-            sum(1 for ch in c.chapters if ch.completed) for c in courses
-        )
+        completed_chapters = sum(sum(1 for ch in c.chapters if ch.completed) for c in courses)
         reviewing = sum(1 for c in courses if c.status == "reviewing")
         return {
             "total_courses": len(courses),

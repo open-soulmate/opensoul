@@ -40,7 +40,11 @@ class IPAccessControl:
                     if entry.expires_at and time.time() > entry.expires_at:
                         del self._blacklist[self._normalize(ip)]
                         return {"allowed": True, "reason": "blacklist expired", "action": "allow"}
-                return {"allowed": False, "reason": entry.reason if entry else "blacklisted", "action": "block"}
+                return {
+                    "allowed": False,
+                    "reason": entry.reason if entry else "blacklisted",
+                    "action": "block",
+                }
 
             return {"allowed": True, "reason": "", "action": "allow"}
 
@@ -64,7 +68,13 @@ class IPAccessControl:
     def list_blacklist(self) -> list[dict]:
         with self._lock:
             return [
-                {"ip": e.ip, "reason": e.reason, "added_at": e.added_at, "expires_at": e.expires_at, "hit_count": e.hit_count}
+                {
+                    "ip": e.ip,
+                    "reason": e.reason,
+                    "added_at": e.added_at,
+                    "expires_at": e.expires_at,
+                    "hit_count": e.hit_count,
+                }
                 for e in self._blacklist.values()
             ]
 

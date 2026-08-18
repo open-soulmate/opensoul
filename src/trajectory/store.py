@@ -1,12 +1,11 @@
 """Trajectory store — records Agent execution events to SQLite, supports replay and fork."""
 
 import json
-import time
-import uuid
 import logging
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from enum import Enum
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from src.database.postgres import db_pool
@@ -14,8 +13,9 @@ from src.database.postgres import db_pool
 logger = logging.getLogger(__name__)
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Types of trajectory events."""
+
     SESSION_START = "session_start"
     SESSION_END = "session_end"
     USER_INPUT = "user_input"
@@ -34,6 +34,7 @@ class EventType(str, Enum):
 @dataclass
 class TrajectoryEvent:
     """A single event in an agent execution trajectory."""
+
     id: str = ""
     session_id: str = ""
     parent_event_id: str | None = None
@@ -50,7 +51,7 @@ class TrajectoryEvent:
         if not self.id:
             self.id = str(uuid.uuid4())
         if not self.created_at:
-            self.created_at = datetime.now(timezone.utc).isoformat()
+            self.created_at = datetime.now(UTC).isoformat()
 
     @property
     def metadata(self) -> dict:
@@ -68,6 +69,7 @@ class TrajectoryEvent:
 @dataclass
 class TrajectorySession:
     """A complete agent execution session with its events."""
+
     id: str = ""
     agent_id: str = ""
     task_description: str = ""
@@ -85,7 +87,7 @@ class TrajectorySession:
         if not self.id:
             self.id = str(uuid.uuid4())
         if not self.created_at:
-            self.created_at = datetime.now(timezone.utc).isoformat()
+            self.created_at = datetime.now(UTC).isoformat()
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -134,10 +136,14 @@ class TrajectoryStore:
 
     # ── Session CRUD ─────────────────────────────────────────
 
-    async def create_session(self, agent_id: str = "", task_description: str = "",
-                              forked_from: str | None = None,
-                              fork_point_event_id: str | None = None,
-                              tags: list[str] | None = None) -> TrajectorySession:
+    async def create_session(
+        self,
+        agent_id: str = "",
+        task_description: str = "",
+        forked_from: str | None = None,
+        fork_point_event_id: str | None = None,
+        tags: list[str] | None = None,
+    ) -> TrajectorySession:
         await self.ensure_tables()
         s = TrajectorySession(
             agent_id=agent_id,
@@ -151,23 +157,31 @@ class TrajectoryStore:
                (id, agent_id, task_description, status, forked_from, fork_point_event_id,
                 total_events, total_tokens, total_duration_ms, tags_json, created_at, ended_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            s.id, s.agent_id, s.task_description, s.status, s.forked_from,
-            s.fork_point_event_id, s.total_events, s.total_tokens,
-            s.total_duration_ms, json.dumps(s.tags), s.created_at, s.ended_at,
+            s.id,
+            s.agent_id,
+            s.task_description,
+            s.status,
+            s.forked_from,
+            s.fork_point_event_id,
+            s.total_events,
+            s.total_tokens,
+            s.total_duration_ms,
+            json.dumps(s.tags),
+            s.created_at,
+            s.ended_at,
         )
         return s
 
     async def get_session(self, session_id: str) -> TrajectorySession | None:
         await self.ensure_tables()
-        row = await db_pool.fetchrow(
-            "SELECT * FROM trajectory_sessions WHERE id = ?", session_id
-        )
+        row = await db_pool.fetchrow("SELECT * FROM trajectory_sessions WHERE id = ?", session_id)
         if not row:
             return None
         return self._row_to_session(row)
 
-    async def list_sessions(self, agent_id: str = "", status: str = "",
-                             limit: int = 50, offset: int = 0) -> list[TrajectorySession]:
+    async def list_sessions(
+        self, agent_id: str = "", status: str = "", limit: int = 50, offset: int = 0
+    ) -> list[TrajectorySession]:
         await self.ensure_tables()
         clauses = []
         params: list[Any] = []
@@ -190,7 +204,9 @@ class TrajectoryStore:
             """UPDATE trajectory_sessions
                SET status = ?, ended_at = ?
                WHERE id = ?""",
-            status, datetime.now(timezone.utc).isoformat(), session_id,
+            status,
+            datetime.now(UTC).isoformat(),
+            session_id,
         )
 
     async def delete_session(self, session_id: str):
@@ -213,9 +229,17 @@ class TrajectoryStore:
                (id, session_id, parent_event_id, event_type, agent_id,
                 content, metadata_json, token_usage, duration_ms, status, created_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            event.id, event.session_id, event.parent_event_id, event.event_type,
-            event.agent_id, event.content, event.metadata_json,
-            event.token_usage, event.duration_ms, event.status, event.created_at,
+            event.id,
+            event.session_id,
+            event.parent_event_id,
+            event.event_type,
+            event.agent_id,
+            event.content,
+            event.metadata_json,
+            event.token_usage,
+            event.duration_ms,
+            event.status,
+            event.created_at,
         )
         # Update session counters
         await db_pool.execute(
@@ -223,7 +247,8 @@ class TrajectoryStore:
                SET total_events = total_events + 1,
                    total_tokens = total_tokens + ?
                WHERE id = ?""",
-            event.token_usage, event.session_id,
+            event.token_usage,
+            event.session_id,
         )
         return event
 
@@ -234,19 +259,19 @@ class TrajectoryStore:
                WHERE session_id = ?
                ORDER BY created_at ASC
                LIMIT ?""",
-            session_id, limit,
+            session_id,
+            limit,
         )
         return [self._row_to_event(r) for r in rows]
 
     async def get_event(self, event_id: str) -> TrajectoryEvent | None:
         await self.ensure_tables()
-        row = await db_pool.fetchrow(
-            "SELECT * FROM trajectory_events WHERE id = ?", event_id
-        )
+        row = await db_pool.fetchrow("SELECT * FROM trajectory_events WHERE id = ?", event_id)
         return self._row_to_event(row) if row else None
 
-    async def search_events(self, session_id: str = "", event_type: str = "",
-                             keyword: str = "", limit: int = 50) -> list[TrajectoryEvent]:
+    async def search_events(
+        self, session_id: str = "", event_type: str = "", keyword: str = "", limit: int = 50
+    ) -> list[TrajectoryEvent]:
         await self.ensure_tables()
         clauses = []
         params: list[Any] = []
@@ -269,8 +294,9 @@ class TrajectoryStore:
 
     # ── Fork (Branch) ────────────────────────────────────────
 
-    async def fork_session(self, source_session_id: str, fork_point_event_id: str,
-                            new_agent_id: str = "") -> TrajectorySession:
+    async def fork_session(
+        self, source_session_id: str, fork_point_event_id: str, new_agent_id: str = ""
+    ) -> TrajectorySession:
         """Fork a session at a specific event — copies events up to the fork point
         and creates a new session for branching execution."""
         source = await self.get_session(source_session_id)
@@ -308,15 +334,19 @@ class TrajectoryStore:
                 copying = False
 
         # Add a branch marker event
-        await self.add_event(TrajectoryEvent(
-            session_id=new_session.id,
-            event_type=EventType.BRANCH.value,
-            content=f"Branched from session {source_session_id} at event {fork_point_event_id}",
-            metadata_json=json.dumps({
-                "source_session": source_session_id,
-                "fork_event": fork_point_event_id,
-            }),
-        ))
+        await self.add_event(
+            TrajectoryEvent(
+                session_id=new_session.id,
+                event_type=EventType.BRANCH.value,
+                content=f"Branched from session {source_session_id} at event {fork_point_event_id}",
+                metadata_json=json.dumps(
+                    {
+                        "source_session": source_session_id,
+                        "fork_event": fork_point_event_id,
+                    }
+                ),
+            )
+        )
 
         return new_session
 
@@ -346,7 +376,8 @@ class TrajectoryStore:
         await self.ensure_tables()
 
         # Tool usage frequency
-        tool_rows = await db_pool.fetch("""
+        tool_rows = await db_pool.fetch(
+            """
             SELECT
                 COALESCE(json_extract(metadata_json, '$.tool_name'), 'unknown') as tool_name,
                 COUNT(*) as usage_count,
@@ -359,21 +390,25 @@ class TrajectoryStore:
             GROUP BY tool_name
             ORDER BY usage_count DESC
             LIMIT ?
-        """, limit)
+        """,
+            limit,
+        )
 
         tools = []
         for row in tool_rows:
             usage = row["usage_count"] or 0
             success = row["success_count"] or 0
-            tools.append({
-                "tool_name": row["tool_name"],
-                "usage_count": usage,
-                "success_count": success,
-                "error_count": row["error_count"] or 0,
-                "success_rate": round(success / usage * 100, 1) if usage > 0 else 0,
-                "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
-                "total_tokens": row["total_tokens"] or 0,
-            })
+            tools.append(
+                {
+                    "tool_name": row["tool_name"],
+                    "usage_count": usage,
+                    "success_count": success,
+                    "error_count": row["error_count"] or 0,
+                    "success_rate": round(success / usage * 100, 1) if usage > 0 else 0,
+                    "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
+                    "total_tokens": row["total_tokens"] or 0,
+                }
+            )
 
         return {"tools": tools, "total_tools": len(tools)}
 
@@ -381,7 +416,8 @@ class TrajectoryStore:
         """Get per-agent performance analytics."""
         await self.ensure_tables()
 
-        agent_rows = await db_pool.fetch("""
+        agent_rows = await db_pool.fetch(
+            """
             SELECT
                 agent_id,
                 COUNT(*) as event_count,
@@ -395,22 +431,26 @@ class TrajectoryStore:
             GROUP BY agent_id
             ORDER BY event_count DESC
             LIMIT ?
-        """, limit)
+        """,
+            limit,
+        )
 
         agents = []
         for row in agent_rows:
             events = row["event_count"] or 0
             success = row["success_count"] or 0
-            agents.append({
-                "agent_id": row["agent_id"],
-                "event_count": events,
-                "total_tokens": row["total_tokens"] or 0,
-                "total_duration_ms": round(row["total_duration_ms"] or 0, 1),
-                "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
-                "success_count": success,
-                "error_count": row["error_count"] or 0,
-                "success_rate": round(success / events * 100, 1) if events > 0 else 0,
-            })
+            agents.append(
+                {
+                    "agent_id": row["agent_id"],
+                    "event_count": events,
+                    "total_tokens": row["total_tokens"] or 0,
+                    "total_duration_ms": round(row["total_duration_ms"] or 0, 1),
+                    "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
+                    "success_count": success,
+                    "error_count": row["error_count"] or 0,
+                    "success_rate": round(success / events * 100, 1) if events > 0 else 0,
+                }
+            )
 
         return {"agents": agents, "total_agents": len(agents)}
 
@@ -431,12 +471,14 @@ class TrajectoryStore:
 
         types = []
         for row in type_rows:
-            types.append({
-                "event_type": row["event_type"],
-                "count": row["count"] or 0,
-                "total_tokens": row["total_tokens"] or 0,
-                "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
-            })
+            types.append(
+                {
+                    "event_type": row["event_type"],
+                    "count": row["count"] or 0,
+                    "total_tokens": row["total_tokens"] or 0,
+                    "avg_duration_ms": round(row["avg_duration_ms"] or 0, 1),
+                }
+            )
 
         return {"event_types": types}
 
@@ -444,7 +486,8 @@ class TrajectoryStore:
         """Get token usage over time (daily breakdown)."""
         await self.ensure_tables()
 
-        daily_rows = await db_pool.fetch("""
+        daily_rows = await db_pool.fetch(
+            """
             SELECT
                 DATE(created_at) as day,
                 SUM(token_usage) as tokens,
@@ -454,15 +497,20 @@ class TrajectoryStore:
             GROUP BY DATE(created_at)
             ORDER BY day DESC
             LIMIT ?
-        """, f"-{days} days", days)
+        """,
+            f"-{days} days",
+            days,
+        )
 
         daily = []
         for row in daily_rows:
-            daily.append({
-                "day": row["day"],
-                "tokens": row["tokens"] or 0,
-                "events": row["events"] or 0,
-            })
+            daily.append(
+                {
+                    "day": row["day"],
+                    "tokens": row["tokens"] or 0,
+                    "events": row["events"] or 0,
+                }
+            )
 
         # Summary
         total_tokens = sum(d["tokens"] for d in daily)

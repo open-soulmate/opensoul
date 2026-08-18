@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -66,8 +64,10 @@ def require_role(required_role: str):
 
     Use as: `current_user: dict = Depends(require_role("admin"))`
     """
+
     async def _check(user: dict = Depends(get_current_user)) -> dict:
         if not role_at_least(user.get("role", "user"), required_role):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
+
     return _check

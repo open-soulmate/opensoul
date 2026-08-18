@@ -71,13 +71,15 @@ class ContentModerator:
         for name, config in self.patterns.items():
             matches = re.finditer(config["pattern"], text)
             for match in matches:
-                findings.append({
-                    "type": name,
-                    "label": config["label"],
-                    "risk": config["risk"],
-                    "position": (match.start(), match.end()),
-                    "matched": match.group(),
-                })
+                findings.append(
+                    {
+                        "type": name,
+                        "label": config["label"],
+                        "risk": config["risk"],
+                        "position": (match.start(), match.end()),
+                        "matched": match.group(),
+                    }
+                )
                 if risk_order.get(config["risk"], 0) > risk_order.get(max_risk, 0):
                     max_risk = config["risk"]
 

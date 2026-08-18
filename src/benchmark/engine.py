@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sqlite3
-import time
 import statistics
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -17,36 +16,36 @@ DB_PATH = Path.home() / ".opensoul" / "benchmark.db"
 
 # All benchmarkable organs
 BENCHMARK_TARGETS = {
-    "soul":       {"endpoint": "/api/health",               "label": "🧠 Soul"},
-    "cortex":     {"endpoint": "/api/cortex/health",        "label": "🧩 Cortex"},
-    "nerve":      {"endpoint": "/api/nerve/health",         "label": "⚡ Nerve"},
-    "vein":       {"endpoint": "/api/vein/health",          "label": "🩸 Vein"},
-    "sense":      {"endpoint": "/api/sense/health",         "label": "👁 Sense"},
-    "will":       {"endpoint": "/api/will/health",          "label": "✨ Will"},
-    "immune":     {"endpoint": "/api/immune/health",        "label": "🛡 Immune"},
-    "vital":      {"endpoint": "/api/vital/health",         "label": "📊 Vital"},
-    "marrow":     {"endpoint": "/api/marrow/health",        "label": "🦴 Marrow"},
-    "gland":      {"endpoint": "/api/gland/health",         "label": "🧪 Gland"},
-    "gene":       {"endpoint": "/api/gene/health",          "label": "🧬 Gene"},
-    "echo":       {"endpoint": "/api/echo/health",          "label": "🔊 Echo"},
-    "mirror":     {"endpoint": "/api/mirror/health",        "label": "🪞 Mirror"},
-    "link":       {"endpoint": "/api/link/health",          "label": "🔗 Link"},
-    "hippo":      {"endpoint": "/api/hippo/health",         "label": "🧠 Hippo"},
-    "reflex":     {"endpoint": "/api/reflex/health",        "label": "⚡ Reflex"},
-    "heredity":   {"endpoint": "/api/heredity/health",      "label": "🔗 Heredity"},
-    "pulse":      {"endpoint": "/api/pulse/health",         "label": "💓 Pulse"},
-    "nest":       {"endpoint": "/api/nest/health",          "label": "🏠 Nest"},
-    "limb":       {"endpoint": "/api/limb/health",          "label": "💪 Limb"},
-    "voice":      {"endpoint": "/api/voice/health",         "label": "🎤 Voice"},
-    "vision":     {"endpoint": "/api/vision/health",        "label": "🎨 Vision"},
-    "mind":       {"endpoint": "/api/mind/health",          "label": "💭 Mind"},
-    "intelligence": {"endpoint": "/api/intelligence/health","label": "🧠 Intelligence"},
-    "trajectory": {"endpoint": "/api/trajectory/health",    "label": "📊 Trajectory"},
-    "healer":     {"endpoint": "/api/healer/health",        "label": "💊 Healer"},
-    "timeline":   {"endpoint": "/api/timeline/health",      "label": "📜 Timeline"},
-    "topology":   {"endpoint": "/api/topology/health",      "label": "🗺 Topology"},
-    "pipeline":   {"endpoint": "/api/pipeline/health",      "label": "🔄 Pipeline"},
-    "capture":    {"endpoint": "/api/capture/health",       "label": "📸 Capture"},
+    "soul": {"endpoint": "/api/health", "label": "🧠 Soul"},
+    "cortex": {"endpoint": "/api/cortex/health", "label": "🧩 Cortex"},
+    "nerve": {"endpoint": "/api/nerve/health", "label": "⚡ Nerve"},
+    "vein": {"endpoint": "/api/vein/health", "label": "🩸 Vein"},
+    "sense": {"endpoint": "/api/sense/health", "label": "👁 Sense"},
+    "will": {"endpoint": "/api/will/health", "label": "✨ Will"},
+    "immune": {"endpoint": "/api/immune/health", "label": "🛡 Immune"},
+    "vital": {"endpoint": "/api/vital/health", "label": "📊 Vital"},
+    "marrow": {"endpoint": "/api/marrow/health", "label": "🦴 Marrow"},
+    "gland": {"endpoint": "/api/gland/health", "label": "🧪 Gland"},
+    "gene": {"endpoint": "/api/gene/health", "label": "🧬 Gene"},
+    "echo": {"endpoint": "/api/echo/health", "label": "🔊 Echo"},
+    "mirror": {"endpoint": "/api/mirror/health", "label": "🪞 Mirror"},
+    "link": {"endpoint": "/api/link/health", "label": "🔗 Link"},
+    "hippo": {"endpoint": "/api/hippo/health", "label": "🧠 Hippo"},
+    "reflex": {"endpoint": "/api/reflex/health", "label": "⚡ Reflex"},
+    "heredity": {"endpoint": "/api/heredity/health", "label": "🔗 Heredity"},
+    "pulse": {"endpoint": "/api/pulse/health", "label": "💓 Pulse"},
+    "nest": {"endpoint": "/api/nest/health", "label": "🏠 Nest"},
+    "limb": {"endpoint": "/api/limb/health", "label": "💪 Limb"},
+    "voice": {"endpoint": "/api/voice/health", "label": "🎤 Voice"},
+    "vision": {"endpoint": "/api/vision/health", "label": "🎨 Vision"},
+    "mind": {"endpoint": "/api/mind/health", "label": "💭 Mind"},
+    "intelligence": {"endpoint": "/api/intelligence/health", "label": "🧠 Intelligence"},
+    "trajectory": {"endpoint": "/api/trajectory/health", "label": "📊 Trajectory"},
+    "healer": {"endpoint": "/api/healer/health", "label": "💊 Healer"},
+    "timeline": {"endpoint": "/api/timeline/health", "label": "📜 Timeline"},
+    "topology": {"endpoint": "/api/topology/health", "label": "🗺 Topology"},
+    "pipeline": {"endpoint": "/api/pipeline/health", "label": "🔄 Pipeline"},
+    "capture": {"endpoint": "/api/capture/health", "label": "📸 Capture"},
 }
 
 
@@ -124,6 +123,7 @@ class BenchmarkEngine:
     ) -> dict:
         """Run benchmark against specified organs (or all)."""
         import uuid
+
         if not run_id:
             run_id = f"bench_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 
@@ -171,7 +171,9 @@ class BenchmarkEngine:
             "results": [self._result_to_dict(r) for r in results],
         }
 
-    async def _benchmark_organ(self, organ: str, iterations: int, concurrency: int, run_id: str) -> BenchmarkResult:
+    async def _benchmark_organ(
+        self, organ: str, iterations: int, concurrency: int, run_id: str
+    ) -> BenchmarkResult:
         """Benchmark a single organ."""
         target = BENCHMARK_TARGETS[organ]
         url = f"{self._base_url}{target['endpoint']}"
@@ -246,11 +248,23 @@ class BenchmarkEngine:
             """INSERT INTO benchmarks (run_id, organ, label, iterations, success, errors,
                min_ms, max_ms, avg_ms, p50_ms, p95_ms, p99_ms, rps, total_ms, timestamp)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (run_id, result.organ, result.label, result.iterations,
-             result.success_count, result.error_count,
-             result.min_ms, result.max_ms, result.avg_ms,
-             result.p50_ms, result.p95_ms, result.p99_ms,
-             result.throughput_rps, result.total_duration_ms, result.timestamp),
+            (
+                run_id,
+                result.organ,
+                result.label,
+                result.iterations,
+                result.success_count,
+                result.error_count,
+                result.min_ms,
+                result.max_ms,
+                result.avg_ms,
+                result.p50_ms,
+                result.p95_ms,
+                result.p99_ms,
+                result.throughput_rps,
+                result.total_duration_ms,
+                result.timestamp,
+            ),
         )
         conn.commit()
         conn.close()

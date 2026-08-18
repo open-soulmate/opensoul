@@ -8,13 +8,13 @@ This is the key enabler for the "松耦合、即插即用" architecture:
 any component that implements this API contract can plug into the ecosystem.
 """
 
-import time
 import hashlib
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Header, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from src.nerve.event_bridge import push_event
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── In-Memory Component Registry ────────────────────────────────────
+
 
 class ComponentRegistry:
     """Registry for externally-connected components."""
@@ -44,8 +45,11 @@ class ComponentRegistry:
         secret_token: str | None = None,
     ) -> dict[str, Any]:
         """Register or update a component."""
-        now = datetime.now(timezone.utc).isoformat()
-        token = secret_token or hashlib.sha256(f"{component_id}:{time.time()}".encode()).hexdigest()[:32]
+        now = datetime.now(UTC).isoformat()
+        token = (
+            secret_token
+            or hashlib.sha256(f"{component_id}:{time.time()}".encode()).hexdigest()[:32]
+        )
 
         if component_id in self._components:
             # Update existing registration
@@ -80,7 +84,7 @@ class ComponentRegistry:
     def heartbeat(self, component_id: str) -> bool:
         if component_id not in self._components:
             return False
-        self._components[component_id]["last_heartbeat"] = datetime.now(timezone.utc).isoformat()
+        self._components[component_id]["last_heartbeat"] = datetime.now(UTC).isoformat()
         self._components[component_id]["status"] = "online"
         return True
 
@@ -94,7 +98,7 @@ class ComponentRegistry:
 
         return {
             "success": True,
-            "received_at": datetime.now(timezone.utc).isoformat(),
+            "received_at": datetime.now(UTC).isoformat(),
             "data_type": data_type,
             "component_id": component_id,
         }
@@ -158,6 +162,7 @@ registry = ComponentRegistry()
 
 # ── Request Schemas ─────────────────────────────────────────────────
 
+
 class RegisterRequest(BaseModel):
     component_id: str
     name: str
@@ -188,6 +193,7 @@ class StatusUpdateRequest(BaseModel):
 
 # ── Helper ──────────────────────────────────────────────────────────
 
+
 def _verify_token(component_id: str, token: str | None) -> bool:
     """Verify component token (optional — lenient for dev)."""
     if not token:
@@ -197,6 +203,7 @@ def _verify_token(component_id: str, token: str | None) -> bool:
 
 
 # ── Registration Endpoints ──────────────────────────────────────────
+
 
 @router.post("/register")
 async def register_component(req: RegisterRequest):
@@ -215,17 +222,21 @@ async def register_component(req: RegisterRequest):
         secret_token=req.secret_token,
     )
 
-    push_event({
-        "organ": "soma", "emoji": "🤖", "type": "component_registered",
-        "summary": f"🔌 Component registered: {req.name} ({req.component_type})",
-        "detail": {
-            "component_id": req.component_id,
-            "name": req.name,
-            "type": req.component_type,
-            "version": req.version,
-            "capabilities": req.capabilities,
-        },
-    })
+    push_event(
+        {
+            "organ": "soma",
+            "emoji": "🤖",
+            "type": "component_registered",
+            "summary": f"🔌 Component registered: {req.name} ({req.component_type})",
+            "detail": {
+                "component_id": req.component_id,
+                "name": req.name,
+                "type": req.component_type,
+                "version": req.version,
+                "capabilities": req.capabilities,
+            },
+        }
+    )
 
     return {
         "component_id": result["component_id"],
@@ -249,12 +260,14 @@ async def component_heartbeat(
         raise HTTPException(401, "Invalid component token")
 
     if not registry.heartbeat(req.component_id):
-        raise HTTPException(404, f"Component '{req.component_id}' not registered. Call /register first.")
+        raise HTTPException(
+            404, f"Component '{req.component_id}' not registered. Call /register first."
+        )
 
     return {
         "component_id": req.component_id,
         "status": "acknowledged",
-        "server_time": datetime.now(timezone.utc).isoformat(),
+        "server_time": datetime.now(UTC).isoformat(),
     }
 
 
@@ -281,22 +294,27 @@ async def push_data(
         raise HTTPException(404, result["error"])
 
     # Emit event for the activity feed
-    push_event({
-        "organ": "soma", "emoji": "🤖", "type": "data_pushed",
-        "summary": f"📥 Data pushed from {component_id}: {req.data_type}",
-        "detail": {
-            "component_id": component_id,
-            "data_type": req.data_type,
-            "source": req.source,
-            "tags": req.tags,
-            "payload_keys": list(req.payload.keys())[:10],
-        },
-    })
+    push_event(
+        {
+            "organ": "soma",
+            "emoji": "🤖",
+            "type": "data_pushed",
+            "summary": f"📥 Data pushed from {component_id}: {req.data_type}",
+            "detail": {
+                "component_id": component_id,
+                "data_type": req.data_type,
+                "source": req.source,
+                "tags": req.tags,
+                "payload_keys": list(req.payload.keys())[:10],
+            },
+        }
+    )
 
     return result
 
 
 # ── Status & Discovery ─────────────────────────────────────────────
+
 
 @router.get("/components")
 async def list_components(
@@ -343,11 +361,15 @@ async def unregister_component(component_id: str):
     if not registry.unregister(component_id):
         raise HTTPException(404, f"Component '{component_id}' not found")
 
-    push_event({
-        "organ": "soma", "emoji": "🤖", "type": "component_unregistered",
-        "summary": f"🔌 Component unregistered: {component_id}",
-        "detail": {"component_id": component_id},
-    })
+    push_event(
+        {
+            "organ": "soma",
+            "emoji": "🤖",
+            "type": "component_unregistered",
+            "summary": f"🔌 Component unregistered: {component_id}",
+            "detail": {"component_id": component_id},
+        }
+    )
 
     return {"status": "unregistered", "component_id": component_id}
 
@@ -359,15 +381,20 @@ async def report_error(
 ):
     """Report an error from a component."""
     registry.mark_error(component_id, error)
-    push_event({
-        "organ": "soma", "emoji": "🤖", "type": "component_error",
-        "summary": f"⚠️ Component error: {component_id} — {error[:100]}",
-        "detail": {"component_id": component_id, "error": error},
-    })
+    push_event(
+        {
+            "organ": "soma",
+            "emoji": "🤖",
+            "type": "component_error",
+            "summary": f"⚠️ Component error: {component_id} — {error[:100]}",
+            "detail": {"component_id": component_id, "error": error},
+        }
+    )
     return {"acknowledged": True}
 
 
 # ── Discovery: What can this component connect to? ──────────────────
+
 
 @router.get("/capabilities")
 async def get_platform_capabilities():
@@ -406,6 +433,7 @@ async def get_platform_capabilities():
 
 
 # ── Health ──────────────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def soma_health():

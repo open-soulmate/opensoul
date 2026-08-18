@@ -1,7 +1,6 @@
 """OpenMind API — 心智中心：情绪识别、人格调节。"""
 
-import time
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.mind.emotion import EmotionAnalyzer
@@ -15,6 +14,7 @@ personality_mgr = PersonalityManager()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class EmotionAnalyzeRequest(BaseModel):
     text: str
@@ -54,6 +54,7 @@ class BuildPromptRequest(BaseModel):
 
 # ── Emotion Endpoints ──────────────────────────────────────
 
+
 @router.post("/emotion/analyze")
 async def analyze_emotion(req: EmotionAnalyzeRequest):
     """Analyze emotion in text."""
@@ -79,6 +80,7 @@ async def analyze_emotion(req: EmotionAnalyzeRequest):
 async def emotion_keywords():
     """List all emotion categories and their keywords."""
     from src.mind.emotion import _EMOTION_LEXICON
+
     return {
         "emotions": {
             name: {
@@ -93,6 +95,7 @@ async def emotion_keywords():
 
 
 # ── Personality Endpoints ──────────────────────────────────
+
 
 @router.get("/personalities")
 async def list_personalities():
@@ -196,6 +199,7 @@ async def build_prompt(req: BuildPromptRequest):
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def mind_stats():
     """OpenMind detailed statistics."""
@@ -215,6 +219,7 @@ async def mind_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def mind_health():

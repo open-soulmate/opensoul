@@ -1,6 +1,4 @@
-import os
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -11,11 +9,31 @@ CONFIG_PATH = CONFIG_DIR / "config.yaml"
 
 # ── All known organs ────────────────────────────────────────
 ALL_ORGANS: list[str] = [
-    "cortex", "nerve", "vein", "sense", "will",
-    "immune", "vital", "marrow", "gland", "gene",
-    "echo", "mirror", "link", "hippo", "reflex",
-    "heredity", "pulse", "nest", "limb", "voice",
-    "vision", "mind", "trajectory", "mcp", "learn",
+    "cortex",
+    "nerve",
+    "vein",
+    "sense",
+    "will",
+    "immune",
+    "vital",
+    "marrow",
+    "gland",
+    "gene",
+    "echo",
+    "mirror",
+    "link",
+    "hippo",
+    "reflex",
+    "heredity",
+    "pulse",
+    "nest",
+    "limb",
+    "voice",
+    "vision",
+    "mind",
+    "trajectory",
+    "mcp",
+    "learn",
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -42,7 +60,7 @@ class ConfigManager:
 
     def _load(self) -> None:
         if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
                 self._config = yaml.safe_load(f) or {}
             self._mtime = CONFIG_PATH.stat().st_mtime
         else:
@@ -58,7 +76,7 @@ class ConfigManager:
         if CONFIG_PATH.exists():
             mtime = CONFIG_PATH.stat().st_mtime
             if mtime > self._mtime:
-                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                with open(CONFIG_PATH, encoding="utf-8") as f:
                     self._config = yaml.safe_load(f) or {}
                 self._mtime = mtime
 

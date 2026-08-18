@@ -6,7 +6,6 @@ so the web version of OpenMate can browse files and run commands server-side.
 
 import asyncio
 import os
-import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -14,15 +13,18 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+
 @router.get("/workspace/health")
 async def health():
     return {"status": "ok", "component": "OpenWorkspace"}
+
 
 # ── Safety ───────────────────────────────────────────────────────
 ALLOWED_ROOTS = [
     Path.home(),
     Path("/tmp"),
 ]
+
 
 def _validate_path(p: str) -> Path:
     """Resolve and validate that path is under an allowed root."""
@@ -38,9 +40,11 @@ def _validate_path(p: str) -> Path:
 
 # ── Models ───────────────────────────────────────────────────────
 
+
 class WriteFileRequest(BaseModel):
     path: str
     content: str
+
 
 class ExecuteRequest(BaseModel):
     cmd: str
@@ -49,6 +53,7 @@ class ExecuteRequest(BaseModel):
 
 
 # ── Directory Listing ────────────────────────────────────────────
+
 
 @router.get("/dir")
 async def list_directory(path: str = Query("~")):
@@ -62,23 +67,27 @@ async def list_directory(path: str = Query("~")):
         for entry in sorted(target.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
             try:
                 stat = entry.stat()
-                entries.append({
-                    "name": entry.name,
-                    "path": str(entry),
-                    "type": "directory" if entry.is_dir() else "file",
-                    "size": stat.st_size if entry.is_file() else None,
-                    "modified": stat.st_mtime,
-                    "hidden": entry.name.startswith("."),
-                })
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "directory" if entry.is_dir() else "file",
+                        "size": stat.st_size if entry.is_file() else None,
+                        "modified": stat.st_mtime,
+                        "hidden": entry.name.startswith("."),
+                    }
+                )
             except (PermissionError, OSError):
-                entries.append({
-                    "name": entry.name,
-                    "path": str(entry),
-                    "type": "unknown",
-                    "size": None,
-                    "modified": None,
-                    "hidden": entry.name.startswith("."),
-                })
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "unknown",
+                        "size": None,
+                        "modified": None,
+                        "hidden": entry.name.startswith("."),
+                    }
+                )
     except PermissionError:
         raise HTTPException(403, f"Permission denied: {path}")
 
@@ -86,6 +95,7 @@ async def list_directory(path: str = Query("~")):
 
 
 # ── File Read ────────────────────────────────────────────────────
+
 
 @router.get("/file")
 async def read_file(path: str = Query(...)):
@@ -105,6 +115,7 @@ async def read_file(path: str = Query(...)):
 
 
 # ── File Write ───────────────────────────────────────────────────
+
 
 @router.post("/file")
 async def write_file(req: WriteFileRequest):
@@ -131,6 +142,7 @@ BLOCKED_COMMANDS = [
     ":(){ :|:& };:",  # fork bomb
 ]
 
+
 @router.post("/execute")
 async def execute_command(req: ExecuteRequest):
     """Execute a shell command server-side (for web clients without Tauri)."""
@@ -153,16 +165,14 @@ async def execute_command(req: ExecuteRequest):
             cwd=cwd,
             env={**os.environ, "TERM": "dumb"},
         )
-        stdout, _ = await asyncio.wait_for(
-            proc.communicate(), timeout=req.timeout
-        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=req.timeout)
         output = stdout.decode(errors="replace") if stdout else ""
         return {
             "output": output,
             "exit_code": proc.returncode,
             "cmd": cmd,
         }
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         raise HTTPException(408, f"Command timed out after {req.timeout}s")
     except Exception as e:

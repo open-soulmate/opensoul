@@ -1,14 +1,13 @@
 """OpenVein API — 血管系统：大文件分片上传、缓存管理、资源同步。"""
 
-import hashlib
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.vein.file_store import FileStore
+from src.nerve.event_bridge import push_event
 from src.vein.cache import CacheManager
 from src.vein.chunked import ChunkedUploader
-from src.nerve.event_bridge import push_event
+from src.vein.file_store import FileStore
 
 router = APIRouter()
 
@@ -19,6 +18,7 @@ uploader = ChunkedUploader()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class CachePutRequest(BaseModel):
     key: str
@@ -41,6 +41,7 @@ class ChunkUpload(BaseModel):
 
 # ── File Store Endpoints ───────────────────────────────────
 
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -61,11 +62,20 @@ async def upload_file(
     cache.put(f"file:{meta.file_id}", data)
 
     # Emit event
-    push_event({
-        "organ": "vein", "emoji": "🩸", "type": "file_uploaded",
-        "summary": f"📄 File uploaded: {meta.name} ({meta.size} bytes)",
-        "detail": {"file_id": meta.file_id, "name": meta.name, "size": meta.size, "mime_type": meta.mime_type},
-    })
+    push_event(
+        {
+            "organ": "vein",
+            "emoji": "🩸",
+            "type": "file_uploaded",
+            "summary": f"📄 File uploaded: {meta.name} ({meta.size} bytes)",
+            "detail": {
+                "file_id": meta.file_id,
+                "name": meta.name,
+                "size": meta.size,
+                "mime_type": meta.mime_type,
+            },
+        }
+    )
 
     return {
         "file_id": meta.file_id,
@@ -128,12 +138,21 @@ async def download_file(file_id: str):
     if cached:
         meta = store.get_meta(file_id)
         if meta:
-            push_event({"organ": "vein", "emoji": "🩸", "type": "file_downloaded",
-                        "summary": f"⬇️ File downloaded (cached): {meta.name}", "detail": {"file_id": file_id}})
+            push_event(
+                {
+                    "organ": "vein",
+                    "emoji": "🩸",
+                    "type": "file_downloaded",
+                    "summary": f"⬇️ File downloaded (cached): {meta.name}",
+                    "detail": {"file_id": file_id},
+                }
+            )
         return StreamingResponse(
             iter([cached]),
             media_type=meta.mime_type if meta else "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{meta.name if meta else file_id}"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{meta.name if meta else file_id}"'
+            },
         )
 
     # Stream from disk
@@ -160,12 +179,20 @@ async def delete_file(file_id: str):
     if not store.delete(file_id):
         raise HTTPException(status_code=404, detail="File not found")
     cache.invalidate(f"file:{file_id}")
-    push_event({"organ": "vein", "emoji": "🩸", "type": "file_deleted",
-                "summary": f"🗑️ File deleted: {meta.name if meta else file_id}", "detail": {"file_id": file_id}})
+    push_event(
+        {
+            "organ": "vein",
+            "emoji": "🩸",
+            "type": "file_deleted",
+            "summary": f"🗑️ File deleted: {meta.name if meta else file_id}",
+            "detail": {"file_id": file_id},
+        }
+    )
     return {"status": "ok", "file_id": file_id}
 
 
 # ── Versioning Endpoints ──────────────────────────────────
+
 
 @router.put("/files/{file_id}/content")
 async def update_file_content(
@@ -191,11 +218,15 @@ async def update_file_content(
     # Update cache
     cache.put(f"file:{meta.file_id}", data)
 
-    push_event({
-        "organ": "vein", "emoji": "🩸", "type": "file_updated",
-        "summary": f"📝 File updated: {meta.name} (v{store.get_version_history(file_id, limit=1)[0].version_number if store.get_version_history(file_id, limit=1) else '?'})",
-        "detail": {"file_id": file_id, "name": meta.name, "size": meta.size},
-    })
+    push_event(
+        {
+            "organ": "vein",
+            "emoji": "🩸",
+            "type": "file_updated",
+            "summary": f"📝 File updated: {meta.name} (v{store.get_version_history(file_id, limit=1)[0].version_number if store.get_version_history(file_id, limit=1) else '?'})",
+            "detail": {"file_id": file_id, "name": meta.name, "size": meta.size},
+        }
+    )
 
     return {
         "file_id": meta.file_id,
@@ -263,11 +294,15 @@ async def rollback_file(file_id: str, version_number: int):
         data, _ = result
         cache.put(f"file:{file_id}", data)
 
-    push_event({
-        "organ": "vein", "emoji": "🩸", "type": "file_rollback",
-        "summary": f"⏪ File rolled back: {meta.name} → version {version_number}",
-        "detail": {"file_id": file_id, "version_number": version_number},
-    })
+    push_event(
+        {
+            "organ": "vein",
+            "emoji": "🩸",
+            "type": "file_rollback",
+            "summary": f"⏪ File rolled back: {meta.name} → version {version_number}",
+            "detail": {"file_id": file_id, "version_number": version_number},
+        }
+    )
 
     return {
         "status": "ok",
@@ -280,6 +315,7 @@ async def rollback_file(file_id: str, version_number: int):
 
 
 # ── Chunked Upload Endpoints ───────────────────────────────
+
 
 @router.post("/upload/chunked/init")
 async def init_chunked_upload(body: UploadSessionCreate):
@@ -378,6 +414,7 @@ async def cancel_upload(upload_id: str):
 
 # ── Cache Endpoints ────────────────────────────────────────
 
+
 @router.get("/cache/stats")
 async def get_cache_stats():
     """Get cache statistics."""
@@ -397,6 +434,7 @@ async def get_cached(key: str):
 async def put_cache(body: CachePutRequest):
     """Put a value into the cache."""
     import base64
+
     try:
         data = base64.b64decode(body.data)
     except Exception:
@@ -429,6 +467,7 @@ async def cleanup_cache():
 
 # ── Promote to Knowledge ───────────────────────────────────
 
+
 class PromoteRequest(BaseModel):
     user_id: str = "default"
     tags: list[str] | None = None
@@ -457,8 +496,11 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
     # Try to decode as text for knowledge entry
     content = ""
     is_text = meta.mime_type.startswith("text/") or meta.mime_type in (
-        "application/json", "application/xml", "application/javascript",
-        "application/x-yaml", "application/yaml",
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/x-yaml",
+        "application/yaml",
     )
     if is_text:
         try:
@@ -482,8 +524,10 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
     import json
     import time as _time
     import uuid as _uuid
+
     try:
         from src.database.postgres import db_pool
+
         knowledge_id = str(_uuid.uuid4())
         await db_pool.execute(
             """INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata, created_at, updated_at)
@@ -503,7 +547,9 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
             tag_id = str(_uuid.uuid4())
             await db_pool.execute(
                 "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                tag_id, tag_name, req.user_id,
+                tag_id,
+                tag_name,
+                req.user_id,
             )
             tag = await db_pool.fetchrow(
                 "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, req.user_id
@@ -511,20 +557,23 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
             if tag:
                 await db_pool.execute(
                     "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                    knowledge_id, tag["id"],
+                    knowledge_id,
+                    tag["id"],
                 )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create knowledge entry: {e}")
 
     # Push event to nerve
     try:
-        push_event({
-            "type": "vein.promoted",
-            "file_id": file_id,
-            "filename": meta.name,
-            "user_id": req.user_id,
-            "content_length": len(content),
-        })
+        push_event(
+            {
+                "type": "vein.promoted",
+                "file_id": file_id,
+                "filename": meta.name,
+                "user_id": req.user_id,
+                "content_length": len(content),
+            }
+        )
     except Exception:
         pass
 
@@ -539,6 +588,7 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
 
 
 # ── Auto-Process (Vein → Sense → Knowledge) ───────────────
+
 
 class AutoProcessRequest(BaseModel):
     user_id: str = "default"
@@ -573,20 +623,41 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
     filename = meta.name.lower()
 
     # Determine processing route
-    image_types = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+    image_types = {
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/tiff",
+    }
     pdf_types = {"application/pdf"}
-    audio_types = {"audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/ogg",
-                   "audio/flac", "audio/webm", "audio/mp4", "audio/x-m4a"}
+    audio_types = {
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp3",
+        "audio/mpeg",
+        "audio/ogg",
+        "audio/flac",
+        "audio/webm",
+        "audio/mp4",
+        "audio/x-m4a",
+    }
 
     extracted_text = ""
     engine_used = "none"
     processing_type = "unknown"
 
     try:
-        if mime in image_types or any(filename.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff")):
+        if mime in image_types or any(
+            filename.endswith(ext)
+            for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff")
+        ):
             # Route to OCR
-            from src.sense.ocr import OCREngine
             from src.api.sense import _get_gateway as _get_sense_gw
+            from src.sense.ocr import OCREngine
+
             _get_sense_gw()
             ocr = OCREngine()
             ocr_result = await ocr.smart_image_to_text(data, language=req.language)
@@ -596,8 +667,9 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
 
         elif mime in pdf_types or filename.endswith(".pdf"):
             # Route to PDF OCR
-            from src.sense.ocr import OCREngine
             from src.api.sense import _get_gateway as _get_sense_gw
+            from src.sense.ocr import OCREngine
+
             _get_sense_gw()
             ocr = OCREngine()
             ocr_result = await ocr.smart_pdf_to_text(data, language=req.language, max_pages=30)
@@ -605,10 +677,13 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
             engine_used = ocr_result.engine
             processing_type = "pdf_ocr"
 
-        elif mime in audio_types or any(filename.endswith(ext) for ext in (".wav", ".mp3", ".ogg", ".flac", ".webm", ".m4a")):
+        elif mime in audio_types or any(
+            filename.endswith(ext) for ext in (".wav", ".mp3", ".ogg", ".flac", ".webm", ".m4a")
+        ):
             # Route to ASR
-            from src.sense.asr import ASREngine
             from src.api.sense import _get_gateway as _get_sense_gw
+            from src.sense.asr import ASREngine
+
             _get_sense_gw()
             asr = ASREngine()
             fmt = "wav"
@@ -629,6 +704,7 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
             # Unsupported type — try OCR as fallback for unknown image-like types
             if mime.startswith("image/"):
                 from src.sense.ocr import OCREngine
+
                 ocr = OCREngine()
                 ocr_result = ocr.image_to_text(data, lang=req.language)
                 extracted_text = ocr_result.text
@@ -637,7 +713,7 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported file type for auto-processing: {mime}. Supported: images, PDFs, audio."
+                    detail=f"Unsupported file type for auto-processing: {mime}. Supported: images, PDFs, audio.",
                 )
 
     except HTTPException:
@@ -662,7 +738,9 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
             import json
             import time as _time
             import uuid as _uuid
+
             from src.database.postgres import db_pool
+
             tags = ["auto-processed", processing_type, engine_used, meta.mime_type.split("/")[-1]]
             if meta.tags:
                 tags.extend(meta.tags.split(","))
@@ -676,7 +754,13 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
                 extracted_text[:100000],
                 f"vein://{file_id}",
                 meta.mime_type,
-                json.dumps({"tags": list(set(tags)), "processing_type": processing_type, "engine": engine_used}),
+                json.dumps(
+                    {
+                        "tags": list(set(tags)),
+                        "processing_type": processing_type,
+                        "engine": engine_used,
+                    }
+                ),
                 _time.time(),
             )
             # Add tags to knowledge_tags table
@@ -684,7 +768,9 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
                 tag_id = str(_uuid.uuid4())
                 await db_pool.execute(
                     "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                    tag_id, tag_name, req.user_id,
+                    tag_id,
+                    tag_name,
+                    req.user_id,
                 )
                 tag = await db_pool.fetchrow(
                     "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, req.user_id
@@ -692,21 +778,29 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
                 if tag:
                     await db_pool.execute(
                         "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                        knowledge_id, tag["id"],
+                        knowledge_id,
+                        tag["id"],
                     )
             promoted = True
         except Exception:
             pass  # non-fatal
 
     # Emit event
-    push_event({
-        "organ": "vein", "emoji": "🩸", "type": "file_auto_processed",
-        "summary": f"🔍 Auto-processed: {meta.name} via {processing_type} ({engine_used})",
-        "detail": {
-            "file_id": file_id, "processing_type": processing_type,
-            "engine": engine_used, "text_length": len(extracted_text), "promoted": promoted,
-        },
-    })
+    push_event(
+        {
+            "organ": "vein",
+            "emoji": "🩸",
+            "type": "file_auto_processed",
+            "summary": f"🔍 Auto-processed: {meta.name} via {processing_type} ({engine_used})",
+            "detail": {
+                "file_id": file_id,
+                "processing_type": processing_type,
+                "engine": engine_used,
+                "text_length": len(extracted_text),
+                "promoted": promoted,
+            },
+        }
+    )
 
     return {
         "status": "ok",
@@ -724,7 +818,9 @@ class BatchAutoProcessRequest(BaseModel):
     user_id: str = "default"
     language: str | None = None
     auto_promote: bool = True
-    mime_filter: list[str] | None = None  # e.g. ["image/", "application/pdf"] to only process images and PDFs
+    mime_filter: list[str] | None = (
+        None  # e.g. ["image/", "application/pdf"] to only process images and PDFs
+    )
     limit: int = 50
 
 
@@ -747,8 +843,7 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
         else:
             # Default: process images, PDFs, and audio
             mime = f.mime_type.lower()
-            if (mime.startswith("image/") or mime == "application/pdf" or
-                mime.startswith("audio/")):
+            if mime.startswith("image/") or mime == "application/pdf" or mime.startswith("audio/"):
                 eligible.append(f)
 
     results = []
@@ -757,12 +852,19 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
             # Retrieve file content
             file_result = store.retrieve(f.file_id)
             if not file_result:
-                results.append({"file_id": f.file_id, "filename": f.name, "status": "error", "error": "File content not found"})
+                results.append(
+                    {
+                        "file_id": f.file_id,
+                        "filename": f.name,
+                        "status": "error",
+                        "error": "File content not found",
+                    }
+                )
                 continue
 
             data, _meta = file_result
             mime = f.mime_type.lower()
-            filename = f.name.lower()
+            f.name.lower()
 
             extracted_text = ""
             engine_used = "none"
@@ -770,6 +872,7 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
 
             if mime.startswith("image/"):
                 from src.sense.ocr import OCREngine
+
                 ocr = OCREngine()
                 ocr_result = ocr.image_to_text(data, lang=req.language)
                 extracted_text = ocr_result.text
@@ -777,6 +880,7 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                 processing_type = "ocr"
             elif mime == "application/pdf":
                 from src.sense.ocr import OCREngine
+
                 ocr = OCREngine()
                 ocr_result = await ocr.smart_pdf_to_text(data, language=req.language, max_pages=20)
                 extracted_text = ocr_result.text
@@ -784,11 +888,15 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                 processing_type = "pdf_ocr"
             elif mime.startswith("audio/"):
                 from src.sense.asr import ASREngine
+
                 asr = ASREngine()
                 fmt = "wav"
-                if "mp3" in mime or "mpeg" in mime: fmt = "mp3"
-                elif "ogg" in mime: fmt = "ogg"
-                elif "flac" in mime: fmt = "flac"
+                if "mp3" in mime or "mpeg" in mime:
+                    fmt = "mp3"
+                elif "ogg" in mime:
+                    fmt = "ogg"
+                elif "flac" in mime:
+                    fmt = "flac"
                 asr_result = await asr.transcribe_async(data, language=req.language, format=fmt)
                 extracted_text = asr_result.text
                 engine_used = asr_result.engine
@@ -800,7 +908,9 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                     import json
                     import time as _time
                     import uuid as _uuid
+
                     from src.database.postgres import db_pool
+
                     tags = ["auto-processed", "batch", processing_type]
                     kid = str(_uuid.uuid4())
                     await db_pool.execute(
@@ -821,40 +931,53 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                         tag_id = str(_uuid.uuid4())
                         await db_pool.execute(
                             "INSERT INTO tags (id, name, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                            tag_id, tag_name, req.user_id,
+                            tag_id,
+                            tag_name,
+                            req.user_id,
                         )
                         tag_row = await db_pool.fetchrow(
-                            "SELECT id FROM tags WHERE name = $1 AND user_id = $2", tag_name, req.user_id
+                            "SELECT id FROM tags WHERE name = $1 AND user_id = $2",
+                            tag_name,
+                            req.user_id,
                         )
                         if tag_row:
                             await db_pool.execute(
                                 "INSERT INTO knowledge_tags (knowledge_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                                kid, tag_row["id"],
+                                kid,
+                                tag_row["id"],
                             )
                     promoted = True
                 except Exception:
                     pass
 
-            results.append({
-                "file_id": f.file_id,
-                "filename": f.name,
-                "status": "ok",
-                "processing_type": processing_type,
-                "engine": engine_used,
-                "text_length": len(extracted_text),
-                "promoted": promoted,
-            })
+            results.append(
+                {
+                    "file_id": f.file_id,
+                    "filename": f.name,
+                    "status": "ok",
+                    "processing_type": processing_type,
+                    "engine": engine_used,
+                    "text_length": len(extracted_text),
+                    "promoted": promoted,
+                }
+            )
         except Exception as e:
-            results.append({"file_id": f.file_id, "filename": f.name, "status": "error", "error": str(e)})
+            results.append(
+                {"file_id": f.file_id, "filename": f.name, "status": "error", "error": str(e)}
+            )
 
     ok_count = sum(1 for r in results if r["status"] == "ok")
     promoted_count = sum(1 for r in results if r.get("promoted"))
 
-    push_event({
-        "organ": "vein", "emoji": "🩸", "type": "batch_auto_processed",
-        "summary": f"🔍 Batch auto-processed: {ok_count}/{len(results)} files",
-        "detail": {"total": len(results), "ok": ok_count, "promoted": promoted_count},
-    })
+    push_event(
+        {
+            "organ": "vein",
+            "emoji": "🩸",
+            "type": "batch_auto_processed",
+            "summary": f"🔍 Batch auto-processed: {ok_count}/{len(results)} files",
+            "detail": {"total": len(results), "ok": ok_count, "promoted": promoted_count},
+        }
+    )
 
     return {
         "status": "ok",
@@ -867,6 +990,7 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def vein_health():
@@ -883,6 +1007,7 @@ async def vein_health():
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def get_stats():

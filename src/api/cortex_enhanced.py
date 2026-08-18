@@ -9,10 +9,10 @@ Three advanced intelligence features for the knowledge platform:
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.database.postgres import db_pool
 from src.cortex.graphrag import GraphRAGEngine
-from src.cortex.recommendation import RecommendationEngine
 from src.cortex.quality import QualityScorer
+from src.cortex.recommendation import RecommendationEngine
+from src.database.postgres import db_pool
 from src.nerve.event_bridge import push_event
 
 router = APIRouter()
@@ -25,6 +25,7 @@ scorer = QualityScorer()
 
 # ── Request Schemas ────────────────────────────────────────────────
 
+
 class GraphQueryRequest(BaseModel):
     entity_name: str
     depth: int = 2
@@ -32,17 +33,22 @@ class GraphQueryRequest(BaseModel):
 
 # ── GraphRAG Endpoints ────────────────────────────────────────────
 
+
 @router.post("/graphrag/build")
 async def build_graph(user_id: str = Query(default="default")):
     """Scan all knowledge entries and auto-extract entities + relations
     into the knowledge graph."""
     result = await graphrag.build_graph_from_knowledge(db_pool, user_id)
 
-    push_event({
-        "organ": "cortex", "emoji": "🧩", "type": "graphrag_build",
-        "summary": f"🔮 GraphRAG built: {result['entities_new']} new entities, {result['relations_new']} new relations",
-        "detail": result,
-    })
+    push_event(
+        {
+            "organ": "cortex",
+            "emoji": "🧩",
+            "type": "graphrag_build",
+            "summary": f"🔮 GraphRAG built: {result['entities_new']} new entities, {result['relations_new']} new relations",
+            "detail": result,
+        }
+    )
 
     return result
 
@@ -72,6 +78,7 @@ async def extract_from_text(
 
 
 # ── Recommendation Endpoints ──────────────────────────────────────
+
 
 @router.get("/recommend/trending")
 async def trending(
@@ -108,6 +115,7 @@ async def recommend_related(
 
 # ── Quality Scoring Endpoints ─────────────────────────────────────
 
+
 @router.get("/quality/report")
 async def quality_report(user_id: str = Query(default="default")):
     """Aggregate quality report: distribution, dimension averages, top/bottom."""
@@ -140,6 +148,7 @@ async def score_knowledge(
 
 
 # ── Health ─────────────────────────────────────────────────────────
+
 
 @router.get("/enhanced/health")
 async def enhanced_health():

@@ -1,7 +1,5 @@
 """Integration tests for OpenMind (心智) — emotion analysis, personality."""
 
-import pytest
-
 
 class TestMindHealth:
     def test_health(self, client):
@@ -14,9 +12,12 @@ class TestMindHealth:
 
 class TestMindEmotion:
     def test_analyze_emotion(self, client):
-        resp = client.post("/api/mind/emotion/analyze", json={
-            "text": "I am so happy today! This is amazing!",
-        })
+        resp = client.post(
+            "/api/mind/emotion/analyze",
+            json={
+                "text": "I am so happy today! This is amazing!",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "primary_emotion" in data

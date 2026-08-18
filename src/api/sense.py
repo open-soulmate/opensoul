@@ -1,12 +1,11 @@
 """OpenSense API — 感官感知：OCR图像识别、ASR语音转写、多模态解析。"""
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
-from src.sense.ocr import OCREngine, HAS_TESSERACT
 from src.sense.asr import ASREngine
 from src.sense.multimodal import MultimodalAnalyzer
+from src.sense.ocr import HAS_TESSERACT, OCREngine
 
 router = APIRouter()
 
@@ -18,12 +17,14 @@ multimodal = MultimodalAnalyzer()
 # Wire up LLM gateway for OCR fallback (lazy — resolved on first use)
 _llm_gateway = None
 
+
 def _get_gateway():
     """Lazy-load the Gland ModelRouter singleton."""
     global _llm_gateway
     if _llm_gateway is None:
         try:
             from src.api.gland import gateway
+
             _llm_gateway = gateway
             ocr_engine.set_llm_gateway(gateway)
             asr_engine.set_llm_gateway(gateway)  # Also wire ASR fallback
@@ -33,6 +34,7 @@ def _get_gateway():
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class OCRRequest(BaseModel):
     language: str | None = None
@@ -45,6 +47,7 @@ class ASRRequest(BaseModel):
 
 
 # ── OCR Endpoints ──────────────────────────────────────────
+
 
 @router.post("/ocr/image")
 async def ocr_image(
@@ -100,6 +103,7 @@ async def ocr_languages():
 
 
 # ── Smart OCR (Tesseract + LLM fallback) ─────────────────
+
 
 @router.post("/ocr/smart/image")
 async def smart_ocr_image(
@@ -159,7 +163,9 @@ async def llm_ocr_image(
 
     gw = _get_gateway()
     if not gw:
-        raise HTTPException(503, "LLM gateway not available — configure a vision-capable model in Gland")
+        raise HTTPException(
+            503, "LLM gateway not available — configure a vision-capable model in Gland"
+        )
 
     data = await file.read()
     result = await ocr_engine.image_to_text_via_llm(data, language=language)
@@ -175,6 +181,7 @@ async def llm_ocr_image(
 
 # ── ASR Endpoints ──────────────────────────────────────────
 
+
 @router.post("/asr/transcribe")
 async def asr_transcribe(
     file: UploadFile = File(...),
@@ -183,9 +190,16 @@ async def asr_transcribe(
 ):
     """Transcribe audio file → text."""
     allowed_types = [
-        "audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg",
-        "audio/ogg", "audio/flac", "audio/webm", "audio/mp4",
-        "audio/x-m4a", "application/octet-stream",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp3",
+        "audio/mpeg",
+        "audio/ogg",
+        "audio/flac",
+        "audio/webm",
+        "audio/mp4",
+        "audio/x-m4a",
+        "application/octet-stream",
     ]
     if file.content_type and file.content_type not in allowed_types:
         # Be lenient — still try to process
@@ -200,10 +214,7 @@ async def asr_transcribe(
         "language": result.language,
         "duration_seconds": result.duration_seconds,
         "engine": result.engine,
-        "segments": [
-            {"start": s.start, "end": s.end, "text": s.text}
-            for s in result.segments
-        ],
+        "segments": [{"start": s.start, "end": s.end, "text": s.text} for s in result.segments],
     }
 
 
@@ -230,6 +241,7 @@ async def set_asr_model(model_size: str = Query(...)):
 
 # ── Multimodal Endpoints ──────────────────────────────────
 
+
 @router.post("/analyze/image")
 async def analyze_image(
     file: UploadFile = File(...),
@@ -254,6 +266,7 @@ async def analyze_image(
 
 
 # ── Video Endpoints ─────────────────────────────────────────
+
 
 @router.post("/analyze/video")
 async def analyze_video(
@@ -312,13 +325,14 @@ async def extract_frames(
 
 # ── Health / Status ────────────────────────────────────────
 
+
 @router.get("/health")
 async def sense_health():
     """OpenSense health check."""
     from src.sense.asr import HAS_WHISPER
 
     gw = _get_gateway()
-    has_llm_fallback = gw is not None and len(getattr(gw, 'providers', [])) > 0
+    has_llm_fallback = gw is not None and len(getattr(gw, "providers", [])) > 0
 
     return {
         "status": "ok",
@@ -332,7 +346,9 @@ async def sense_health():
             },
             "asr": {
                 "available": HAS_WHISPER or has_llm_fallback,
-                "engine": "whisper" if HAS_WHISPER else ("llm-fallback" if has_llm_fallback else "none"),
+                "engine": "whisper"
+                if HAS_WHISPER
+                else ("llm-fallback" if has_llm_fallback else "none"),
                 "model": asr_engine.model_size,
                 "whisper_local": HAS_WHISPER,
                 "llm_fallback": has_llm_fallback,
@@ -347,12 +363,14 @@ async def sense_health():
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def sense_stats():
     """Get OpenSense statistics."""
     from src.sense.asr import HAS_WHISPER
+
     gw = _get_gateway()
-    has_llm_fallback = gw is not None and len(getattr(gw, 'providers', [])) > 0
+    has_llm_fallback = gw is not None and len(getattr(gw, "providers", [])) > 0
 
     return {
         "status": "ok",
@@ -366,7 +384,9 @@ async def sense_stats():
             },
             "asr": {
                 "available": HAS_WHISPER or has_llm_fallback,
-                "engine": "whisper" if HAS_WHISPER else ("llm-fallback" if has_llm_fallback else "none"),
+                "engine": "whisper"
+                if HAS_WHISPER
+                else ("llm-fallback" if has_llm_fallback else "none"),
                 "model": asr_engine.model_size,
                 "whisper_local": HAS_WHISPER,
                 "llm_fallback": has_llm_fallback,

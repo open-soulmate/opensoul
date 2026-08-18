@@ -9,6 +9,7 @@ from dataclasses import dataclass
 @dataclass
 class MindMapNode:
     """A node in a mind map."""
+
     id: str
     label: str
     children: list["MindMapNode"] = None
@@ -22,8 +23,18 @@ class MindMapNode:
 class MindMapGenerator:
     """Generate mind map images."""
 
-    COLORS = ["#e11d48", "#2563eb", "#059669", "#d97706", "#7c3aed",
-              "#0891b2", "#65a30d", "#c026d3", "#ea580c", "#4f46e5"]
+    COLORS = [
+        "#e11d48",
+        "#2563eb",
+        "#059669",
+        "#d97706",
+        "#7c3aed",
+        "#0891b2",
+        "#65a30d",
+        "#c026d3",
+        "#ea580c",
+        "#4f46e5",
+    ]
 
     def __init__(self, output_dir: str = ""):
         self._output_dir = output_dir or os.path.expanduser("~/.opensoul/vision_output")
@@ -44,6 +55,7 @@ class MindMapGenerator:
 
         try:
             from PIL import Image, ImageDraw, ImageFont
+
             HAS_PIL = True
         except ImportError:
             HAS_PIL = False
@@ -88,7 +100,9 @@ class MindMapGenerator:
         children = [self._dict_to_node(c) for c in d.get("children", [])]
         return MindMapNode(id=d.get("id", ""), label=d.get("label", ""), children=children)
 
-    def _draw_node(self, draw, node: MindMapNode, x: int, y: int, w: int, h: int, depth: int, index: int):
+    def _draw_node(
+        self, draw, node: MindMapNode, x: int, y: int, w: int, h: int, depth: int, index: int
+    ):
         color = self.COLORS[depth % len(self.COLORS)]
 
         # Draw this node

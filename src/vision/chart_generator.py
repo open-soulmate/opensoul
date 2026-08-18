@@ -2,10 +2,8 @@
 
 import io
 import os
-import json
 import time
-import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Check available backends
 HAS_MATPLOTLIB = False
@@ -13,15 +11,18 @@ HAS_PIL = False
 
 try:
     import matplotlib
+
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
     import matplotlib.font_manager as fm
+    import matplotlib.pyplot as plt
+
     HAS_MATPLOTLIB = True
 except ImportError:
     pass
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     HAS_PIL = True
 except ImportError:
     pass
@@ -30,6 +31,7 @@ except ImportError:
 @dataclass
 class ChartResult:
     """Result of chart generation."""
+
     image_data: bytes
     format: str = "png"
     width: int = 0
@@ -119,7 +121,9 @@ class ChartGenerator:
             buf.seek(0)
             data = buf.read()
             self._generated += 1
-            return ChartResult(image_data=data, format="png", chart_type="line", engine="matplotlib")
+            return ChartResult(
+                image_data=data, format="png", chart_type="line", engine="matplotlib"
+            )
 
         # Fallback
         labels = [str(x_val) for x_val in x]
@@ -140,11 +144,25 @@ class ChartGenerator:
 
         if HAS_MATPLOTLIB:
             fig, ax = plt.subplots(figsize=figsize)
-            colors = ["#e11d48", "#2563eb", "#059669", "#d97706", "#7c3aed",
-                      "#0891b2", "#65a30d", "#c026d3", "#ea580c", "#4f46e5"]
+            colors = [
+                "#e11d48",
+                "#2563eb",
+                "#059669",
+                "#d97706",
+                "#7c3aed",
+                "#0891b2",
+                "#65a30d",
+                "#c026d3",
+                "#ea580c",
+                "#4f46e5",
+            ]
             wedges, texts, autotexts = ax.pie(
-                values, labels=labels, colors=colors[:len(labels)],
-                autopct="%1.1f%%", startangle=90, pctdistance=0.85,
+                values,
+                labels=labels,
+                colors=colors[: len(labels)],
+                autopct="%1.1f%%",
+                startangle=90,
+                pctdistance=0.85,
             )
             for text in autotexts:
                 text.set_fontsize(10)
@@ -158,8 +176,13 @@ class ChartGenerator:
             buf.seek(0)
             data = buf.read()
             self._generated += 1
-            return ChartResult(image_data=data, format="png", chart_type="pie", engine="matplotlib",
-                               elapsed_seconds=time.time() - start)
+            return ChartResult(
+                image_data=data,
+                format="png",
+                chart_type="pie",
+                engine="matplotlib",
+                elapsed_seconds=time.time() - start,
+            )
 
         result = self._text_chart(labels, values, title, "pie")
         result.elapsed_seconds = time.time() - start
@@ -195,8 +218,13 @@ class ChartGenerator:
             buf.seek(0)
             data = buf.read()
             self._generated += 1
-            return ChartResult(image_data=data, format="png", chart_type="scatter", engine="matplotlib",
-                               elapsed_seconds=time.time() - start)
+            return ChartResult(
+                image_data=data,
+                format="png",
+                chart_type="scatter",
+                engine="matplotlib",
+                elapsed_seconds=time.time() - start,
+            )
 
         labels = [str(v) for v in x]
         result = self._text_chart(labels, y, title, "scatter")
@@ -209,8 +237,14 @@ class ChartGenerator:
 
         # Add value labels on bars
         for bar, val in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(values) * 0.02,
-                    f"{val:.1f}", ha="center", va="bottom", fontsize=9)
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + max(values) * 0.02,
+                f"{val:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
 
         if title:
             ax.set_title(title, fontsize=14, fontweight="bold")
@@ -225,7 +259,9 @@ class ChartGenerator:
         fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
         plt.close(fig)
         buf.seek(0)
-        return ChartResult(image_data=buf.read(), format="png", chart_type="bar", engine="matplotlib")
+        return ChartResult(
+            image_data=buf.read(), format="png", chart_type="bar", engine="matplotlib"
+        )
 
     def _pil_bar(self, labels, values, title, color) -> ChartResult:
         """Simple bar chart using Pillow only."""
@@ -244,7 +280,7 @@ class ChartGenerator:
             y = chart_bottom - bar_h
 
             # Parse hex color
-            r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+            _r, _g, _b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
             draw.rectangle([x, y, x + bar_w, chart_bottom], fill=color, outline="white")
             draw.text((x + bar_w // 2, chart_bottom + 5), label[:8], fill="gray", anchor="mt")
             draw.text((x + bar_w // 2, y - 15), str(val), fill="black", anchor="mb")
@@ -254,8 +290,14 @@ class ChartGenerator:
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        return ChartResult(image_data=buf.getvalue(), format="png", chart_type="bar", engine="pillow",
-                           width=w, height=h)
+        return ChartResult(
+            image_data=buf.getvalue(),
+            format="png",
+            chart_type="bar",
+            engine="pillow",
+            width=w,
+            height=h,
+        )
 
     def _text_chart(self, labels, values, title, chart_type) -> ChartResult:
         """Ultra-minimal text-based chart (fallback when no graphics library)."""
@@ -288,11 +330,13 @@ class ChartGenerator:
             fp = os.path.join(self._output_dir, name)
             if os.path.isfile(fp):
                 stat = os.stat(fp)
-                results.append({
-                    "filename": name,
-                    "size_bytes": stat.st_size,
-                    "created_at": stat.st_mtime,
-                })
+                results.append(
+                    {
+                        "filename": name,
+                        "size_bytes": stat.st_size,
+                        "created_at": stat.st_mtime,
+                    }
+                )
         return results[:100]
 
     def stats(self) -> dict:

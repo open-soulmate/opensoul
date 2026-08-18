@@ -3,10 +3,10 @@
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class MigrationType(str, Enum):
+class MigrationType(StrEnum):
     KB_SCHEMA = "kb_schema"
     CONFIG = "config"
     PLUGIN = "plugin"
@@ -101,18 +101,26 @@ class MigrationEngine:
         modified = []
         for name in from_fields:
             if name in to_fields and from_fields[name].field_type != to_fields[name].field_type:
-                modified.append({
-                    "name": name,
-                    "old_type": from_fields[name].field_type,
-                    "new_type": to_fields[name].field_type,
-                })
+                modified.append(
+                    {
+                        "name": name,
+                        "old_type": from_fields[name].field_type,
+                        "new_type": to_fields[name].field_type,
+                    }
+                )
 
         return SchemaDiff(added=added, removed=removed, modified=modified)
 
-    def create_migration_script(self, migration_type: str, component_id: str,
-                                 from_version: str, to_version: str,
-                                 up_sql: str = "", down_sql: str = "",
-                                 transform: str = "") -> MigrationScript:
+    def create_migration_script(
+        self,
+        migration_type: str,
+        component_id: str,
+        from_version: str,
+        to_version: str,
+        up_sql: str = "",
+        down_sql: str = "",
+        transform: str = "",
+    ) -> MigrationScript:
         """Create a migration script."""
         script = MigrationScript(
             script_id=f"ms_{uuid.uuid4().hex[:12]}",

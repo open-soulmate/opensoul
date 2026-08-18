@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from uuid import UUID
 
@@ -13,6 +13,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── Password hashing ───────────────────────────────────────────────────
 
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -23,13 +24,14 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT token ──────────────────────────────────────────────────────────
 
+
 def create_access_token(user_id: UUID, role: str = "user", extra: dict | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {
         "sub": str(user_id),
         "role": role,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
     }
     if extra:
         payload.update(extra)
@@ -53,6 +55,7 @@ def decode_token(token: str) -> dict | None:
 
 # ── User operations ────────────────────────────────────────────────────
 
+
 async def authenticate_user(username: str, password: str) -> dict | None:
     row = await db_pool.fetchrow(
         "SELECT id, username, email, role, password_hash FROM users WHERE username = $1",
@@ -60,7 +63,12 @@ async def authenticate_user(username: str, password: str) -> dict | None:
     )
     if not row or not verify_password(password, row["password_hash"]):
         return None
-    return {"id": row["id"], "username": row["username"], "email": row["email"], "role": row["role"]}
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "email": row["email"],
+        "role": row["role"],
+    }
 
 
 async def get_user_by_id(user_id: UUID) -> dict | None:
@@ -73,11 +81,16 @@ async def get_user_by_id(user_id: UUID) -> dict | None:
 
 async def register_user(username: str, email: str, password: str, role: str = "user") -> dict:
     import uuid
+
     user_id = str(uuid.uuid4())
     hashed = hash_password(password)
     await db_pool.execute(
         "INSERT INTO users (id, username, email, password_hash, role) VALUES ($1, $2, $3, $4, $5)",
-        user_id, username, email, hashed, role,
+        user_id,
+        username,
+        email,
+        hashed,
+        role,
     )
     row = await db_pool.fetchrow(
         "SELECT id, username, email, role, is_active, created_at, updated_at FROM users WHERE id = $1",
@@ -101,15 +114,20 @@ def require_role(required_role: str):
     Must be used AFTER Depends(get_current_user) so that `current_user`
     is available as a kwarg.
     """
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, current_user: dict | None = None, **kwargs):
             if not current_user:
                 from fastapi import HTTPException
+
                 raise HTTPException(status_code=401, detail="Not authenticated")
             if not role_at_least(current_user.get("role", "user"), required_role):
                 from fastapi import HTTPException
+
                 raise HTTPException(status_code=403, detail="Insufficient permissions")
             return await func(*args, current_user=current_user, **kwargs)
+
         return wrapper
+
     return decorator

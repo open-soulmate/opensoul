@@ -1,6 +1,5 @@
 """OpenReflex API — 条件反射：高频问答缓存、快速应答。"""
 
-import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -13,6 +12,7 @@ cache = ReflexCache(max_entries=5000, similarity_threshold=0.80)
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class CachePutRequest(BaseModel):
     query: str
@@ -37,6 +37,7 @@ class CacheUpdateRequest(BaseModel):
 
 # ── Stats ──────────────────────────────────────────────────
 
+
 @router.get("/stats")
 async def reflex_stats():
     """Get OpenReflex statistics."""
@@ -49,6 +50,7 @@ async def reflex_stats():
 
 # ── Health ─────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def health():
     """OpenReflex health check."""
@@ -60,6 +62,7 @@ async def health():
 
 
 # ── Cache Operations ──────────────────────────────────────
+
 
 @router.post("/cache")
 async def put_cache(req: CachePutRequest):
@@ -180,6 +183,7 @@ async def cleanup_cache():
 
 
 # ── Config ─────────────────────────────────────────────────
+
 
 @router.get("/config")
 async def get_config():

@@ -15,6 +15,7 @@ engine = TemplateEngine()
 
 # ── Request Schemas ────────────────────────────────────────
 
+
 class TemplateCreateRequest(BaseModel):
     template_id: str = ""
     name: str
@@ -43,6 +44,7 @@ class InstantiateRequest(BaseModel):
 
 
 # ── Template Endpoints ─────────────────────────────────────
+
 
 @router.get("/templates")
 async def list_templates(
@@ -125,6 +127,7 @@ async def instantiate_template(template_id: str, req: InstantiateRequest):
 
 # ── Export / Import / Clone ────────────────────────────────
 
+
 @router.get("/templates/{template_id}/export")
 async def export_template(template_id: str):
     """Export a single template as JSON."""
@@ -170,11 +173,13 @@ async def import_templates(req: ImportRequest):
     results = []
     for data in req.templates:
         template, msg = engine.import_template(data, overwrite=req.overwrite)
-        results.append({
-            "template_id": data.get("template_id", "?"),
-            "success": template is not None,
-            "message": msg,
-        })
+        results.append(
+            {
+                "template_id": data.get("template_id", "?"),
+                "success": template is not None,
+                "message": msg,
+            }
+        )
     imported = sum(1 for r in results if r["success"])
     return {
         "imported": imported,
@@ -184,6 +189,7 @@ async def import_templates(req: ImportRequest):
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def gene_stats():
@@ -207,6 +213,7 @@ async def gene_stats():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def gene_health():

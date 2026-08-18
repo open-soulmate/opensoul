@@ -1,7 +1,5 @@
 """Integration tests for OpenLink (突触) — external system connectors."""
 
-import pytest
-
 
 class TestLinkHealth:
     def test_health(self, client):
@@ -15,12 +13,15 @@ class TestLinkHealth:
 class TestLinkConnectors:
     def test_create_list_delete_connector(self, client):
         # Create
-        resp = client.post("/api/link/connectors", json={
-            "name": "test_connector",
-            "type": "webhook_in",
-            "endpoint": "https://example.com/hook",
-            "description": "Integration test",
-        })
+        resp = client.post(
+            "/api/link/connectors",
+            json={
+                "name": "test_connector",
+                "type": "webhook_in",
+                "endpoint": "https://example.com/hook",
+                "description": "Integration test",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         cid = data["connector_id"]
@@ -34,9 +35,12 @@ class TestLinkConnectors:
         assert resp.status_code == 200
 
         # Update
-        resp = client.patch(f"/api/link/connectors/{cid}", json={
-            "description": "Updated by test",
-        })
+        resp = client.patch(
+            f"/api/link/connectors/{cid}",
+            json={
+                "description": "Updated by test",
+            },
+        )
         assert resp.status_code == 200
 
         # Delete

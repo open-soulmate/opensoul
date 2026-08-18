@@ -28,12 +28,15 @@ class TestLearnCourses:
         assert "count" in data
 
     def test_create_course(self, client):
-        resp = client.post("/api/learn/courses", json={
-            "title": "Integration Test Course",
-            "description": "Created by automated test",
-            "tags": ["test", "integration"],
-            "topics": ["testing"],
-        })
+        resp = client.post(
+            "/api/learn/courses",
+            json={
+                "title": "Integration Test Course",
+                "description": "Created by automated test",
+                "tags": ["test", "integration"],
+                "topics": ["testing"],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "Integration Test Course"
@@ -48,10 +51,13 @@ class TestLearnCourses:
         assert "chapters" in detail
 
         # Update course
-        resp = client.put(f"/api/learn/courses/{course_id}", json={
-            "title": "Updated Test Course",
-            "status": "in_progress",
-        })
+        resp = client.put(
+            f"/api/learn/courses/{course_id}",
+            json={
+                "title": "Updated Test Course",
+                "status": "in_progress",
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["title"] == "Updated Test Course"
 
@@ -68,26 +74,32 @@ class TestLearnCourses:
 class TestLearnChapters:
     @pytest.fixture()
     def course_id(self, client):
-        resp = client.post("/api/learn/courses", json={
-            "title": "Chapter Test Course",
-            "description": "For testing chapters",
-        })
+        resp = client.post(
+            "/api/learn/courses",
+            json={
+                "title": "Chapter Test Course",
+                "description": "For testing chapters",
+            },
+        )
         yield resp.json()["id"]
         client.delete(f"/api/learn/courses/{resp.json()['id']}")
 
     def test_add_chapter(self, client, course_id):
-        resp = client.post(f"/api/learn/courses/{course_id}/chapters", json={
-            "title": "Chapter 1: Introduction",
-            "content": "This is the first chapter content.",
-            "quiz": [
-                {
-                    "question": "What is testing?",
-                    "options": ["A process", "A tool", "A language", "A framework"],
-                    "correct_index": 0,
-                    "explanation": "Testing is the process of evaluating software.",
-                }
-            ],
-        })
+        resp = client.post(
+            f"/api/learn/courses/{course_id}/chapters",
+            json={
+                "title": "Chapter 1: Introduction",
+                "content": "This is the first chapter content.",
+                "quiz": [
+                    {
+                        "question": "What is testing?",
+                        "options": ["A process", "A tool", "A language", "A framework"],
+                        "correct_index": 0,
+                        "explanation": "Testing is the process of evaluating software.",
+                    }
+                ],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "Chapter 1: Introduction"
@@ -112,9 +124,7 @@ class TestLearnChapters:
         assert resp.json()["title"] == "Updated Chapter 1"
 
         # Delete chapter
-        resp = client.delete(
-            f"/api/learn/courses/{course_id}/chapters/{chapter_id}"
-        )
+        resp = client.delete(f"/api/learn/courses/{course_id}/chapters/{chapter_id}")
         assert resp.status_code == 200
 
     def test_chapter_not_found(self, client, course_id):
@@ -130,10 +140,13 @@ class TestLearnQuiz:
     def course_and_chapter(self, client):
         resp = client.post("/api/learn/courses", json={"title": "Quiz Test Course"})
         cid = resp.json()["id"]
-        resp = client.post(f"/api/learn/courses/{cid}/chapters", json={
-            "title": "Quiz Chapter",
-            "content": "Quiz content",
-        })
+        resp = client.post(
+            f"/api/learn/courses/{cid}/chapters",
+            json={
+                "title": "Quiz Chapter",
+                "content": "Quiz content",
+            },
+        )
         chid = resp.json()["id"]
         yield cid, chid
         client.delete(f"/api/learn/courses/{cid}")
@@ -163,9 +176,7 @@ class TestLearnQuiz:
         assert data["count"] == 2
 
         # Get quiz
-        resp = client.get(
-            f"/api/learn/courses/{cid}/chapters/{chid}/quiz"
-        )
+        resp = client.get(f"/api/learn/courses/{cid}/chapters/{chid}/quiz")
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 2

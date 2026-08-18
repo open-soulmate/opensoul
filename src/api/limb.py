@@ -1,4 +1,5 @@
 """OpenLimb API — 四肢：RPA执行器、浏览器自动化、表单填报。"""
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -11,6 +12,7 @@ executor = RPAExecutor()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class TaskCreateRequest(BaseModel):
     name: str
@@ -35,6 +37,7 @@ class TemplateInstantiateRequest(BaseModel):
 
 
 # ── Task Endpoints ─────────────────────────────────────────
+
 
 @router.post("/tasks")
 async def create_task(req: TaskCreateRequest):
@@ -94,6 +97,7 @@ async def delete_task(task_id: str):
 
 # ── Template Endpoints ─────────────────────────────────────
 
+
 @router.get("/templates")
 async def list_templates(category: str = Query(default=None)):
     """List available RPA task templates."""
@@ -135,6 +139,7 @@ async def instantiate_template(template_id: str, req: TemplateInstantiateRequest
 
 # ── History ─────────────────────────────────────────────────
 
+
 @router.get("/history")
 async def get_history(limit: int = Query(default=50)):
     """Get task execution history."""
@@ -142,6 +147,7 @@ async def get_history(limit: int = Query(default=50)):
 
 
 # ── Health / Stats ─────────────────────────────────────────
+
 
 @router.get("/health")
 async def limb_health():

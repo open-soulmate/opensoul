@@ -1,13 +1,11 @@
 """OCR engine — image/PDF → text via Tesseract or LLM vision fallback."""
+
 from __future__ import annotations
 
 import base64
 import io
 import logging
-import os
-import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from PIL import Image
 
@@ -69,7 +67,9 @@ class OCREngine:
         if not HAS_TESSERACT:
             return OCRResult(
                 text="[OCR unavailable: pytesseract not installed]",
-                confidence=0, language="", engine="none",
+                confidence=0,
+                language="",
+                engine="none",
             )
 
         img = Image.open(io.BytesIO(image_bytes))
@@ -104,7 +104,9 @@ class OCREngine:
         if not HAS_PDF2IMAGE:
             return OCRResult(
                 text="[PDF OCR unavailable: pdf2image not installed]",
-                confidence=0, language="", engine="none",
+                confidence=0,
+                language="",
+                engine="none",
             )
 
         images = convert_from_bytes(pdf_bytes, dpi=dpi)
@@ -114,7 +116,9 @@ class OCREngine:
         total_conf = 0.0
 
         for i, img in enumerate(images[:max_pages]):
-            data = pytesseract.image_to_data(img, lang=use_lang, output_type=pytesseract.Output.DICT)
+            data = pytesseract.image_to_data(
+                img, lang=use_lang, output_type=pytesseract.Output.DICT
+            )
             confidences = [int(c) for c in data["conf"] if int(c) > 0]
             avg_conf = sum(confidences) / len(confidences) if confidences else 0
             text = pytesseract.image_to_string(img, lang=use_lang).strip()
@@ -153,7 +157,9 @@ class OCREngine:
         if not self._llm_gateway:
             return OCRResult(
                 text="[LLM OCR unavailable: no gateway configured]",
-                confidence=0, language="", engine="none",
+                confidence=0,
+                language="",
+                engine="none",
             )
 
         # Detect image format
@@ -170,7 +176,7 @@ class OCREngine:
         if language:
             lang_hint = f" The text is primarily in {language}."
         elif self.lang:
-            lang_hint = f" The text may contain Chinese and English."
+            lang_hint = " The text may contain Chinese and English."
 
         prompt = (
             f"Extract ALL text from this image exactly as it appears.{lang_hint}\n"
@@ -207,7 +213,7 @@ class OCREngine:
             text = text.strip()
 
             # Extract usage for confidence heuristic
-            usage = result.get("usage", {})
+            result.get("usage", {})
             # We don't have a real confidence score from LLM, estimate based on response length
             confidence = min(95.0, max(50.0, len(text) * 0.5)) if text else 0.0
 
@@ -222,7 +228,9 @@ class OCREngine:
             logger.warning("LLM vision OCR failed: %s", e)
             return OCRResult(
                 text=f"[LLM OCR failed: {e}]",
-                confidence=0, language="", engine="llm_vision_error",
+                confidence=0,
+                language="",
+                engine="llm_vision_error",
             )
 
     async def pdf_to_text_via_llm(
@@ -238,7 +246,9 @@ class OCREngine:
         if not HAS_PDF2IMAGE:
             return OCRResult(
                 text="[PDF LLM OCR unavailable: pdf2image not installed]",
-                confidence=0, language="", engine="none",
+                confidence=0,
+                language="",
+                engine="none",
             )
 
         images = convert_from_bytes(pdf_bytes, dpi=150)  # Lower DPI for LLM
@@ -253,11 +263,13 @@ class OCREngine:
             page_bytes = buf.getvalue()
 
             result = await self.image_to_text_via_llm(page_bytes, language=language)
-            pages.append({
-                "page": i + 1,
-                "text": result.text,
-                "confidence": result.confidence,
-            })
+            pages.append(
+                {
+                    "page": i + 1,
+                    "text": result.text,
+                    "confidence": result.confidence,
+                }
+            )
             all_text_parts.append(result.text)
             total_conf += result.confidence
 
@@ -309,7 +321,9 @@ class OCREngine:
                 logger.info("Tesseract PDF OCR failed (%s), trying LLM fallback", e)
 
         # Fallback to LLM
-        return await self.pdf_to_text_via_llm(pdf_bytes, language=language, max_pages=min(max_pages, 20))
+        return await self.pdf_to_text_via_llm(
+            pdf_bytes, language=language, max_pages=min(max_pages, 20)
+        )
 
     # ── Helpers ───────────────────────────────────────────────────
 

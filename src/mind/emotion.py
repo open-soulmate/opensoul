@@ -2,19 +2,20 @@
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class EmotionResult:
     """Result of emotion analysis."""
-    primary_emotion: str        # e.g. "joy", "sadness"
-    confidence: float           # 0.0 ~ 1.0
+
+    primary_emotion: str  # e.g. "joy", "sadness"
+    confidence: float  # 0.0 ~ 1.0
     emotions: dict[str, float]  # {"joy": 0.8, "anger": 0.1, ...}
-    valence: float              # -1.0 (negative) to 1.0 (positive)
-    arousal: float              # 0.0 (calm) to 1.0 (excited)
-    sentiment: str              # "positive", "negative", "neutral"
-    keywords: list[str]         # trigger keywords found
+    valence: float  # -1.0 (negative) to 1.0 (positive)
+    arousal: float  # 0.0 (calm) to 1.0 (excited)
+    sentiment: str  # "positive", "negative", "neutral"
+    keywords: list[str]  # trigger keywords found
     elapsed_ms: int = 0
 
 
@@ -22,10 +23,39 @@ class EmotionResult:
 _EMOTION_LEXICON = {
     "joy": {
         "keywords": [
-            "开心", "高兴", "快乐", "幸福", "喜欢", "太棒了", "好极了", "赞", "awesome",
-            "happy", "joy", "great", "wonderful", "love", "excellent", "amazing", "fantastic",
-            "amazing", "beautiful", "perfect", "brilliant", "excited", "pleased", "delighted",
-            "庆祝", "成功", "完成", "棒", "不错", "满意", "笑", "感谢", "谢谢",
+            "开心",
+            "高兴",
+            "快乐",
+            "幸福",
+            "喜欢",
+            "太棒了",
+            "好极了",
+            "赞",
+            "awesome",
+            "happy",
+            "joy",
+            "great",
+            "wonderful",
+            "love",
+            "excellent",
+            "amazing",
+            "fantastic",
+            "amazing",
+            "beautiful",
+            "perfect",
+            "brilliant",
+            "excited",
+            "pleased",
+            "delighted",
+            "庆祝",
+            "成功",
+            "完成",
+            "棒",
+            "不错",
+            "满意",
+            "笑",
+            "感谢",
+            "谢谢",
         ],
         "weight": 1.0,
         "valence": 0.8,
@@ -33,10 +63,34 @@ _EMOTION_LEXICON = {
     },
     "sadness": {
         "keywords": [
-            "伤心", "难过", "悲伤", "失望", "遗憾", "可惜", "心痛", "哭", "孤独",
-            "sad", "sorry", "disappointed", "unfortunate", "miss", "lonely", "depressed",
-            "crying", "heartbroken", "grief", "loss", "sorrow", "melancholy",
-            "失败", "失去", "分离", "告别", "无奈", "后悔",
+            "伤心",
+            "难过",
+            "悲伤",
+            "失望",
+            "遗憾",
+            "可惜",
+            "心痛",
+            "哭",
+            "孤独",
+            "sad",
+            "sorry",
+            "disappointed",
+            "unfortunate",
+            "miss",
+            "lonely",
+            "depressed",
+            "crying",
+            "heartbroken",
+            "grief",
+            "loss",
+            "sorrow",
+            "melancholy",
+            "失败",
+            "失去",
+            "分离",
+            "告别",
+            "无奈",
+            "后悔",
         ],
         "weight": 0.9,
         "valence": -0.7,
@@ -44,10 +98,33 @@ _EMOTION_LEXICON = {
     },
     "anger": {
         "keywords": [
-            "生气", "愤怒", "讨厌", "烦", "火大", "混蛋", "可恶", "受够了",
-            "angry", "hate", "furious", "annoying", "frustrated", "stupid", "damn",
-            "terrible", "worst", "awful", "disgusting", "ridiculous", "absurd",
-            "垃圾", "废物", "滚", "闭嘴", "气死", "恼火",
+            "生气",
+            "愤怒",
+            "讨厌",
+            "烦",
+            "火大",
+            "混蛋",
+            "可恶",
+            "受够了",
+            "angry",
+            "hate",
+            "furious",
+            "annoying",
+            "frustrated",
+            "stupid",
+            "damn",
+            "terrible",
+            "worst",
+            "awful",
+            "disgusting",
+            "ridiculous",
+            "absurd",
+            "垃圾",
+            "废物",
+            "滚",
+            "闭嘴",
+            "气死",
+            "恼火",
         ],
         "weight": 1.0,
         "valence": -0.8,
@@ -55,10 +132,32 @@ _EMOTION_LEXICON = {
     },
     "fear": {
         "keywords": [
-            "害怕", "恐惧", "担心", "焦虑", "紧张", "不安", "恐慌", "吓",
-            "afraid", "fear", "worried", "anxious", "nervous", "scared", "panic",
-            "terrified", "horror", "dread", "uneasy", "alarming", "threatening",
-            "危险", "威胁", "可怕", "吓人", "崩溃",
+            "害怕",
+            "恐惧",
+            "担心",
+            "焦虑",
+            "紧张",
+            "不安",
+            "恐慌",
+            "吓",
+            "afraid",
+            "fear",
+            "worried",
+            "anxious",
+            "nervous",
+            "scared",
+            "panic",
+            "terrified",
+            "horror",
+            "dread",
+            "uneasy",
+            "alarming",
+            "threatening",
+            "危险",
+            "威胁",
+            "可怕",
+            "吓人",
+            "崩溃",
         ],
         "weight": 0.9,
         "valence": -0.6,
@@ -66,10 +165,29 @@ _EMOTION_LEXICON = {
     },
     "surprise": {
         "keywords": [
-            "惊讶", "意外", "没想到", "震惊", "吃惊", "不敢相信", "天啊", "哇",
-            "surprised", "shocked", "unexpected", "unbelievable", "incredible", "wow",
-            "omg", "amazing", "astonishing", "remarkable", "stunning",
-            "居然", "竟然", "出乎意料", "万万没想到",
+            "惊讶",
+            "意外",
+            "没想到",
+            "震惊",
+            "吃惊",
+            "不敢相信",
+            "天啊",
+            "哇",
+            "surprised",
+            "shocked",
+            "unexpected",
+            "unbelievable",
+            "incredible",
+            "wow",
+            "omg",
+            "amazing",
+            "astonishing",
+            "remarkable",
+            "stunning",
+            "居然",
+            "竟然",
+            "出乎意料",
+            "万万没想到",
         ],
         "weight": 0.8,
         "valence": 0.2,
@@ -77,10 +195,32 @@ _EMOTION_LEXICON = {
     },
     "trust": {
         "keywords": [
-            "信任", "相信", "可靠", "放心", "安心", "踏实", "认可", "赞同",
-            "trust", "believe", "reliable", "confident", "sure", "certain", "faith",
-            "dependable", "honest", "loyal", "support", "agree", "accept",
-            "没问题", "可以的", "好的", "同意", "支持",
+            "信任",
+            "相信",
+            "可靠",
+            "放心",
+            "安心",
+            "踏实",
+            "认可",
+            "赞同",
+            "trust",
+            "believe",
+            "reliable",
+            "confident",
+            "sure",
+            "certain",
+            "faith",
+            "dependable",
+            "honest",
+            "loyal",
+            "support",
+            "agree",
+            "accept",
+            "没问题",
+            "可以的",
+            "好的",
+            "同意",
+            "支持",
         ],
         "weight": 0.7,
         "valence": 0.5,
@@ -88,9 +228,25 @@ _EMOTION_LEXICON = {
     },
     "anticipation": {
         "keywords": [
-            "期待", "盼望", "希望", "渴望", "展望", "即将", "马上",
-            "expect", "hope", "anticipate", "looking forward", "eager", "soon",
-            "要", "会", "准备", "计划", "打算", "接下来",
+            "期待",
+            "盼望",
+            "希望",
+            "渴望",
+            "展望",
+            "即将",
+            "马上",
+            "expect",
+            "hope",
+            "anticipate",
+            "looking forward",
+            "eager",
+            "soon",
+            "要",
+            "会",
+            "准备",
+            "计划",
+            "打算",
+            "接下来",
         ],
         "weight": 0.6,
         "valence": 0.3,
@@ -98,10 +254,27 @@ _EMOTION_LEXICON = {
     },
     "confusion": {
         "keywords": [
-            "困惑", "不懂", "不明白", "啥意思", "什么意思", "不理解", "搞不懂",
-            "confused", "don't understand", "unclear", "uncertain", "what", "why",
-            "how", "huh", "puzzled", "perplexed", "bewildered",
-            "？", "？？", "???",
+            "困惑",
+            "不懂",
+            "不明白",
+            "啥意思",
+            "什么意思",
+            "不理解",
+            "搞不懂",
+            "confused",
+            "don't understand",
+            "unclear",
+            "uncertain",
+            "what",
+            "why",
+            "how",
+            "huh",
+            "puzzled",
+            "perplexed",
+            "bewildered",
+            "？",
+            "？？",
+            "???",
         ],
         "weight": 0.7,
         "valence": -0.2,
@@ -110,10 +283,41 @@ _EMOTION_LEXICON = {
 }
 
 # Sentiment keywords for quick polarity detection
-_POSITIVE_SIGNALS = {"好", "棒", "赞", "优秀", "完美", "喜欢", "感谢", "开心",
-                     "good", "great", "nice", "perfect", "love", "thanks", "happy", "well"}
-_NEGATIVE_SIGNALS = {"差", "坏", "糟", "烂", "讨厌", "失望", "失败",
-                     "bad", "poor", "terrible", "fail", "wrong", "error", "bug", "issue"}
+_POSITIVE_SIGNALS = {
+    "好",
+    "棒",
+    "赞",
+    "优秀",
+    "完美",
+    "喜欢",
+    "感谢",
+    "开心",
+    "good",
+    "great",
+    "nice",
+    "perfect",
+    "love",
+    "thanks",
+    "happy",
+    "well",
+}
+_NEGATIVE_SIGNALS = {
+    "差",
+    "坏",
+    "糟",
+    "烂",
+    "讨厌",
+    "失望",
+    "失败",
+    "bad",
+    "poor",
+    "terrible",
+    "fail",
+    "wrong",
+    "error",
+    "bug",
+    "issue",
+}
 
 
 class EmotionAnalyzer:
@@ -127,7 +331,7 @@ class EmotionAnalyzer:
         """Analyze emotion in text."""
         start = time.time()
         text_lower = text.lower()
-        words = set(re.findall(r'[\w\u4e00-\u9fff]+', text_lower))
+        words = set(re.findall(r"[\w\u4e00-\u9fff]+", text_lower))
 
         # Score each emotion
         scores: dict[str, float] = {}

@@ -8,14 +8,12 @@ Provides common admin tasks as single API calls:
 - Bulk health check with detailed diagnostics
 """
 
-import asyncio
-import json
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 import httpx
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -23,6 +21,7 @@ _BASE = "http://127.0.0.1:8090"
 
 
 # ── Request Schemas ─────────────────────────────────────────
+
 
 class BackupRequest(BaseModel):
     name: str = "admin-backup"
@@ -33,6 +32,7 @@ class BackupRequest(BaseModel):
 
 
 # ── Cache Management ────────────────────────────────────────
+
 
 @router.post("/caches/clear")
 async def clear_all_caches():
@@ -66,6 +66,7 @@ async def clear_all_caches():
 
 
 # ── Cleanup Expired Data ────────────────────────────────────
+
 
 @router.post("/cleanup")
 async def cleanup_expired():
@@ -104,21 +105,26 @@ async def cleanup_expired():
 
 # ── Backup ──────────────────────────────────────────────────
 
+
 @router.post("/backup")
 async def run_backup(req: BackupRequest):
     """Run an immediate backup of system data."""
     source_dirs = []
 
     if req.include_knowledge:
-        source_dirs.extend([
-            str(Path.home() / "opensoul" / "data"),
-        ])
+        source_dirs.extend(
+            [
+                str(Path.home() / "opensoul" / "data"),
+            ]
+        )
 
     if req.include_config:
-        source_dirs.extend([
-            str(Path.home() / "opensoul" / "src" / "config.py"),
-            str(Path.home() / ".hermes"),
-        ])
+        source_dirs.extend(
+            [
+                str(Path.home() / "opensoul" / "src" / "config.py"),
+                str(Path.home() / ".hermes"),
+            ]
+        )
 
     if req.include_memories:
         source_dirs.append(str(Path.home() / "opensoul" / "data" / "vein"))
@@ -128,12 +134,15 @@ async def run_backup(req: BackupRequest):
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            res = await client.post(f"{_BASE}/api/marrow/backups", json={
-                "source_dirs": source_dirs,
-                "name": req.name,
-                "description": req.description,
-                "tags": ["admin", "manual"],
-            })
+            res = await client.post(
+                f"{_BASE}/api/marrow/backups",
+                json={
+                    "source_dirs": source_dirs,
+                    "name": req.name,
+                    "description": req.description,
+                    "tags": ["admin", "manual"],
+                },
+            )
             if res.status_code == 200:
                 return {
                     "action": "backup",
@@ -156,6 +165,7 @@ async def run_backup(req: BackupRequest):
 
 
 # ── System Overview ─────────────────────────────────────────
+
 
 @router.get("/overview")
 async def system_overview():
@@ -225,6 +235,7 @@ async def system_overview():
 
 # ── Export System Config ─────────────────────────────────────
 
+
 @router.get("/export/config")
 async def export_config():
     """Export system configuration as JSON."""
@@ -285,6 +296,7 @@ async def export_config():
 
 
 # ── System Report ──────────────────────────────────────────
+
 
 @router.get("/report")
 async def system_report():
@@ -360,6 +372,7 @@ async def system_report():
 
 
 # ── Health ──────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def admin_health():

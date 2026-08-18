@@ -64,16 +64,19 @@ class AgentResponse(BaseModel):
 async def list_agents():
     """列出所有可用的CLI Agent"""
     import shutil
+
     agents = []
     for agent_id, config in AGENT_REGISTRY.items():
         binary_path = shutil.which(config["binary"])
-        agents.append({
-            "id": agent_id,
-            "name": config["name"],
-            "description": config["description"],
-            "available": binary_path is not None,
-            "binary": config["binary"],
-        })
+        agents.append(
+            {
+                "id": agent_id,
+                "name": config["name"],
+                "description": config["description"],
+                "available": binary_path is not None,
+                "binary": config["binary"],
+            }
+        )
     return agents
 
 
@@ -85,8 +88,11 @@ async def send_to_agent(data: AgentMessage, user_id: UUID = Depends(get_current_
         raise HTTPException(status_code=404, detail=f"Agent not found: {data.agent_id}")
 
     import shutil
+
     if not shutil.which(agent_config["binary"]):
-        raise HTTPException(status_code=400, detail=f"Agent binary not found: {agent_config['binary']}")
+        raise HTTPException(
+            status_code=400, detail=f"Agent binary not found: {agent_config['binary']}"
+        )
 
     try:
         cmd = [agent_config["binary"]] + agent_config["args"] + [data.message]
@@ -111,7 +117,7 @@ async def send_to_agent(data: AgentMessage, user_id: UUID = Depends(get_current_
             error=error,
         )
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise HTTPException(status_code=408, detail="Agent response timeout (120s)")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

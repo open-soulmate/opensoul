@@ -6,13 +6,14 @@ Based on Google A2A v1.0 specification:
 - Task lifecycle: submitted → working → completed/failed
 """
 
-from uuid import uuid4
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
+
 from pydantic import BaseModel
 
-
 # === Agent Card ===
+
 
 class AgentSkill(BaseModel):
     id: str
@@ -41,6 +42,7 @@ class AgentCard(BaseModel):
 
 
 # === Task Models ===
+
 
 class Message(BaseModel):
     role: str  # "user" or "agent"
@@ -95,6 +97,7 @@ class Task(BaseModel):
 
 
 # === JSON-RPC Models ===
+
 
 class JSONRPCRequest(BaseModel):
     jsonrpc: str = "2.0"

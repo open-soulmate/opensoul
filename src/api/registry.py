@@ -6,9 +6,8 @@ to interact with each component.
 
 This is the key enabler for the "一切皆插件" architecture.
 """
-import time
+
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -68,7 +67,14 @@ COMPONENT_MANIFESTS = [
         "description": "大文件分片上传、缓存管理、内容去重、文件版本控制",
         "api_prefix": "/api/vein",
         "health_endpoint": "/api/vein/health",
-        "capabilities": ["chunked-upload", "cache", "dedup", "versioning", "file-store", "knowledge-promote"],
+        "capabilities": [
+            "chunked-upload",
+            "cache",
+            "dedup",
+            "versioning",
+            "file-store",
+            "knowledge-promote",
+        ],
         "dependencies": ["nerve", "soul"],
         "version": "0.1.0",
         "phase": "二期",
@@ -138,7 +144,13 @@ COMPONENT_MANIFESTS = [
         "description": "内容风控、敏感数据脱敏、访问限流、IP管控、安全审计",
         "api_prefix": "/api/immune",
         "health_endpoint": "/api/immune/health",
-        "capabilities": ["content-moderation", "rate-limit", "ip-control", "audit", "pii-detection"],
+        "capabilities": [
+            "content-moderation",
+            "rate-limit",
+            "ip-control",
+            "audit",
+            "pii-detection",
+        ],
         "dependencies": ["nerve"],
         "version": "0.1.0",
         "phase": "三期",
@@ -390,7 +402,13 @@ COMPONENT_MANIFESTS = [
         "description": "跨组件智能流水线：文件上传→安全扫描→内容提取→知识入库，一键自动化处理",
         "api_prefix": "/api/pipeline",
         "health_endpoint": "/api/pipeline/health",
-        "capabilities": ["auto-pipeline", "ocr-pipeline", "asr-pipeline", "text-pipeline", "batch-import"],
+        "capabilities": [
+            "auto-pipeline",
+            "ocr-pipeline",
+            "asr-pipeline",
+            "text-pipeline",
+            "batch-import",
+        ],
         "dependencies": ["vein", "sense", "immune", "soul"],
         "version": "0.1.0",
         "phase": "二期",
@@ -404,7 +422,13 @@ COMPONENT_MANIFESTS = [
         "description": "器官自动诊断、故障归因、自我修复、告警通知",
         "api_prefix": "/api/healer",
         "health_endpoint": "/api/healer/health",
-        "capabilities": ["auto-diagnosis", "self-healing", "failure-attribution", "recovery", "notification"],
+        "capabilities": [
+            "auto-diagnosis",
+            "self-healing",
+            "failure-attribution",
+            "recovery",
+            "notification",
+        ],
         "dependencies": ["nerve", "echo"],
         "version": "0.1.0",
         "phase": "二期",
@@ -413,6 +437,7 @@ COMPONENT_MANIFESTS = [
 
 
 # ── Dependency Graph ─────────────────────────────────────────────
+
 
 def _build_dependency_graph() -> dict:
     """Build a directed dependency graph."""
@@ -457,6 +482,7 @@ def _topological_layers() -> list[list[str]]:
 
 # ── API Endpoints ────────────────────────────────────────────────
 
+
 @router.get("/components")
 async def list_components(
     category: str | None = Query(default=None, description="Filter: core, platform, advanced"),
@@ -485,6 +511,7 @@ async def get_component(component_id: str):
                 "dependents": rev.get(component_id, []),
             }
     from fastapi import HTTPException
+
     raise HTTPException(404, f"Component '{component_id}' not found")
 
 
@@ -498,6 +525,7 @@ async def get_dependencies(component_id: str):
             break
     if not comp:
         from fastapi import HTTPException
+
         raise HTTPException(404, f"Component '{component_id}' not found")
 
     rev = _build_reverse_deps()
@@ -524,20 +552,22 @@ async def get_dependencies(component_id: str):
 @router.get("/graph")
 async def get_dependency_graph():
     """Get the full dependency graph for visualization."""
-    graph = _build_dependency_graph()
-    rev = _build_reverse_deps()
+    _build_dependency_graph()
+    _build_reverse_deps()
     layers = _topological_layers()
 
     nodes = []
     for comp in COMPONENT_MANIFESTS:
-        nodes.append({
-            "id": comp["id"],
-            "name": comp["name"],
-            "emoji": comp["emoji"],
-            "category": comp["category"],
-            "layer": comp["layer"],
-            "phase": comp["phase"],
-        })
+        nodes.append(
+            {
+                "id": comp["id"],
+                "name": comp["name"],
+                "emoji": comp["emoji"],
+                "category": comp["category"],
+                "layer": comp["layer"],
+                "phase": comp["phase"],
+            }
+        )
 
     edges = []
     for comp in COMPONENT_MANIFESTS:

@@ -1,14 +1,13 @@
 """A2A Task Manager - manages task lifecycle and agent execution."""
 
-import asyncio
 import logging
-from uuid import uuid4
-from datetime import datetime
 
 from src.a2a.models import (
-    Task, TaskStatus, Message, Artifact,
-    AgentCard, DEFAULT_AGENT_CARD,
-    ErrorCode, JSONRPCError,
+    DEFAULT_AGENT_CARD,
+    AgentCard,
+    Message,
+    Task,
+    TaskStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,7 +104,9 @@ class TaskManager:
                 if tag.lower() in text.lower():
                     return await self._handle_skill(skill.id, text, task)
 
-        return f"收到您的消息：{text}\n\n可用技能：{', '.join(s.name for s in self.agent_card.skills)}"
+        return (
+            f"收到您的消息：{text}\n\n可用技能：{', '.join(s.name for s in self.agent_card.skills)}"
+        )
 
     async def _handle_skill(self, skill_id: str, text: str, task: Task) -> str:
         """Handle a specific skill. Override for custom logic."""

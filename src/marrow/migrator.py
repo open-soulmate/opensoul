@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import csv
 import io
+import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 @dataclass
@@ -27,6 +26,7 @@ class DataMigrator:
 
     def __init__(self, export_dir: str | Path | None = None):
         import os
+
         self.export_dir = Path(export_dir or os.path.expanduser("~/.opensoul/exports"))
         self.export_dir.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, ExportJob] = {}
@@ -123,7 +123,7 @@ class DataMigrator:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             reader = csv.DictReader(f)
             return list(reader)
 

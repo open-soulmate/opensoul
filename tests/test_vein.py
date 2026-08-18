@@ -1,8 +1,5 @@
 """Integration tests for OpenVein (血管) — file storage, cache, chunked upload."""
 
-import pytest
-import hashlib
-
 
 class TestVeinHealth:
     def test_health(self, client):
@@ -86,6 +83,7 @@ class TestVeinCache:
 
     def test_cache_put_get_delete(self, client):
         import base64
+
         payload = {"key": "test_key_123", "data": base64.b64encode(b"cached data").decode()}
         resp = client.put("/api/vein/cache", json=payload)
         assert resp.status_code == 200
@@ -99,11 +97,14 @@ class TestVeinCache:
 
 class TestVeinChunkedUpload:
     def test_init_upload_session(self, client):
-        resp = client.post("/api/vein/upload/chunked/init", json={
-            "filename": "big.bin",
-            "total_size": 1024,
-            "chunk_size": 512,
-        })
+        resp = client.post(
+            "/api/vein/upload/chunked/init",
+            json={
+                "filename": "big.bin",
+                "total_size": 1024,
+                "chunk_size": 512,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "upload_id" in data

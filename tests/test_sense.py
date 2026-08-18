@@ -1,7 +1,5 @@
 """Integration tests for OpenSense (感官) — OCR, ASR, multimodal."""
 
-import pytest
-
 
 class TestSenseHealth:
     def test_health(self, client):

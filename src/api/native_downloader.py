@@ -6,14 +6,11 @@ Like Xunlei/Thunder but pure Python.
 
 import asyncio
 import hashlib
-import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
-from typing import Optional, Callable, Dict, List
-from enum import Enum
 
 import httpx
 
@@ -25,7 +22,7 @@ MAX_SEGMENTS = 16
 SEGMENT_MIN_SIZE = 1024 * 1024  # 1MB minimum per segment
 
 
-class DownloadStatus(str, Enum):
+class DownloadStatus(StrEnum):
     PENDING = "pending"
     CONNECTING = "connecting"
     DOWNLOADING = "downloading"
@@ -38,6 +35,7 @@ class DownloadStatus(str, Enum):
 @dataclass
 class DownloadTask:
     """A download task with multi-segment support"""
+
     id: str
     url: str
     dest: str
@@ -48,13 +46,13 @@ class DownloadTask:
     eta: int = 0  # seconds
     segments: int = DEFAULT_SEGMENTS
     supports_resume: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     plugin: str = "native"
     added_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    _cancel_event: Optional[asyncio.Event] = field(default=None, repr=False)
-    _pause_event: Optional[asyncio.Event] = field(default=None, repr=False)
+    started_at: float | None = None
+    completed_at: float | None = None
+    _cancel_event: asyncio.Event | None = field(default=None, repr=False)
+    _pause_event: asyncio.Event | None = field(default=None, repr=False)
 
     @property
     def progress_pct(self) -> float:
@@ -87,25 +85,31 @@ class NativeDownloader:
     """Pure Python download engine with multi-segment + resume support."""
 
     def __init__(self, max_concurrent: int = 3):
-        self._tasks: Dict[str, DownloadTask] = {}
-        self._running: Dict[str, asyncio.Task] = {}
+        self._tasks: dict[str, DownloadTask] = {}
+        self._running: dict[str, asyncio.Task] = {}
         self._max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
-    def list_tasks(self) -> List[DownloadTask]:
+    def list_tasks(self) -> list[DownloadTask]:
         return list(self._tasks.values())
 
-    def get_task(self, task_id: str) -> Optional[DownloadTask]:
+    def get_task(self, task_id: str) -> DownloadTask | None:
         return self._tasks.get(task_id)
 
-    async def add_download(self, url: str, dest: str, segments: int = DEFAULT_SEGMENTS) -> DownloadTask:
+    async def add_download(
+        self, url: str, dest: str, segments: int = DEFAULT_SEGMENTS
+    ) -> DownloadTask:
         """Add a new download task."""
         task_id = hashlib.md5(f"{url}:{dest}".encode()).hexdigest()[:12]
-        
+
         # If task already exists and is done/error, allow re-download
         if task_id in self._tasks:
             existing = self._tasks[task_id]
-            if existing.status in (DownloadStatus.DONE, DownloadStatus.ERROR, DownloadStatus.CANCELLED):
+            if existing.status in (
+                DownloadStatus.DONE,
+                DownloadStatus.ERROR,
+                DownloadStatus.CANCELLED,
+            ):
                 pass  # allow re-download
             elif existing.status == DownloadStatus.PAUSED:
                 await self.resume(task_id)
@@ -114,7 +118,9 @@ class NativeDownloader:
                 return existing
 
         task = DownloadTask(
-            id=task_id, url=url, dest=dest,
+            id=task_id,
+            url=url,
+            dest=dest,
             segments=min(segments, MAX_SEGMENTS),
             _cancel_event=asyncio.Event(),
             _pause_event=asyncio.Event(),
@@ -212,7 +218,9 @@ class NativeDownloader:
                 task.error = f"下载失败: {str(e)}"
                 logger.error(f"Download error for {task.url}: {e}", exc_info=True)
 
-    async def _download_single(self, client: httpx.AsyncClient, task: DownloadTask, resume_from: int = 0):
+    async def _download_single(
+        self, client: httpx.AsyncClient, task: DownloadTask, resume_from: int = 0
+    ):
         """Single-segment download (for small files or when resume not supported)."""
         task.status = DownloadStatus.DOWNLOADING
         headers = {}
@@ -269,7 +277,9 @@ class NativeDownloader:
         task.speed = 0
         task.eta = 0
 
-    async def _download_multi(self, client: httpx.AsyncClient, task: DownloadTask, resume_from: int = 0):
+    async def _download_multi(
+        self, client: httpx.AsyncClient, task: DownloadTask, resume_from: int = 0
+    ):
         """Multi-segment parallel download."""
         task.status = DownloadStatus.DOWNLOADING
         remaining = task.total_bytes - resume_from
@@ -285,14 +295,12 @@ class NativeDownloader:
         temp_dir = Path(task.dest).parent / f".{Path(task.dest).name}.parts"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        speed_samples = []
-        last_time = time.time()
-        last_bytes = task.downloaded_bytes
+        time.time()
 
         async def download_segment(idx: int, start: int, end: int):
             temp_file = temp_dir / f"part_{idx}"
             existing_part_size = temp_file.stat().st_size if temp_file.exists() else 0
-            
+
             if existing_part_size >= (end - start + 1):
                 return  # segment already complete
 
@@ -321,9 +329,7 @@ class NativeDownloader:
 
         try:
             # Download all segments in parallel
-            await asyncio.gather(*[
-                download_segment(i, s, e) for i, (s, e) in enumerate(segments)
-            ])
+            await asyncio.gather(*[download_segment(i, s, e) for i, (s, e) in enumerate(segments)])
 
             # Merge segments into final file
             with open(task.dest, "wb" if resume_from == 0 else "r+b") as dest_f:
@@ -341,6 +347,7 @@ class NativeDownloader:
 
             # Cleanup temp files
             import shutil
+
             shutil.rmtree(temp_dir, ignore_errors=True)
 
             task.status = DownloadStatus.DONE
@@ -352,14 +359,20 @@ class NativeDownloader:
             logger.error(f"Multi-segment download error: {e}")
             raise
 
-    async def download_sync(self, url: str, dest: str, segments: int = DEFAULT_SEGMENTS) -> DownloadTask:
+    async def download_sync(
+        self, url: str, dest: str, segments: int = DEFAULT_SEGMENTS
+    ) -> DownloadTask:
         """Synchronous download - wait for completion and return task."""
         task = await self.add_download(url, dest, segments)
-        
+
         # Wait for completion
         max_wait = 300  # 5 minutes max
         start = time.time()
-        while task.status in (DownloadStatus.PENDING, DownloadStatus.CONNECTING, DownloadStatus.DOWNLOADING):
+        while task.status in (
+            DownloadStatus.PENDING,
+            DownloadStatus.CONNECTING,
+            DownloadStatus.DOWNLOADING,
+        ):
             await asyncio.sleep(0.5)
             if time.time() - start > max_wait:
                 task.status = DownloadStatus.ERROR
@@ -370,7 +383,8 @@ class NativeDownloader:
 
 
 # Singleton
-_downloader: Optional[NativeDownloader] = None
+_downloader: NativeDownloader | None = None
+
 
 def get_downloader() -> NativeDownloader:
     global _downloader

@@ -10,13 +10,13 @@ Endpoints:
   GET  /history             — Diagnosis/healing history
   GET  /health              — Healer health check
 """
-import asyncio
+
 import time
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from src.healer.diagnose import OrganHealer, DiagnosisResult, Severity
+from src.healer.diagnose import DiagnosisResult, OrganHealer, Severity
 from src.nerve.event_bridge import push_event
 
 router = APIRouter()
@@ -27,31 +27,31 @@ healer = OrganHealer()
 # ── Organ health endpoints (same as diagnostics) ──────────────
 
 _ORGANS = {
-    "soul":       "/api/health",
-    "cortex":     "/api/cortex/health",
-    "nerve":      "/api/nerve/health",
-    "vein":       "/api/vein/health",
-    "sense":      "/api/sense/health",
-    "will":       "/api/will/health",
-    "immune":     "/api/immune/health",
-    "vital":      "/api/vital/health",
-    "marrow":     "/api/marrow/health",
-    "gland":      "/api/gland/health",
-    "gene":       "/api/gene/health",
-    "echo":       "/api/echo/health",
-    "mirror":     "/api/mirror/health",
-    "link":       "/api/link/health",
-    "hippo":      "/api/hippo/health",
-    "reflex":     "/api/reflex/health",
-    "heredity":   "/api/heredity/health",
-    "pulse":      "/api/pulse/health",
-    "nest":       "/api/nest/health",
-    "limb":       "/api/limb/health",
-    "voice":      "/api/voice/health",
-    "vision":     "/api/vision/health",
-    "mind":       "/api/mind/health",
-    "capture":    "/api/capture/health",
-    "pipeline":   "/api/pipeline/health",
+    "soul": "/api/health",
+    "cortex": "/api/cortex/health",
+    "nerve": "/api/nerve/health",
+    "vein": "/api/vein/health",
+    "sense": "/api/sense/health",
+    "will": "/api/will/health",
+    "immune": "/api/immune/health",
+    "vital": "/api/vital/health",
+    "marrow": "/api/marrow/health",
+    "gland": "/api/gland/health",
+    "gene": "/api/gene/health",
+    "echo": "/api/echo/health",
+    "mirror": "/api/mirror/health",
+    "link": "/api/link/health",
+    "hippo": "/api/hippo/health",
+    "reflex": "/api/reflex/health",
+    "heredity": "/api/heredity/health",
+    "pulse": "/api/pulse/health",
+    "nest": "/api/nest/health",
+    "limb": "/api/limb/health",
+    "voice": "/api/voice/health",
+    "vision": "/api/vision/health",
+    "mind": "/api/mind/health",
+    "capture": "/api/capture/health",
+    "pipeline": "/api/pipeline/health",
 }
 
 
@@ -72,6 +72,7 @@ def _result_to_dict(r: DiagnosisResult) -> dict:
 
 # ── Request Schemas ───────────────────────────────────────────
 
+
 class DiagnoseRequest(BaseModel):
     organ: str
     auto_heal: bool = False
@@ -86,21 +87,31 @@ class CycleRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────
 
+
 @router.post("/diagnose/{organ}")
 async def diagnose_organ(organ: str):
     """Diagnose a single organ — check health, detect symptoms, recommend action."""
     endpoint = _ORGANS.get(organ)
     if not endpoint:
         from fastapi import HTTPException
+
         raise HTTPException(404, f"Unknown organ: {organ}. Valid: {list(_ORGANS.keys())}")
 
     result = await healer.diagnose(organ, endpoint)
 
-    push_event({
-        "organ": "healer", "emoji": "💊", "type": "diagnosis",
-        "summary": f"🔍 Diagnosed {organ}: {'✅ healthy' if result.healthy else '❌ ' + result.root_cause}",
-        "detail": {"organ": organ, "healthy": result.healthy, "severity": result.severity.value},
-    })
+    push_event(
+        {
+            "organ": "healer",
+            "emoji": "💊",
+            "type": "diagnosis",
+            "summary": f"🔍 Diagnosed {organ}: {'✅ healthy' if result.healthy else '❌ ' + result.root_cause}",
+            "detail": {
+                "organ": organ,
+                "healthy": result.healthy,
+                "severity": result.severity.value,
+            },
+        }
+    )
 
     return _result_to_dict(result)
 
@@ -113,11 +124,15 @@ async def diagnose_all_organs():
     healthy = sum(1 for r in results if r.healthy)
     unhealthy = len(results) - healthy
 
-    push_event({
-        "organ": "healer", "emoji": "💊", "type": "diagnosis_all",
-        "summary": f"🔍 Diagnosed {len(results)} organs: {healthy} healthy, {unhealthy} unhealthy",
-        "detail": {"total": len(results), "healthy": healthy, "unhealthy": unhealthy},
-    })
+    push_event(
+        {
+            "organ": "healer",
+            "emoji": "💊",
+            "type": "diagnosis_all",
+            "summary": f"🔍 Diagnosed {len(results)} organs: {healthy} healthy, {unhealthy} unhealthy",
+            "detail": {"total": len(results), "healthy": healthy, "unhealthy": unhealthy},
+        }
+    )
 
     return {
         "total": len(results),
@@ -133,15 +148,20 @@ async def heal_organ(organ: str):
     endpoint = _ORGANS.get(organ)
     if not endpoint:
         from fastapi import HTTPException
+
         raise HTTPException(404, f"Unknown organ: {organ}")
 
     result = await healer.diagnose_and_heal(organ, endpoint)
 
-    push_event({
-        "organ": "healer", "emoji": "💊", "type": "heal",
-        "summary": f"{'✅' if result.healthy else '❌'} Heal {organ}: {result.action_taken.value} → {'success' if result.action_success else 'failed'}",
-        "detail": _result_to_dict(result),
-    })
+    push_event(
+        {
+            "organ": "healer",
+            "emoji": "💊",
+            "type": "heal",
+            "summary": f"{'✅' if result.healthy else '❌'} Heal {organ}: {result.action_taken.value} → {'success' if result.action_success else 'failed'}",
+            "detail": _result_to_dict(result),
+        }
+    )
 
     return _result_to_dict(result)
 
@@ -185,11 +205,15 @@ async def heal_all_organs():
     healthy = sum(1 for r in all_results if r.healthy)
     healed_count = sum(1 for r in healed_results if r.severity == Severity.RECOVERED)
 
-    push_event({
-        "organ": "healer", "emoji": "💊", "type": "heal_all",
-        "summary": f"💊 Heal cycle: {len(to_heal)} failures, {healed_count} recovered",
-        "detail": {"total": len(all_results), "healthy": healthy, "healed": healed_count},
-    })
+    push_event(
+        {
+            "organ": "healer",
+            "emoji": "💊",
+            "type": "heal_all",
+            "summary": f"💊 Heal cycle: {len(to_heal)} failures, {healed_count} recovered",
+            "detail": {"total": len(all_results), "healthy": healthy, "healed": healed_count},
+        }
+    )
 
     return {
         "total": len(all_results),

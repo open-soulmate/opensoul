@@ -6,23 +6,24 @@ Each tenant gets:
 - Usage tracking and enforcement
 - Tier-based defaults (free, pro, enterprise)
 """
+
 from __future__ import annotations
 
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class TenantTier(str, Enum):
+class TenantTier(StrEnum):
     FREE = "free"
     PRO = "pro"
     ENTERPRISE = "enterprise"
     CUSTOM = "custom"
 
 
-class TenantStatus(str, Enum):
+class TenantStatus(StrEnum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     TRIAL = "trial"
@@ -32,7 +33,8 @@ class TenantStatus(str, Enum):
 @dataclass
 class ResourceQuota:
     """Resource limits for a tenant."""
-    max_storage_bytes: int = 1_073_741_824       # 1 GB
+
+    max_storage_bytes: int = 1_073_741_824  # 1 GB
     max_documents: int = 10_000
     max_vector_collections: int = 10
     max_api_calls_per_day: int = 10_000
@@ -40,7 +42,7 @@ class ResourceQuota:
     max_agents: int = 5
     max_workflows: int = 10
     max_users: int = 10
-    max_file_size_bytes: int = 104_857_600        # 100 MB
+    max_file_size_bytes: int = 104_857_600  # 100 MB
 
     def to_dict(self) -> dict:
         return {
@@ -61,7 +63,7 @@ class ResourceQuota:
             return cls()
         elif tier == TenantTier.PRO:
             return cls(
-                max_storage_bytes=10_737_418_240,       # 10 GB
+                max_storage_bytes=10_737_418_240,  # 10 GB
                 max_documents=100_000,
                 max_vector_collections=50,
                 max_api_calls_per_day=100_000,
@@ -69,11 +71,11 @@ class ResourceQuota:
                 max_agents=20,
                 max_workflows=50,
                 max_users=50,
-                max_file_size_bytes=524_288_000,         # 500 MB
+                max_file_size_bytes=524_288_000,  # 500 MB
             )
         elif tier == TenantTier.ENTERPRISE:
             return cls(
-                max_storage_bytes=107_374_182_400,      # 100 GB
+                max_storage_bytes=107_374_182_400,  # 100 GB
                 max_documents=1_000_000,
                 max_vector_collections=200,
                 max_api_calls_per_day=1_000_000,
@@ -81,7 +83,7 @@ class ResourceQuota:
                 max_agents=100,
                 max_workflows=500,
                 max_users=500,
-                max_file_size_bytes=1_073_741_824,       # 1 GB
+                max_file_size_bytes=1_073_741_824,  # 1 GB
             )
         return cls()  # CUSTOM defaults to free, then override
 
@@ -89,6 +91,7 @@ class ResourceQuota:
 @dataclass
 class ResourceUsage:
     """Current resource usage for a tenant."""
+
     storage_bytes: int = 0
     documents: int = 0
     vector_collections: int = 0
@@ -124,11 +127,12 @@ class ResourceUsage:
 @dataclass
 class Tenant:
     """A tenant in the multi-tenant system."""
+
     tenant_id: str
     name: str
     tier: TenantTier = TenantTier.FREE
     status: TenantStatus = TenantStatus.ACTIVE
-    namespace: str = ""          # Isolated namespace prefix
+    namespace: str = ""  # Isolated namespace prefix
     owner_user_id: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=list)
@@ -167,10 +171,16 @@ class Tenant:
         q = self.quota
         u = self.usage
         return {
-            "storage": round(u.storage_bytes / q.max_storage_bytes * 100, 1) if q.max_storage_bytes else 0,
+            "storage": round(u.storage_bytes / q.max_storage_bytes * 100, 1)
+            if q.max_storage_bytes
+            else 0,
             "documents": round(u.documents / q.max_documents * 100, 1) if q.max_documents else 0,
-            "api_calls": round(u.api_calls_today / q.max_api_calls_per_day * 100, 1) if q.max_api_calls_per_day else 0,
-            "tokens": round(u.tokens_today / q.max_tokens_per_day * 100, 1) if q.max_tokens_per_day else 0,
+            "api_calls": round(u.api_calls_today / q.max_api_calls_per_day * 100, 1)
+            if q.max_api_calls_per_day
+            else 0,
+            "tokens": round(u.tokens_today / q.max_tokens_per_day * 100, 1)
+            if q.max_tokens_per_day
+            else 0,
         }
 
 
@@ -246,7 +256,7 @@ class TenantManager:
         if status:
             tenants = [t for t in tenants if t.status.value == status]
         tenants.sort(key=lambda t: t.created_at, reverse=True)
-        return [t.to_dict() for t in tenants[offset:offset + limit]]
+        return [t.to_dict() for t in tenants[offset : offset + limit]]
 
     def update(self, tenant_id: str, **kwargs) -> bool:
         with self._lock:
@@ -324,12 +334,32 @@ class TenantManager:
             tenant.usage.reset_daily(today)
 
             checks = {
-                "storage": (tenant.usage.storage_bytes + amount, tenant.quota.max_storage_bytes, "storage"),
-                "documents": (tenant.usage.documents + amount, tenant.quota.max_documents, "documents"),
-                "api_calls": (tenant.usage.api_calls_today + amount, tenant.quota.max_api_calls_per_day, "api_calls"),
-                "tokens": (tenant.usage.tokens_today + amount, tenant.quota.max_tokens_per_day, "tokens"),
+                "storage": (
+                    tenant.usage.storage_bytes + amount,
+                    tenant.quota.max_storage_bytes,
+                    "storage",
+                ),
+                "documents": (
+                    tenant.usage.documents + amount,
+                    tenant.quota.max_documents,
+                    "documents",
+                ),
+                "api_calls": (
+                    tenant.usage.api_calls_today + amount,
+                    tenant.quota.max_api_calls_per_day,
+                    "api_calls",
+                ),
+                "tokens": (
+                    tenant.usage.tokens_today + amount,
+                    tenant.quota.max_tokens_per_day,
+                    "tokens",
+                ),
                 "agents": (tenant.usage.agents + amount, tenant.quota.max_agents, "agents"),
-                "workflows": (tenant.usage.workflows + amount, tenant.quota.max_workflows, "workflows"),
+                "workflows": (
+                    tenant.usage.workflows + amount,
+                    tenant.quota.max_workflows,
+                    "workflows",
+                ),
                 "users": (tenant.usage.users + amount, tenant.quota.max_users, "users"),
             }
 

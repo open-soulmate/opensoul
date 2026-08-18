@@ -8,9 +8,11 @@ import sys
 logger = logging.getLogger(__name__)
 
 try:
-    from mcp.server import Server
     from mcp.server.stdio import stdio_server
-    from mcp.types import Tool, TextContent
+    from mcp.types import TextContent, Tool
+
+    from mcp.server import Server
+
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
@@ -20,13 +22,13 @@ except ImportError:
     TextContent = None
     logger.warning("mcp not installed — MCP server disabled")
 
+from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
-from src.database.meilisearch import meili_client
-from src.services import knowledge as knowledge_service
-from src.services.search import hybrid_search
-from src.services.rag import rag_query
 from src.models.knowledge import KnowledgeCreate
+from src.services import knowledge as knowledge_service
+from src.services.rag import rag_query
+from src.services.search import hybrid_search
 
 server = Server("opensoul") if MCP_AVAILABLE else None
 
@@ -44,7 +46,11 @@ if MCP_AVAILABLE:
                     "properties": {
                         "title": {"type": "string", "description": "Title of the knowledge"},
                         "content": {"type": "string", "description": "Content to remember"},
-                        "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for categorization"},
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Tags for categorization",
+                        },
                         "user_id": {"type": "string", "description": "User UUID"},
                     },
                     "required": ["title", "content", "user_id"],
@@ -58,7 +64,11 @@ if MCP_AVAILABLE:
                     "properties": {
                         "query": {"type": "string", "description": "What to search for"},
                         "user_id": {"type": "string", "description": "User UUID"},
-                        "top_k": {"type": "integer", "description": "Number of results", "default": 5},
+                        "top_k": {
+                            "type": "integer",
+                            "description": "Number of results",
+                            "default": 5,
+                        },
                     },
                     "required": ["query", "user_id"],
                 },
@@ -71,7 +81,11 @@ if MCP_AVAILABLE:
                     "properties": {
                         "question": {"type": "string", "description": "The question to answer"},
                         "user_id": {"type": "string", "description": "User UUID"},
-                        "top_k": {"type": "integer", "description": "Number of context chunks", "default": 5},
+                        "top_k": {
+                            "type": "integer",
+                            "description": "Number of context chunks",
+                            "default": 5,
+                        },
                     },
                     "required": ["question", "user_id"],
                 },
@@ -117,7 +131,11 @@ if MCP_AVAILABLE:
                 tags=arguments.get("tags", []),
             )
             row = await knowledge_service.create_knowledge(data, user_id)
-            return [TextContent(type="text", text=json.dumps({"status": "remembered", "id": str(row["id"])}))]
+            return [
+                TextContent(
+                    type="text", text=json.dumps({"status": "remembered", "id": str(row["id"])})
+                )
+            ]
 
         elif name == "recall":
             results = await hybrid_search(arguments["query"], user_id, arguments.get("top_k", 5))
@@ -132,7 +150,9 @@ if MCP_AVAILABLE:
             return [TextContent(type="text", text=json.dumps(results, default=str))]
 
         elif name == "list_memories":
-            rows = await knowledge_service.list_knowledge(user_id, arguments.get("offset", 0), arguments.get("limit", 20))
+            rows = await knowledge_service.list_knowledge(
+                user_id, arguments.get("offset", 0), arguments.get("limit", 20)
+            )
             return [TextContent(type="text", text=json.dumps(rows, default=str))]
 
         return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]

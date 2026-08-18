@@ -2,7 +2,6 @@
 and allows sending messages to specific sessions."""
 
 import asyncio
-import json
 import logging
 import os
 import re
@@ -32,7 +31,11 @@ def _list_sessions_sync(limit: int, source: str | None = None) -> dict:
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=15, env=env,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=env,
         )
         output = result.stdout.strip()
 
@@ -45,20 +48,29 @@ def _list_sessions_sync(limit: int, source: str | None = None) -> dict:
                 continue
 
             # Find session ID at end of line
-            m = re.search(r'(\d{8}_\d{6}_[a-f0-9]+|cron_\w+)$', line)
+            m = re.search(r"(\d{8}_\d{6}_[a-f0-9]+|cron_\w+)$", line)
             if not m:
                 continue
 
             sid = m.group(1)
-            rest = line[:m.start()].rstrip()
+            rest = line[: m.start()].rstrip()
 
             # Split rest by 2+ spaces (column separator)
-            cols = re.split(r'\s{2,}', rest)
+            cols = re.split(r"\s{2,}", rest)
 
             if len(cols) >= 4:
-                name_or_title, workspace, last_active, src = cols[0].strip(), cols[1].strip(), cols[2].strip(), cols[3].strip()
+                name_or_title, workspace, last_active, src = (
+                    cols[0].strip(),
+                    cols[1].strip(),
+                    cols[2].strip(),
+                    cols[3].strip(),
+                )
             elif len(cols) >= 3:
-                name_or_title, workspace, last_active = cols[0].strip(), cols[1].strip(), cols[2].strip()
+                name_or_title, workspace, last_active = (
+                    cols[0].strip(),
+                    cols[1].strip(),
+                    cols[2].strip(),
+                )
                 src = "cli"
             elif len(cols) >= 2:
                 name_or_title, workspace = cols[0].strip(), cols[1].strip()
@@ -68,21 +80,29 @@ def _list_sessions_sync(limit: int, source: str | None = None) -> dict:
                 workspace, last_active, src = "", "", "cli"
 
             # Map source to platform
-            platform_map = {"cli": "hermes", "wx": "wechat", "wxentry": "wechat", "tg": "telegram", "dc": "discord"}
+            platform_map = {
+                "cli": "hermes",
+                "wx": "wechat",
+                "wxentry": "wechat",
+                "tg": "telegram",
+                "dc": "discord",
+            }
             platform = platform_map.get(src.lower(), src.lower() or "hermes")
 
             # Use session ID as fallback name when title is "—"
             display_name = name_or_title if name_or_title and name_or_title != "—" else sid
 
-            sessions.append({
-                "id": sid,
-                "name": display_name,
-                "platform": platform,
-                "chat_id": "",
-                "workspace": workspace,
-                "last_active": last_active,
-                "last_message": name_or_title[:80] if name_or_title else "",
-            })
+            sessions.append(
+                {
+                    "id": sid,
+                    "name": display_name,
+                    "platform": platform,
+                    "chat_id": "",
+                    "workspace": workspace,
+                    "last_active": last_active,
+                    "last_message": name_or_title[:80] if name_or_title else "",
+                }
+            )
 
         return {"sessions": sessions, "total": len(sessions)}
     except Exception as e:
@@ -108,13 +128,14 @@ async def list_sessions(
 async def get_session_messages(session_id: str, user_id: UUID = Depends(get_current_user)):
     """获取指定会话的历史消息 - 直接查SQLite数据库"""
     import sqlite3
+
     try:
         db_path = os.path.expanduser("~/.hermes/state.db")
         db = sqlite3.connect(db_path)
         db.row_factory = sqlite3.Row
         rows = db.execute(
-            """SELECT id, role, content, tool_calls, tool_name, timestamp 
-               FROM messages 
+            """SELECT id, role, content, tool_calls, tool_name, timestamp
+               FROM messages
                WHERE session_id = ? AND active = 1 AND compacted = 0
                ORDER BY id""",
             (session_id,),
@@ -130,13 +151,15 @@ async def get_session_messages(session_id: str, user_id: UUID = Depends(get_curr
                 continue
             if role == "assistant" and not content.strip():
                 continue
-            messages.append({
-                "id": str(r["id"]),
-                "role": role,
-                "content": content,
-                "timestamp": r["timestamp"] or "",
-                "source": "hermes-db",
-            })
+            messages.append(
+                {
+                    "id": str(r["id"]),
+                    "role": role,
+                    "content": content,
+                    "timestamp": r["timestamp"] or "",
+                    "source": "hermes-db",
+                }
+            )
 
         return {"messages": messages, "total": len(messages)}
     except Exception as e:
@@ -144,12 +167,11 @@ async def get_session_messages(session_id: str, user_id: UUID = Depends(get_curr
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, user_id: UUID = Depends(get_current_user)):
     """删除指定会话及其所有消息"""
     import sqlite3
+
     try:
         db_path = os.path.expanduser("~/.hermes/state.db")
         db = sqlite3.connect(db_path)
@@ -167,6 +189,7 @@ async def delete_session(session_id: str, user_id: UUID = Depends(get_current_us
         return {"success": True, "deleted_session": session_id}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
 
 @router.post("/sessions/send")
 async def send_message(
@@ -189,7 +212,7 @@ async def send_message(
         output = stdout.decode("utf-8", errors="replace").strip()
 
         return {"ok": True, "content": output, "source": "hermes-cli"}
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise HTTPException(status_code=504, detail="Hermes response timeout")
     except Exception as e:
         logger.error("send_message error: %s", e)
@@ -200,6 +223,7 @@ async def send_message(
 async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)):
     """搜索会话 - 同时搜索会话名称和消息内容"""
     import sqlite3
+
     if not q:
         return {"sessions": [], "query": q}
     try:
@@ -208,16 +232,20 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
         db.row_factory = sqlite3.Row
 
         # Search session titles
-        title_matches = db.execute("""
+        title_matches = db.execute(
+            """
             SELECT DISTINCT s.id, s.title, s.started_at, s.last_activity_at, s.source
             FROM sessions s
             WHERE s.archived = 0 AND s.title LIKE ?
             ORDER BY s.started_at DESC
             LIMIT 20
-        """, (f"%{q}%",)).fetchall()
+        """,
+            (f"%{q}%",),
+        ).fetchall()
 
         # Search message content
-        msg_matches = db.execute("""
+        msg_matches = db.execute(
+            """
             SELECT DISTINCT m.session_id, s.title, s.started_at, s.last_activity_at, s.source,
                    m.content as matched_content
             FROM messages m
@@ -225,7 +253,9 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
             WHERE s.archived = 0 AND m.active = 1 AND m.content LIKE ?
             ORDER BY s.started_at DESC
             LIMIT 20
-        """, (f"%{q}%",)).fetchall()
+        """,
+            (f"%{q}%",),
+        ).fetchall()
 
         db.close()
 
@@ -236,12 +266,17 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
         for r in title_matches:
             if r["id"] not in seen:
                 seen.add(r["id"])
-                results.append({
-                    "id": r["id"], "title": r["title"],
-                    "created_at": r["started_at"], "updated_at": r["last_activity_at"],
-                    "source": r["source"], "match_type": "title",
-                    "snippet": None,
-                })
+                results.append(
+                    {
+                        "id": r["id"],
+                        "title": r["title"],
+                        "created_at": r["started_at"],
+                        "updated_at": r["last_activity_at"],
+                        "source": r["source"],
+                        "match_type": "title",
+                        "snippet": None,
+                    }
+                )
 
         for r in msg_matches:
             if r["session_id"] not in seen:
@@ -251,14 +286,23 @@ async def search_sessions(q: str = "", user_id: UUID = Depends(get_current_user)
                 idx = content.lower().find(q.lower())
                 start = max(0, idx - 40)
                 end = min(len(content), idx + len(q) + 40)
-                snippet = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
+                snippet = (
+                    ("..." if start > 0 else "")
+                    + content[start:end]
+                    + ("..." if end < len(content) else "")
+                )
 
-                results.append({
-                    "id": r["session_id"], "title": r["title"],
-                    "created_at": r["started_at"], "updated_at": r["last_activity_at"],
-                    "source": r["source"], "match_type": "content",
-                    "snippet": snippet,
-                })
+                results.append(
+                    {
+                        "id": r["session_id"],
+                        "title": r["title"],
+                        "created_at": r["started_at"],
+                        "updated_at": r["last_activity_at"],
+                        "source": r["source"],
+                        "match_type": "content",
+                        "snippet": snippet,
+                    }
+                )
 
         return {"sessions": results, "query": q, "total": len(results)}
     except Exception as e:

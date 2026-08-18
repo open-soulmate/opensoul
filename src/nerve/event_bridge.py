@@ -9,8 +9,8 @@ Usage in any API module:
 
 from __future__ import annotations
 
-import time
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -21,13 +21,32 @@ _BASE = "http://127.0.0.1:8090"
 
 # Organ emoji map
 ORGAN_EMOJI: dict[str, str] = {
-    "soul": "🧠", "cortex": "🧩", "nerve": "⚡", "vein": "🩸",
-    "sense": "👁", "will": "✨", "immune": "🛡", "vital": "📊",
-    "marrow": "🦴", "gland": "🧪", "gene": "🧬", "echo": "🔊",
-    "mirror": "🪞", "link": "🔗", "hippo": "🧠", "reflex": "⚡",
-    "heredity": "🔗", "pulse": "💓", "nest": "🏠", "limb": "💪",
-    "voice": "🎤", "vision": "🎨", "mind": "💭", "mate": "👤",
-    "soma": "🤖", "trajectory": "📊",
+    "soul": "🧠",
+    "cortex": "🧩",
+    "nerve": "⚡",
+    "vein": "🩸",
+    "sense": "👁",
+    "will": "✨",
+    "immune": "🛡",
+    "vital": "📊",
+    "marrow": "🦴",
+    "gland": "🧪",
+    "gene": "🧬",
+    "echo": "🔊",
+    "mirror": "🪞",
+    "link": "🔗",
+    "hippo": "🧠",
+    "reflex": "⚡",
+    "heredity": "🔗",
+    "pulse": "💓",
+    "nest": "🏠",
+    "limb": "💪",
+    "voice": "🎤",
+    "vision": "🎨",
+    "mind": "💭",
+    "mate": "👤",
+    "soma": "🤖",
+    "trajectory": "📊",
 }
 
 
@@ -77,14 +96,17 @@ async def emit(
         # 2) Append to the event-stream buffer so Activity page picks it up
         try:
             from src.api.event_stream import push_event  # type: ignore[attr-defined]
-            push_event({
-                "organ": organ,
-                "emoji": emoji,
-                "type": event_type,
-                "summary": summary,
-                "detail": detail or {},
-                "timestamp": time.time(),
-            })
+
+            push_event(
+                {
+                    "organ": organ,
+                    "emoji": emoji,
+                    "type": event_type,
+                    "summary": summary,
+                    "detail": detail or {},
+                    "timestamp": time.time(),
+                }
+            )
         except (ImportError, AttributeError):
             # push_event may not exist yet — that's fine
             pass
@@ -92,24 +114,28 @@ async def emit(
         # 2b) Record to persistent timeline
         try:
             from src.timeline.store import TimelineStore
+
             if not hasattr(emit, "_timeline"):
                 emit._timeline = TimelineStore()  # type: ignore[attr-defined]
-            emit._timeline.record({
-                "id": f"evt_{int(time.time()*1000)}_{organ}_{event_type}",
-                "organ": organ,
-                "emoji": emoji,
-                "type": event_type,
-                "summary": summary,
-                "detail": detail or {},
-                "timestamp": time.time(),
-                "collected_at": time.time(),
-            })
+            emit._timeline.record(
+                {
+                    "id": f"evt_{int(time.time() * 1000)}_{organ}_{event_type}",
+                    "organ": organ,
+                    "emoji": emoji,
+                    "type": event_type,
+                    "summary": summary,
+                    "detail": detail or {},
+                    "timestamp": time.time(),
+                    "collected_at": time.time(),
+                }
+            )
         except Exception:
             pass
 
         # 3) Push to Notification Center
         try:
             from src.api.notifications import push_notification
+
             # Only notify for important events (errors, warnings, key actions)
             level = "info"
             if event_type in ("error", "alert", "failure"):
@@ -146,7 +172,8 @@ def push_event(event: dict[str, Any]) -> None:
     """
     try:
         from src.api.event_stream import _event_buffer
-        event.setdefault("id", f"evt_{int(time.time()*1000)}")
+
+        event.setdefault("id", f"evt_{int(time.time() * 1000)}")
         event.setdefault("collected_at", time.time())
         _event_buffer.append(event)
     except ImportError:
@@ -155,6 +182,7 @@ def push_event(event: dict[str, Any]) -> None:
     # Also record to persistent timeline
     try:
         from src.timeline.store import TimelineStore
+
         if not hasattr(push_event, "_timeline"):
             push_event._timeline = TimelineStore()  # type: ignore[attr-defined]
         push_event._timeline.record(event)  # type: ignore[attr-defined]
@@ -164,6 +192,7 @@ def push_event(event: dict[str, Any]) -> None:
     # Also publish to Nerve bus (fire-and-forget)
     try:
         import asyncio
+
         organ = event.get("organ", "unknown")
         event_type = event.get("type", "unknown")
         topic = f"organ.{organ}.{event_type}"

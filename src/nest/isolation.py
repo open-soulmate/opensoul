@@ -6,16 +6,16 @@ Ensures tenants cannot access each other's:
 - API keys and secrets
 - Agents and workflows
 """
+
 from __future__ import annotations
 
-import hashlib
 import threading
 import time
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class ResourceType(str, Enum):
+class ResourceType(StrEnum):
     KNOWLEDGE_BASE = "knowledge_base"
     DOCUMENT = "document"
     VECTOR_COLLECTION = "vector_collection"
@@ -29,21 +29,23 @@ class ResourceType(str, Enum):
 @dataclass
 class IsolationPolicy:
     """Defines isolation rules for a resource type."""
+
     resource_type: ResourceType
-    namespace_scoped: bool = True      # Prefix all IDs with namespace
+    namespace_scoped: bool = True  # Prefix all IDs with namespace
     cross_tenant_allowed: bool = False  # Can tenants share this resource?
-    encryption_enabled: bool = False    # Encrypt at rest per tenant
-    audit_access: bool = True           # Log all access attempts
+    encryption_enabled: bool = False  # Encrypt at rest per tenant
+    audit_access: bool = True  # Log all access attempts
 
 
 @dataclass
 class AccessLog:
     """Audit log entry for cross-boundary access attempts."""
+
     timestamp: float
     tenant_id: str
     resource_type: str
     resource_id: str
-    action: str           # "read", "write", "delete", "list"
+    action: str  # "read", "write", "delete", "list"
     allowed: bool
     reason: str = ""
     source_ip: str = ""
@@ -70,13 +72,18 @@ class IsolationEngine:
             ResourceType.WORKFLOW, namespace_scoped=True, cross_tenant_allowed=False
         ),
         ResourceType.API_KEY: IsolationPolicy(
-            ResourceType.API_KEY, namespace_scoped=True, cross_tenant_allowed=False, encryption_enabled=True
+            ResourceType.API_KEY,
+            namespace_scoped=True,
+            cross_tenant_allowed=False,
+            encryption_enabled=True,
         ),
         ResourceType.FILE: IsolationPolicy(
             ResourceType.FILE, namespace_scoped=True, cross_tenant_allowed=False
         ),
         ResourceType.SESSION: IsolationPolicy(
-            ResourceType.SESSION, namespace_scoped=True, cross_tenant_allowed=True  # Shared sessions allowed
+            ResourceType.SESSION,
+            namespace_scoped=True,
+            cross_tenant_allowed=True,  # Shared sessions allowed
         ),
     }
 
@@ -113,7 +120,9 @@ class IsolationEngine:
         """
         policy = self._policies.get(resource_type)
         if not policy:
-            self._log_access(tenant_namespace, resource_type, resource_id, action, True, "no_policy")
+            self._log_access(
+                tenant_namespace, resource_type, resource_id, action, True, "no_policy"
+            )
             return {"allowed": True, "reason": "no_policy", "namespaced_id": resource_id}
 
         # If resource has a namespace prefix, check it matches
@@ -121,8 +130,13 @@ class IsolationEngine:
             resource_ns, _ = self.extract_namespace(resource_id)
             if resource_ns and resource_ns != tenant_namespace:
                 self._log_access(
-                    tenant_namespace, resource_type, resource_id, action, False,
-                    f"namespace mismatch: {resource_ns} != {tenant_namespace}", source_ip
+                    tenant_namespace,
+                    resource_type,
+                    resource_id,
+                    action,
+                    False,
+                    f"namespace mismatch: {resource_ns} != {tenant_namespace}",
+                    source_ip,
                 )
                 self._blocked_attempts += 1
                 return {
@@ -136,7 +150,9 @@ class IsolationEngine:
         if policy.namespace_scoped and ":" not in resource_id:
             namespaced_id = self.namespaced_id(tenant_namespace, resource_id)
 
-        self._log_access(tenant_namespace, resource_type, resource_id, action, True, "ok", source_ip)
+        self._log_access(
+            tenant_namespace, resource_type, resource_id, action, True, "ok", source_ip
+        )
         return {"allowed": True, "reason": "ok", "namespaced_id": namespaced_id}
 
     def set_policy(self, resource_type: str, **kwargs) -> bool:
@@ -151,7 +167,12 @@ class IsolationEngine:
             if not policy:
                 policy = IsolationPolicy(rt)
                 self._policies[rt] = policy
-            for key in ("namespace_scoped", "cross_tenant_allowed", "encryption_enabled", "audit_access"):
+            for key in (
+                "namespace_scoped",
+                "cross_tenant_allowed",
+                "encryption_enabled",
+                "audit_access",
+            ):
                 if key in kwargs:
                     setattr(policy, key, kwargs[key])
         return True
@@ -251,4 +272,4 @@ class IsolationEngine:
         with self._lock:
             self._access_log.append(entry)
             if len(self._access_log) > self._max_log:
-                self._access_log = self._access_log[-self._max_log:]
+                self._access_log = self._access_log[-self._max_log :]

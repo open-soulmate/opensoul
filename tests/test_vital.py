@@ -1,7 +1,5 @@
 """Integration tests for OpenVital (体征) — system metrics and monitoring."""
 
-import pytest
-
 
 class TestVitalHealth:
     def test_health(self, client):

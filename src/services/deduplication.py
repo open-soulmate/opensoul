@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 async def deduplicate_knowledge(user_id: str | None = None) -> dict:
     """去重知识库条目。基于标题+内容相似度检测重复，保留最早的一条。
-    
+
     Args:
         user_id: 指定用户去重，None则全库去重
     Returns:
@@ -26,7 +26,12 @@ async def deduplicate_knowledge(user_id: str | None = None) -> dict:
 
     items = [dict(r) for r in rows]
     if len(items) <= 1:
-        return {"total": len(items), "duplicates_found": 0, "duplicates_removed": 0, "removed_ids": []}
+        return {
+            "total": len(items),
+            "duplicates_found": 0,
+            "duplicates_removed": 0,
+            "removed_ids": [],
+        }
 
     # 分组：同用户内去重
     user_groups: dict[str, list] = {}
@@ -46,12 +51,14 @@ async def deduplicate_knowledge(user_id: str | None = None) -> dict:
                     continue
                 sim = _similarity(group[i], group[j])
                 if sim >= 0.85:  # 85%相似度视为重复
-                    duplicates.append({
-                        "id": group[j]["id"],
-                        "title": group[j]["title"],
-                        "duplicate_of": group[i]["id"],
-                        "similarity": round(sim, 2),
-                    })
+                    duplicates.append(
+                        {
+                            "id": group[j]["id"],
+                            "title": group[j]["title"],
+                            "duplicate_of": group[i]["id"],
+                            "similarity": round(sim, 2),
+                        }
+                    )
 
     # 删除重复条目
     removed_ids = []
@@ -78,7 +85,9 @@ async def deduplicate_knowledge(user_id: str | None = None) -> dict:
 def _similarity(a: dict, b: dict) -> float:
     """计算两条知识的相似度（标题40% + 内容60%）"""
     title_sim = SequenceMatcher(None, a["title"] or "", b["title"] or "").ratio()
-    content_sim = SequenceMatcher(None, (a["content"] or "")[:2000], (b["content"] or "")[:2000]).ratio()
+    content_sim = SequenceMatcher(
+        None, (a["content"] or "")[:2000], (b["content"] or "")[:2000]
+    ).ratio()
     return title_sim * 0.4 + content_sim * 0.6
 
 
@@ -111,9 +120,11 @@ async def get_duplicate_report(user_id: str | None = None) -> list[dict]:
             for j in range(i + 1, len(group)):
                 sim = _similarity(group[i], group[j])
                 if sim >= 0.85:
-                    report.append({
-                        "item_a": {"id": group[i]["id"], "title": group[i]["title"]},
-                        "item_b": {"id": group[j]["id"], "title": group[j]["title"]},
-                        "similarity": round(sim, 2),
-                    })
+                    report.append(
+                        {
+                            "item_a": {"id": group[i]["id"], "title": group[i]["title"]},
+                            "item_b": {"id": group[j]["id"], "title": group[j]["title"]},
+                            "similarity": round(sim, 2),
+                        }
+                    )
     return report

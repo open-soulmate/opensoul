@@ -6,6 +6,7 @@ with full history, statistics, and analytics.
 """
 
 import time
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -18,6 +19,7 @@ store = TimelineStore()
 
 
 # ── Request Schemas ────────────────────────────────────────
+
 
 class RecordEventRequest(BaseModel):
     organ: str
@@ -33,10 +35,12 @@ class ClearRequest(BaseModel):
 
 # ── Event Recording ────────────────────────────────────────
 
+
 @router.post("/record")
 async def record_event(req: RecordEventRequest):
     """Record an event to the persistent timeline."""
     import uuid
+
     event = {
         "id": f"tl_{uuid.uuid4().hex[:12]}",
         "organ": req.organ,
@@ -52,6 +56,7 @@ async def record_event(req: RecordEventRequest):
 
 
 # ── Event Querying ─────────────────────────────────────────
+
 
 @router.get("/events")
 async def list_events(
@@ -100,6 +105,7 @@ async def delete_event(event_id: str):
 
 # ── Bulk Operations ────────────────────────────────────────
 
+
 @router.post("/clear")
 async def clear_events(req: ClearRequest | None = None):
     """Clear events. Optionally only clear events older than N days."""
@@ -109,6 +115,7 @@ async def clear_events(req: ClearRequest | None = None):
 
 
 # ── Statistics ─────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def timeline_stats():
@@ -130,6 +137,7 @@ async def list_event_types():
 
 # ── Sync from Event Stream ─────────────────────────────────
 
+
 @router.post("/sync")
 async def sync_from_stream():
     """Sync events from the in-memory event stream buffer to persistent timeline.
@@ -139,6 +147,7 @@ async def sync_from_stream():
     """
     try:
         from src.api.event_stream import _event_buffer
+
         synced = 0
         for event in _event_buffer:
             if store.record(event):
@@ -149,6 +158,7 @@ async def sync_from_stream():
 
 
 # ── Health ─────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def timeline_health():

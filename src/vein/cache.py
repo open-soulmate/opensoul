@@ -6,7 +6,7 @@ Future: swap backend to Redis for distributed caching.
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -99,7 +99,9 @@ class CacheManager:
                 "entries": len(self._cache),
                 "current_size_bytes": self._current_size,
                 "max_size_bytes": self._max_size,
-                "usage_percent": round(self._current_size / self._max_size * 100, 2) if self._max_size else 0,
+                "usage_percent": round(self._current_size / self._max_size * 100, 2)
+                if self._max_size
+                else 0,
                 "hits": self._hits,
                 "misses": self._misses,
                 "hit_rate": round(self._hits / total * 100, 2) if total else 0,

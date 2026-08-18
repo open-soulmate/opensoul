@@ -16,6 +16,7 @@ template_engine = SandboxTemplateEngine()
 
 # ── Request Schemas ────────────────────────────────────────
 
+
 class SandboxCreateRequest(BaseModel):
     name: str = ""
     description: str = ""
@@ -40,6 +41,7 @@ class SnapshotRequest(BaseModel):
 
 # ── Sandbox Endpoints ──────────────────────────────────────
 
+
 @router.post("/sandboxes")
 async def create_sandbox(req: SandboxCreateRequest):
     """Create a new isolated sandbox."""
@@ -50,11 +52,15 @@ async def create_sandbox(req: SandboxCreateRequest):
         config=req.config,
         ttl_seconds=req.ttl_seconds,
     )
-    push_event({
-        "organ": "mirror", "emoji": "🪞", "type": "sandbox_created",
-        "summary": f"🆕 Sandbox created: {sandbox.name or sandbox.sandbox_id}",
-        "detail": {"sandbox_id": sandbox.sandbox_id, "name": sandbox.name},
-    })
+    push_event(
+        {
+            "organ": "mirror",
+            "emoji": "🪞",
+            "type": "sandbox_created",
+            "summary": f"🆕 Sandbox created: {sandbox.name or sandbox.sandbox_id}",
+            "detail": {"sandbox_id": sandbox.sandbox_id, "name": sandbox.name},
+        }
+    )
 
     return {
         "sandbox_id": sandbox.sandbox_id,
@@ -116,6 +122,7 @@ async def resume_sandbox(sandbox_id: str):
 
 # ── Sandbox Actions ────────────────────────────────────────
 
+
 @router.post("/sandboxes/{sandbox_id}/log")
 async def log_action(sandbox_id: str, req: LogActionRequest):
     """Log an action in the sandbox."""
@@ -161,6 +168,7 @@ async def take_snapshot(sandbox_id: str, req: SnapshotRequest):
 
 # ── Maintenance ────────────────────────────────────────────
 
+
 @router.post("/cleanup")
 async def cleanup_expired():
     """Clean up expired sandboxes."""
@@ -169,6 +177,7 @@ async def cleanup_expired():
 
 
 # ── Stats ──────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def mirror_stats():
@@ -183,6 +192,7 @@ async def mirror_stats():
 
 # ── Health ─────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def mirror_health():
     """OpenMirror health check."""
@@ -195,6 +205,7 @@ async def mirror_health():
 
 
 # ── Sandbox Template Schemas ───────────────────────────────
+
 
 class SandboxTemplateCreateRequest(BaseModel):
     name: str
@@ -213,6 +224,7 @@ class SandboxFromTemplateRequest(BaseModel):
 
 
 # ── Sandbox Template Endpoints ─────────────────────────────
+
 
 @router.get("/templates")
 async def list_sandbox_templates(category: str = Query(default=None)):
@@ -252,11 +264,15 @@ async def create_sandbox_template(req: SandboxTemplateCreateRequest):
         tags=req.tags,
         category=req.category,
     )
-    push_event({
-        "organ": "mirror", "emoji": "🪞", "type": "sandbox_template_created",
-        "summary": f"📋 Sandbox template created: {tpl.name}",
-        "detail": {"template_id": tpl.template_id, "name": tpl.name},
-    })
+    push_event(
+        {
+            "organ": "mirror",
+            "emoji": "🪞",
+            "type": "sandbox_template_created",
+            "summary": f"📋 Sandbox template created: {tpl.name}",
+            "detail": {"template_id": tpl.template_id, "name": tpl.name},
+        }
+    )
     return {
         "template_id": tpl.template_id,
         "name": tpl.name,
@@ -296,15 +312,19 @@ async def create_sandbox_from_template(template_id: str, req: SandboxFromTemplat
         if v:  # only set non-empty values
             manager.set_variable(sandbox.sandbox_id, k, v)
 
-    push_event({
-        "organ": "mirror", "emoji": "🪞", "type": "sandbox_from_template",
-        "summary": f"🆕 Sandbox created from template: {instance['name']}",
-        "detail": {
-            "sandbox_id": sandbox.sandbox_id,
-            "template_id": template_id,
-            "name": sandbox.name,
-        },
-    })
+    push_event(
+        {
+            "organ": "mirror",
+            "emoji": "🪞",
+            "type": "sandbox_from_template",
+            "summary": f"🆕 Sandbox created from template: {instance['name']}",
+            "detail": {
+                "sandbox_id": sandbox.sandbox_id,
+                "template_id": template_id,
+                "name": sandbox.name,
+            },
+        }
+    )
 
     return {
         "sandbox_id": sandbox.sandbox_id,

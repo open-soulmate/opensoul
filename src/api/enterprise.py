@@ -4,20 +4,18 @@ Uses a self-contained SQLite database so this module can be added
 without touching existing project files.
 """
 
-import sqlite3
 import hashlib
 import hmac
 import os
+import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from functools import wraps
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.config import settings
 
@@ -95,6 +93,7 @@ _init_db()
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
+
 def _hash_password(password: str) -> str:
     salt = os.urandom(32)
     key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
@@ -112,13 +111,13 @@ def _verify_password(password: str, stored: str) -> bool:
 
 
 def _create_token(user_id: int, username: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {
         "sub": str(user_id),
         "username": username,
         "scope": "enterprise",
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -148,8 +147,7 @@ def _get_user_permissions(user_id: int) -> set[tuple[str, str]]:
     return {(r["resource"], r["action"]) for r in rows}
 
 
-def _record_audit(user_id: int | None, action: str, resource: str,
-                  detail: str = "", ip: str = ""):
+def _record_audit(user_id: int | None, action: str, resource: str, detail: str = "", ip: str = ""):
     with _db() as conn:
         conn.execute(
             "INSERT INTO audit_log (user_id, action, resource, detail, ip) VALUES (?, ?, ?, ?, ?)",
@@ -158,6 +156,7 @@ def _record_audit(user_id: int | None, action: str, resource: str,
 
 
 # ── Pydantic models ────────────────────────────────────────────────────
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -191,15 +190,16 @@ class UserListItem(BaseModel):
 
 class AuditEntry(BaseModel):
     id: int
-    user_id: Optional[int]
+    user_id: int | None
     action: str
     resource: str
-    detail: Optional[str]
-    ip: Optional[str]
+    detail: str | None
+    ip: str | None
     created_at: str
 
 
 # ── Auth dependency ─────────────────────────────────────────────────────
+
 
 async def get_current_enterprise_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -210,7 +210,9 @@ async def get_current_enterprise_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     user_id = int(payload["sub"])
     with _db() as conn:
-        row = conn.execute("SELECT id, username, is_active FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, username, is_active FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
     if not row or not row["is_active"]:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     return {"id": row["id"], "username": row["username"]}
@@ -218,24 +220,30 @@ async def get_current_enterprise_user(
 
 def require_permission(resource: str, action: str):
     """Dependency factory — raises 403 if the user lacks the given permission."""
+
     async def _check(user: dict = Depends(get_current_enterprise_user)):
         perms = _get_user_permissions(user["id"])
         if (resource, action) not in perms and ("*", "*") not in perms:
             raise HTTPException(status_code=403, detail=f"Permission denied: {resource}:{action}")
         return user
+
     return _check
 
 
 # ── Audit middleware helper ─────────────────────────────────────────────
 
+
 def audit_write(action: str, resource: str):
     """Call this inside handlers to record an audit entry."""
+
     def _record(user_id: int | None, detail: str = "", ip: str = ""):
         _record_audit(user_id, action, resource, detail, ip)
+
     return _record
 
 
 # ── Routes: Authentication ─────────────────────────────────────────────
+
 
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(body: LoginRequest, request: Request):
@@ -255,7 +263,9 @@ async def login(body: LoginRequest, request: Request):
             (body.username,),
         ).fetchone()
     if not row or not row["is_active"]:
-        _record_audit(None, "login_failed", "auth", f"username={body.username}", request.client.host)
+        _record_audit(
+            None, "login_failed", "auth", f"username={body.username}", request.client.host
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not _verify_password(body.password, row["password"]):
         _record_audit(row["id"], "login_failed", "auth", "", request.client.host)
@@ -283,6 +293,7 @@ async def register(body: LoginRequest, request: Request):
 
 
 # ── Routes: RBAC ────────────────────────────────────────────────────────
+
 
 @router.post("/roles")
 async def create_role(
@@ -319,7 +330,9 @@ async def assign_permission(
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="Permission already assigned")
     _record_audit(
-        user["id"], "assign", "permissions",
+        user["id"],
+        "assign",
+        "permissions",
         f"role={body.role_name} resource={body.resource} action={body.action}",
         request.client.host,
     )
@@ -349,7 +362,9 @@ async def assign_role_to_user(
         except sqlite3.IntegrityError:
             pass  # already assigned
     _record_audit(
-        user["id"], "assign_role", "users",
+        user["id"],
+        "assign_role",
+        "users",
         f"target_user={user_id} role={body.name}",
         request.client.host,
     )
@@ -373,24 +388,27 @@ async def list_users(user: dict = Depends(require_permission("users", "list"))):
                 """,
                 (r["id"],),
             ).fetchall()
-            result.append(UserListItem(
-                id=r["id"],
-                username=r["username"],
-                is_active=bool(r["is_active"]),
-                created_at=r["created_at"],
-                roles=[ro["name"] for ro in roles],
-            ))
+            result.append(
+                UserListItem(
+                    id=r["id"],
+                    username=r["username"],
+                    is_active=bool(r["is_active"]),
+                    created_at=r["created_at"],
+                    roles=[ro["name"] for ro in roles],
+                )
+            )
     return result
 
 
 # ── Routes: Audit log ───────────────────────────────────────────────────
 
+
 @router.get("/audit", response_model=list[AuditEntry])
 async def get_audit_log(
     user: dict = Depends(require_permission("audit", "read")),
-    action: Optional[str] = None,
-    resource: Optional[str] = None,
-    user_id: Optional[int] = None,
+    action: str | None = None,
+    resource: str | None = None,
+    user_id: int | None = None,
     limit: int = Query(default=100, le=1000),
 ):
     """Query audit log with optional filters."""

@@ -3,17 +3,17 @@
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class VersionStatus(str, Enum):
+class VersionStatus(StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     DEPRECATED = "deprecated"
     RETIRED = "retired"
 
 
-class MigrationStatus(str, Enum):
+class MigrationStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -72,9 +72,16 @@ class VersionRegistry:
 
     # ── Component Registration ────────────────────────────
 
-    def register(self, component_id: str, component_name: str, version: str,
-                 dependencies: dict[str, str] = None, config_schema: dict = None,
-                 release_notes: str = "", breaking_changes: list[str] = None) -> ComponentVersion:
+    def register(
+        self,
+        component_id: str,
+        component_name: str,
+        version: str,
+        dependencies: dict[str, str] = None,
+        config_schema: dict = None,
+        release_notes: str = "",
+        breaking_changes: list[str] = None,
+    ) -> ComponentVersion:
         """Register a new version for a component."""
         cv = ComponentVersion(
             component_id=component_id,
@@ -94,7 +101,12 @@ class VersionRegistry:
         self._components[component_id].append(cv)
 
         # Auto-add changelog
-        self._add_changelog(component_id, version, "feature", release_notes or f"Registered {component_name} v{version}")
+        self._add_changelog(
+            component_id,
+            version,
+            "feature",
+            release_notes or f"Registered {component_name} v{version}",
+        )
         return cv
 
     def get_current(self, component_id: str) -> ComponentVersion | None:
@@ -115,15 +127,17 @@ class VersionRegistry:
         for cid, versions in self._components.items():
             current = self.get_current(cid)
             if current:
-                result.append({
-                    "component_id": cid,
-                    "component_name": current.component_name,
-                    "current_version": current.version,
-                    "status": current.status.value,
-                    "total_versions": len(versions),
-                    "dependencies": current.dependencies,
-                    "created_at": current.created_at,
-                })
+                result.append(
+                    {
+                        "component_id": cid,
+                        "component_name": current.component_name,
+                        "current_version": current.version,
+                        "status": current.status.value,
+                        "total_versions": len(versions),
+                        "dependencies": current.dependencies,
+                        "created_at": current.created_at,
+                    }
+                )
         return result
 
     # ── Dependency Checking ───────────────────────────────
@@ -138,14 +152,18 @@ class VersionRegistry:
         for dep_id, version_range in current.dependencies.items():
             dep_current = self.get_current(dep_id)
             if not dep_current:
-                issues.append({"dependency": dep_id, "issue": "not_registered", "required": version_range})
+                issues.append(
+                    {"dependency": dep_id, "issue": "not_registered", "required": version_range}
+                )
             elif not self._version_matches(dep_current.version, version_range):
-                issues.append({
-                    "dependency": dep_id,
-                    "issue": "version_mismatch",
-                    "required": version_range,
-                    "actual": dep_current.version,
-                })
+                issues.append(
+                    {
+                        "dependency": dep_id,
+                        "issue": "version_mismatch",
+                        "required": version_range,
+                        "actual": dep_current.version,
+                    }
+                )
 
         return {
             "compatible": len(issues) == 0,
@@ -168,18 +186,28 @@ class VersionRegistry:
 
     # ── Migration Management ──────────────────────────────
 
-    def create_migration(self, component_id: str, from_version: str, to_version: str,
-                         steps: list[dict] = None, dry_run: bool = False) -> MigrationPlan:
+    def create_migration(
+        self,
+        component_id: str,
+        from_version: str,
+        to_version: str,
+        steps: list[dict] = None,
+        dry_run: bool = False,
+    ) -> MigrationPlan:
         """Create a migration plan for upgrading a component."""
         migration = MigrationPlan(
             migration_id=f"mig_{uuid.uuid4().hex[:12]}",
             component_id=component_id,
             from_version=from_version,
             to_version=to_version,
-            steps=steps or [
+            steps=steps
+            or [
                 {"action": "backup", "description": "Create backup before migration"},
                 {"action": "validate", "description": "Validate pre-conditions"},
-                {"action": "migrate", "description": f"Apply migration {from_version} → {to_version}"},
+                {
+                    "action": "migrate",
+                    "description": f"Apply migration {from_version} → {to_version}",
+                },
                 {"action": "verify", "description": "Verify post-migration integrity"},
             ],
             dry_run=dry_run,
@@ -225,7 +253,9 @@ class VersionRegistry:
                 )
 
             self._add_changelog(
-                migration.component_id, migration.to_version, "feature",
+                migration.component_id,
+                migration.to_version,
+                "feature",
                 f"Migration completed: {migration.from_version} → {migration.to_version}",
             )
         except Exception as e:
@@ -246,7 +276,9 @@ class VersionRegistry:
 
         migration.status = MigrationStatus.ROLLED_BACK
         self._add_changelog(
-            migration.component_id, migration.from_version, "fix",
+            migration.component_id,
+            migration.from_version,
+            "fix",
             f"Migration rolled back: {migration.to_version} → {migration.from_version}",
         )
         return migration
@@ -305,13 +337,21 @@ class VersionRegistry:
         parts = self._platform_version.split(".")
         major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
         if bump_type == "major":
-            major += 1; minor = 0; patch = 0
+            major += 1
+            minor = 0
+            patch = 0
         elif bump_type == "minor":
-            minor += 1; patch = 0
+            minor += 1
+            patch = 0
         else:
             patch += 1
         self._platform_version = f"{major}.{minor}.{patch}"
-        self._add_changelog("platform", self._platform_version, "feature", f"Platform bumped to {self._platform_version}")
+        self._add_changelog(
+            "platform",
+            self._platform_version,
+            "feature",
+            f"Platform bumped to {self._platform_version}",
+        )
         return self._platform_version
 
     # ── Stats ─────────────────────────────────────────────

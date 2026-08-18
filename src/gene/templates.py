@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
-import time
-import copy
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,20 +50,26 @@ class TemplateEngine:
 
     def _save_template(self, template: Template):
         path = self.storage_dir / f"{template.template_id}.json"
-        path.write_text(json.dumps({
-            "template_id": template.template_id,
-            "name": template.name,
-            "category": template.category,
-            "description": template.description,
-            "version": template.version,
-            "author": template.author,
-            "tags": template.tags,
-            "config": template.config,
-            "variables": template.variables,
-            "created_at": template.created_at,
-            "usage_count": template.usage_count,
-            "builtin": template.builtin,
-        }, ensure_ascii=False, indent=2))
+        path.write_text(
+            json.dumps(
+                {
+                    "template_id": template.template_id,
+                    "name": template.name,
+                    "category": template.category,
+                    "description": template.description,
+                    "version": template.version,
+                    "author": template.author,
+                    "tags": template.tags,
+                    "config": template.config,
+                    "variables": template.variables,
+                    "created_at": template.created_at,
+                    "usage_count": template.usage_count,
+                    "builtin": template.builtin,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
     def _register_builtins(self):
         """Register built-in starter templates."""
@@ -82,8 +88,18 @@ class TemplateEngine:
                     "knowledge_base_ids": [],
                 },
                 variables=[
-                    {"name": "knowledge_base_ids", "type": "list", "default": [], "description": "关联的知识库ID列表"},
-                    {"name": "model", "type": "string", "default": "gpt-4", "description": "使用的模型"},
+                    {
+                        "name": "knowledge_base_ids",
+                        "type": "list",
+                        "default": [],
+                        "description": "关联的知识库ID列表",
+                    },
+                    {
+                        "name": "model",
+                        "type": "string",
+                        "default": "gpt-4",
+                        "description": "使用的模型",
+                    },
                 ],
                 builtin=True,
             ),
@@ -100,7 +116,12 @@ class TemplateEngine:
                     "tools": ["file_read", "terminal"],
                 },
                 variables=[
-                    {"name": "language", "type": "string", "default": "python", "description": "编程语言"},
+                    {
+                        "name": "language",
+                        "type": "string",
+                        "default": "python",
+                        "description": "编程语言",
+                    },
                 ],
                 builtin=True,
             ),
@@ -122,7 +143,12 @@ class TemplateEngine:
                     },
                 },
                 variables=[
-                    {"name": "name", "type": "string", "default": "技术文档库", "description": "知识库名称"},
+                    {
+                        "name": "name",
+                        "type": "string",
+                        "default": "技术文档库",
+                        "description": "知识库名称",
+                    },
                 ],
                 builtin=True,
             ),
@@ -143,7 +169,12 @@ class TemplateEngine:
                     },
                 },
                 variables=[
-                    {"name": "product_name", "type": "string", "default": "", "description": "产品名称"},
+                    {
+                        "name": "product_name",
+                        "type": "string",
+                        "default": "",
+                        "description": "产品名称",
+                    },
                 ],
                 builtin=True,
             ),
@@ -159,13 +190,27 @@ class TemplateEngine:
                         {"name": "解析", "type": "parse", "config": {"ocr": True}},
                         {"name": "分块", "type": "chunk", "config": {"strategy": "semantic"}},
                         {"name": "入库", "type": "store", "config": {"target": "knowledge_base"}},
-                        {"name": "索引", "type": "index", "config": {"engines": ["vector", "fulltext"]}},
+                        {
+                            "name": "索引",
+                            "type": "index",
+                            "config": {"engines": ["vector", "fulltext"]},
+                        },
                     ],
                     "trigger": {"type": "file_watch", "paths": []},
                 },
                 variables=[
-                    {"name": "watch_paths", "type": "list", "default": [], "description": "监控目录列表"},
-                    {"name": "target_kb", "type": "string", "default": "", "description": "目标知识库ID"},
+                    {
+                        "name": "watch_paths",
+                        "type": "list",
+                        "default": [],
+                        "description": "监控目录列表",
+                    },
+                    {
+                        "name": "target_kb",
+                        "type": "string",
+                        "default": "",
+                        "description": "目标知识库ID",
+                    },
                 ],
                 builtin=True,
             ),
@@ -182,8 +227,18 @@ class TemplateEngine:
                     "output_format": "json",
                 },
                 variables=[
-                    {"name": "target_url", "type": "string", "default": "", "description": "目标URL"},
-                    {"name": "schedule", "type": "string", "default": "0 */6 * * *", "description": "定时表达式"},
+                    {
+                        "name": "target_url",
+                        "type": "string",
+                        "default": "",
+                        "description": "目标URL",
+                    },
+                    {
+                        "name": "schedule",
+                        "type": "string",
+                        "default": "0 */6 * * *",
+                        "description": "定时表达式",
+                    },
                 ],
                 builtin=True,
             ),
@@ -200,8 +255,18 @@ class TemplateEngine:
                     "tools": ["file_read", "terminal", "knowledge_search"],
                 },
                 variables=[
-                    {"name": "data_source", "type": "string", "default": "", "description": "数据源路径或描述"},
-                    {"name": "analysis_focus", "type": "string", "default": "general", "description": "分析重点 (general/trend/correlation/anomaly)"},
+                    {
+                        "name": "data_source",
+                        "type": "string",
+                        "default": "",
+                        "description": "数据源路径或描述",
+                    },
+                    {
+                        "name": "analysis_focus",
+                        "type": "string",
+                        "default": "general",
+                        "description": "分析重点 (general/trend/correlation/anomaly)",
+                    },
                 ],
                 builtin=True,
             ),
@@ -218,9 +283,24 @@ class TemplateEngine:
                     "tools": ["knowledge_search"],
                 },
                 variables=[
-                    {"name": "source_lang", "type": "string", "default": "auto", "description": "源语言 (auto/zh/en/ja/ko)"},
-                    {"name": "target_lang", "type": "string", "default": "en", "description": "目标语言"},
-                    {"name": "glossary_kb", "type": "string", "default": "", "description": "术语表知识库ID"},
+                    {
+                        "name": "source_lang",
+                        "type": "string",
+                        "default": "auto",
+                        "description": "源语言 (auto/zh/en/ja/ko)",
+                    },
+                    {
+                        "name": "target_lang",
+                        "type": "string",
+                        "default": "en",
+                        "description": "目标语言",
+                    },
+                    {
+                        "name": "glossary_kb",
+                        "type": "string",
+                        "default": "",
+                        "description": "术语表知识库ID",
+                    },
                 ],
                 builtin=True,
             ),
@@ -232,20 +312,49 @@ class TemplateEngine:
                 tags=["monitoring", "alert", "devops", "ops"],
                 config={
                     "steps": [
-                        {"name": "采集指标", "type": "collect", "config": {"source": "vital", "interval_seconds": 60}},
-                        {"name": "阈值检测", "type": "check", "config": {"rules": [
-                            {"metric": "cpu_percent", "threshold": 90, "operator": ">"},
-                            {"metric": "memory_percent", "threshold": 85, "operator": ">"},
-                            {"metric": "disk_percent", "threshold": 90, "operator": ">"},
-                        ]}},
-                        {"name": "发送告警", "type": "notify", "config": {"channels": ["echo"], "severity": "warning"}},
+                        {
+                            "name": "采集指标",
+                            "type": "collect",
+                            "config": {"source": "vital", "interval_seconds": 60},
+                        },
+                        {
+                            "name": "阈值检测",
+                            "type": "check",
+                            "config": {
+                                "rules": [
+                                    {"metric": "cpu_percent", "threshold": 90, "operator": ">"},
+                                    {"metric": "memory_percent", "threshold": 85, "operator": ">"},
+                                    {"metric": "disk_percent", "threshold": 90, "operator": ">"},
+                                ]
+                            },
+                        },
+                        {
+                            "name": "发送告警",
+                            "type": "notify",
+                            "config": {"channels": ["echo"], "severity": "warning"},
+                        },
                     ],
                     "trigger": {"type": "interval", "interval_seconds": 300},
                 },
                 variables=[
-                    {"name": "cpu_threshold", "type": "number", "default": 90, "description": "CPU告警阈值 (%)"},
-                    {"name": "memory_threshold", "type": "number", "default": 85, "description": "内存告警阈值 (%)"},
-                    {"name": "alert_channels", "type": "list", "default": ["echo"], "description": "告警通知通道"},
+                    {
+                        "name": "cpu_threshold",
+                        "type": "number",
+                        "default": 90,
+                        "description": "CPU告警阈值 (%)",
+                    },
+                    {
+                        "name": "memory_threshold",
+                        "type": "number",
+                        "default": 85,
+                        "description": "内存告警阈值 (%)",
+                    },
+                    {
+                        "name": "alert_channels",
+                        "type": "list",
+                        "default": ["echo"],
+                        "description": "告警通知通道",
+                    },
                 ],
                 builtin=True,
             ),
@@ -257,16 +366,39 @@ class TemplateEngine:
                 tags=["backup", "disaster-recovery", "schedule", "marrow"],
                 config={
                     "steps": [
-                        {"name": "创建备份", "type": "backup", "config": {"source": "marrow", "incremental": True}},
+                        {
+                            "name": "创建备份",
+                            "type": "backup",
+                            "config": {"source": "marrow", "incremental": True},
+                        },
                         {"name": "完整性校验", "type": "verify", "config": {"checksum": "sha256"}},
-                        {"name": "清理旧备份", "type": "cleanup", "config": {"keep_days": 30, "keep_min": 5}},
+                        {
+                            "name": "清理旧备份",
+                            "type": "cleanup",
+                            "config": {"keep_days": 30, "keep_min": 5},
+                        },
                     ],
                     "trigger": {"type": "cron", "schedule": "0 3 * * *"},
                 },
                 variables=[
-                    {"name": "backup_dirs", "type": "list", "default": ["~/.opensoul/data"], "description": "备份目录列表"},
-                    {"name": "keep_days", "type": "number", "default": 30, "description": "保留天数"},
-                    {"name": "schedule", "type": "string", "default": "0 3 * * *", "description": "Cron表达式"},
+                    {
+                        "name": "backup_dirs",
+                        "type": "list",
+                        "default": ["~/.opensoul/data"],
+                        "description": "备份目录列表",
+                    },
+                    {
+                        "name": "keep_days",
+                        "type": "number",
+                        "default": 30,
+                        "description": "保留天数",
+                    },
+                    {
+                        "name": "schedule",
+                        "type": "string",
+                        "default": "0 3 * * *",
+                        "description": "Cron表达式",
+                    },
                 ],
                 builtin=True,
             ),
@@ -290,8 +422,18 @@ class TemplateEngine:
                     "supported_formats": ["markdown", "txt", "pdf"],
                 },
                 variables=[
-                    {"name": "name", "type": "string", "default": "我的笔记", "description": "知识库名称"},
-                    {"name": "auto_tag", "type": "boolean", "default": True, "description": "自动标签"},
+                    {
+                        "name": "name",
+                        "type": "string",
+                        "default": "我的笔记",
+                        "description": "知识库名称",
+                    },
+                    {
+                        "name": "auto_tag",
+                        "type": "boolean",
+                        "default": True,
+                        "description": "自动标签",
+                    },
                 ],
                 builtin=True,
             ),
@@ -308,8 +450,18 @@ class TemplateEngine:
                     "tools": ["file_read", "knowledge_search"],
                 },
                 variables=[
-                    {"name": "summary_mode", "type": "string", "default": "executive", "description": "摘要模式 (bullets/executive/detailed)"},
-                    {"name": "max_length", "type": "number", "default": 500, "description": "最大摘要长度（字数）"},
+                    {
+                        "name": "summary_mode",
+                        "type": "string",
+                        "default": "executive",
+                        "description": "摘要模式 (bullets/executive/detailed)",
+                    },
+                    {
+                        "name": "max_length",
+                        "type": "number",
+                        "default": 500,
+                        "description": "最大摘要长度（字数）",
+                    },
                 ],
                 builtin=True,
             ),
@@ -331,7 +483,12 @@ class TemplateEngine:
                     },
                 },
                 variables=[
-                    {"name": "jurisdiction", "type": "string", "default": "CN", "description": "法律管辖区 (CN/US/EU)"},
+                    {
+                        "name": "jurisdiction",
+                        "type": "string",
+                        "default": "CN",
+                        "description": "法律管辖区 (CN/US/EU)",
+                    },
                 ],
                 builtin=True,
             ),
@@ -343,16 +500,38 @@ class TemplateEngine:
                 tags=["etl", "data", "pipeline", "transform"],
                 config={
                     "steps": [
-                        {"name": "数据抽取", "type": "extract", "config": {"sources": ["csv", "json", "api"]}},
-                        {"name": "数据清洗", "type": "clean", "config": {"dedup": True, "null_handle": "drop"}},
+                        {
+                            "name": "数据抽取",
+                            "type": "extract",
+                            "config": {"sources": ["csv", "json", "api"]},
+                        },
+                        {
+                            "name": "数据清洗",
+                            "type": "clean",
+                            "config": {"dedup": True, "null_handle": "drop"},
+                        },
                         {"name": "数据转换", "type": "transform", "config": {"normalize": True}},
-                        {"name": "数据加载", "type": "load", "config": {"target": "knowledge_base"}},
+                        {
+                            "name": "数据加载",
+                            "type": "load",
+                            "config": {"target": "knowledge_base"},
+                        },
                     ],
                     "trigger": {"type": "manual"},
                 },
                 variables=[
-                    {"name": "source_path", "type": "string", "default": "", "description": "数据源路径"},
-                    {"name": "target_kb", "type": "string", "default": "", "description": "目标知识库ID"},
+                    {
+                        "name": "source_path",
+                        "type": "string",
+                        "default": "",
+                        "description": "数据源路径",
+                    },
+                    {
+                        "name": "target_kb",
+                        "type": "string",
+                        "default": "",
+                        "description": "目标知识库ID",
+                    },
                 ],
                 builtin=True,
             ),
@@ -369,9 +548,24 @@ class TemplateEngine:
                     "alert_on": ["timeout", "status_4xx", "status_5xx"],
                 },
                 variables=[
-                    {"name": "api_url", "type": "string", "default": "", "description": "监控的API地址"},
-                    {"name": "expected_status", "type": "number", "default": 200, "description": "期望的状态码"},
-                    {"name": "alert_channel", "type": "string", "default": "echo", "description": "告警通知通道"},
+                    {
+                        "name": "api_url",
+                        "type": "string",
+                        "default": "",
+                        "description": "监控的API地址",
+                    },
+                    {
+                        "name": "expected_status",
+                        "type": "number",
+                        "default": 200,
+                        "description": "期望的状态码",
+                    },
+                    {
+                        "name": "alert_channel",
+                        "type": "string",
+                        "default": "echo",
+                        "description": "告警通知通道",
+                    },
                 ],
                 builtin=True,
             ),
@@ -389,9 +583,24 @@ class TemplateEngine:
                     "tools": ["knowledge_search", "file_read", "file_write"],
                 },
                 variables=[
-                    {"name": "project_name", "type": "string", "default": "", "description": "项目名称"},
-                    {"name": "compliance_rules", "type": "list", "default": [], "description": "合规检查规则列表"},
-                    {"name": "template_doc", "type": "string", "default": "", "description": "标书模板文档路径"},
+                    {
+                        "name": "project_name",
+                        "type": "string",
+                        "default": "",
+                        "description": "项目名称",
+                    },
+                    {
+                        "name": "compliance_rules",
+                        "type": "list",
+                        "default": [],
+                        "description": "合规检查规则列表",
+                    },
+                    {
+                        "name": "template_doc",
+                        "type": "string",
+                        "default": "",
+                        "description": "标书模板文档路径",
+                    },
                 ],
                 builtin=True,
             ),
@@ -403,18 +612,52 @@ class TemplateEngine:
                 tags=["multi-agent", "collaboration", "orchestration"],
                 config={
                     "steps": [
-                        {"name": "任务规划", "type": "plan", "config": {"agent": "planner", "decompose": True}},
-                        {"name": "并行执行", "type": "execute_parallel", "config": {"agents": ["worker-1", "worker-2"], "timeout_seconds": 300}},
-                        {"name": "结果验证", "type": "verify", "config": {"agent": "verifier", "criteria": ["completeness", "accuracy"]}},
-                        {"name": "汇总输出", "type": "aggregate", "config": {"agent": "summarizer", "format": "markdown"}},
+                        {
+                            "name": "任务规划",
+                            "type": "plan",
+                            "config": {"agent": "planner", "decompose": True},
+                        },
+                        {
+                            "name": "并行执行",
+                            "type": "execute_parallel",
+                            "config": {"agents": ["worker-1", "worker-2"], "timeout_seconds": 300},
+                        },
+                        {
+                            "name": "结果验证",
+                            "type": "verify",
+                            "config": {
+                                "agent": "verifier",
+                                "criteria": ["completeness", "accuracy"],
+                            },
+                        },
+                        {
+                            "name": "汇总输出",
+                            "type": "aggregate",
+                            "config": {"agent": "summarizer", "format": "markdown"},
+                        },
                     ],
                     "trigger": {"type": "manual"},
                     "max_iterations": 3,
                 },
                 variables=[
-                    {"name": "task_description", "type": "string", "default": "", "description": "任务描述"},
-                    {"name": "worker_count", "type": "number", "default": 2, "description": "工作Agent数量"},
-                    {"name": "output_format", "type": "string", "default": "markdown", "description": "输出格式 (markdown/json/html)"},
+                    {
+                        "name": "task_description",
+                        "type": "string",
+                        "default": "",
+                        "description": "任务描述",
+                    },
+                    {
+                        "name": "worker_count",
+                        "type": "number",
+                        "default": 2,
+                        "description": "工作Agent数量",
+                    },
+                    {
+                        "name": "output_format",
+                        "type": "string",
+                        "default": "markdown",
+                        "description": "输出格式 (markdown/json/html)",
+                    },
                 ],
                 builtin=True,
             ),
@@ -435,8 +678,18 @@ class TemplateEngine:
                     "log_original": False,
                 },
                 variables=[
-                    {"name": "input_text", "type": "string", "default": "", "description": "待脱敏的文本"},
-                    {"name": "custom_rules", "type": "list", "default": [], "description": "自定义脱敏规则"},
+                    {
+                        "name": "input_text",
+                        "type": "string",
+                        "default": "",
+                        "description": "待脱敏的文本",
+                    },
+                    {
+                        "name": "custom_rules",
+                        "type": "list",
+                        "default": [],
+                        "description": "自定义脱敏规则",
+                    },
                 ],
                 builtin=True,
             ),
@@ -449,18 +702,50 @@ class TemplateEngine:
                 config={
                     "steps": [
                         {"name": "文档解析", "type": "parse", "config": {"format": "auto"}},
-                        {"name": "智能分段", "type": "segment", "config": {"strategy": "paragraph", "max_length": 2000}},
-                        {"name": "批量翻译", "type": "translate", "config": {"model": "gpt-4", "batch_size": 5}},
+                        {
+                            "name": "智能分段",
+                            "type": "segment",
+                            "config": {"strategy": "paragraph", "max_length": 2000},
+                        },
+                        {
+                            "name": "批量翻译",
+                            "type": "translate",
+                            "config": {"model": "gpt-4", "batch_size": 5},
+                        },
                         {"name": "术语校对", "type": "review", "config": {"glossary_check": True}},
-                        {"name": "文档合并", "type": "merge", "config": {"preserve_formatting": True}},
+                        {
+                            "name": "文档合并",
+                            "type": "merge",
+                            "config": {"preserve_formatting": True},
+                        },
                     ],
                     "trigger": {"type": "manual"},
                 },
                 variables=[
-                    {"name": "source_lang", "type": "string", "default": "auto", "description": "源语言"},
-                    {"name": "target_lang", "type": "string", "default": "en", "description": "目标语言"},
-                    {"name": "glossary_kb", "type": "string", "default": "", "description": "术语表知识库ID"},
-                    {"name": "source_file", "type": "string", "default": "", "description": "源文件路径"},
+                    {
+                        "name": "source_lang",
+                        "type": "string",
+                        "default": "auto",
+                        "description": "源语言",
+                    },
+                    {
+                        "name": "target_lang",
+                        "type": "string",
+                        "default": "en",
+                        "description": "目标语言",
+                    },
+                    {
+                        "name": "glossary_kb",
+                        "type": "string",
+                        "default": "",
+                        "description": "术语表知识库ID",
+                    },
+                    {
+                        "name": "source_file",
+                        "type": "string",
+                        "default": "",
+                        "description": "源文件路径",
+                    },
                 ],
                 builtin=True,
             ),
@@ -479,9 +764,24 @@ class TemplateEngine:
                     "handoff_threshold": 3,  # 连续无法回答次数触发转接
                 },
                 variables=[
-                    {"name": "product_name", "type": "string", "default": "", "description": "产品名称"},
-                    {"name": "knowledge_base_id", "type": "string", "default": "", "description": "产品知识库ID"},
-                    {"name": "handoff_agent", "type": "string", "default": "human", "description": "转接目标Agent"},
+                    {
+                        "name": "product_name",
+                        "type": "string",
+                        "default": "",
+                        "description": "产品名称",
+                    },
+                    {
+                        "name": "knowledge_base_id",
+                        "type": "string",
+                        "default": "",
+                        "description": "产品知识库ID",
+                    },
+                    {
+                        "name": "handoff_agent",
+                        "type": "string",
+                        "default": "human",
+                        "description": "转接目标Agent",
+                    },
                 ],
                 builtin=True,
             ),
@@ -505,8 +805,18 @@ class TemplateEngine:
                     "auto_extract_actions": True,
                 },
                 variables=[
-                    {"name": "team_name", "type": "string", "default": "", "description": "团队名称"},
-                    {"name": "auto_summary", "type": "boolean", "default": True, "description": "自动生成会议摘要"},
+                    {
+                        "name": "team_name",
+                        "type": "string",
+                        "default": "",
+                        "description": "团队名称",
+                    },
+                    {
+                        "name": "auto_summary",
+                        "type": "boolean",
+                        "default": True,
+                        "description": "自动生成会议摘要",
+                    },
                 ],
                 builtin=True,
             ),
@@ -519,16 +829,59 @@ class TemplateEngine:
                 config={
                     "steps": [
                         {"name": "文档预处理", "type": "parse", "config": {"chunk_size": 1000}},
-                        {"name": "实体抽取", "type": "ner", "config": {"model": "gpt-4", "entity_types": ["person", "organization", "location", "concept", "event"]}},
-                        {"name": "关系抽取", "type": "relation", "config": {"model": "gpt-4", "relation_types": ["works_at", "located_in", "related_to", "part_of"]}},
-                        {"name": "实体消歧", "type": "disambiguate", "config": {"similarity_threshold": 0.85}},
-                        {"name": "图谱入库", "type": "store_graph", "config": {"target": "soul_graph", "merge_strategy": "update"}},
+                        {
+                            "name": "实体抽取",
+                            "type": "ner",
+                            "config": {
+                                "model": "gpt-4",
+                                "entity_types": [
+                                    "person",
+                                    "organization",
+                                    "location",
+                                    "concept",
+                                    "event",
+                                ],
+                            },
+                        },
+                        {
+                            "name": "关系抽取",
+                            "type": "relation",
+                            "config": {
+                                "model": "gpt-4",
+                                "relation_types": [
+                                    "works_at",
+                                    "located_in",
+                                    "related_to",
+                                    "part_of",
+                                ],
+                            },
+                        },
+                        {
+                            "name": "实体消歧",
+                            "type": "disambiguate",
+                            "config": {"similarity_threshold": 0.85},
+                        },
+                        {
+                            "name": "图谱入库",
+                            "type": "store_graph",
+                            "config": {"target": "soul_graph", "merge_strategy": "update"},
+                        },
                     ],
                     "trigger": {"type": "manual"},
                 },
                 variables=[
-                    {"name": "source_kb", "type": "string", "default": "", "description": "源知识库ID"},
-                    {"name": "entity_types", "type": "list", "default": [], "description": "自定义实体类型"},
+                    {
+                        "name": "source_kb",
+                        "type": "string",
+                        "default": "",
+                        "description": "源知识库ID",
+                    },
+                    {
+                        "name": "entity_types",
+                        "type": "list",
+                        "default": [],
+                        "description": "自定义实体类型",
+                    },
                 ],
                 builtin=True,
             ),
@@ -664,8 +1017,11 @@ class TemplateEngine:
         q = query.lower()
         with self._lock:
             results = [
-                t for t in self._templates.values()
-                if q in t.name.lower() or q in t.description.lower() or any(q in tag.lower() for tag in t.tags)
+                t
+                for t in self._templates.values()
+                if q in t.name.lower()
+                or q in t.description.lower()
+                or any(q in tag.lower() for tag in t.tags)
             ]
         return [
             {
@@ -764,7 +1120,9 @@ class TemplateEngine:
         self._save_template(template)
         return template, f"Template '{tid}' imported successfully"
 
-    def clone_template(self, source_id: str, new_id: str = "", new_name: str = "", overrides: dict | None = None) -> tuple[Template | None, str]:
+    def clone_template(
+        self, source_id: str, new_id: str = "", new_name: str = "", overrides: dict | None = None
+    ) -> tuple[Template | None, str]:
         """Clone a template with optional overrides. Returns (template, message)."""
         with self._lock:
             source = self._templates.get(source_id)

@@ -7,7 +7,6 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from PIL import Image
 from PIL.ExifTags import TAGS
@@ -67,10 +66,12 @@ class MultimodalAnalyzer:
             description=f"{img.width}x{img.height} {img.format} image ({img.mode})",
         )
 
-    def extract_frames(self, video_bytes: bytes, interval: float = 1.0, max_frames: int = 10) -> list[bytes]:
+    def extract_frames(
+        self, video_bytes: bytes, interval: float = 1.0, max_frames: int = 10
+    ) -> list[bytes]:
         """Extract frames from video using ffmpeg."""
-        import subprocess
         import glob as _glob
+        import subprocess
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             tmp.write(video_bytes)
@@ -80,10 +81,15 @@ class MultimodalAnalyzer:
         try:
             # Use ffmpeg to extract frames at given interval
             cmd = [
-                "ffmpeg", "-i", tmp_path,
-                "-vf", f"fps=1/{interval}",
-                "-frames:v", str(max_frames),
-                "-q:v", "2",
+                "ffmpeg",
+                "-i",
+                tmp_path,
+                "-vf",
+                f"fps=1/{interval}",
+                "-frames:v",
+                str(max_frames),
+                "-q:v",
+                "2",
                 os.path.join(out_dir, "frame_%04d.jpg"),
             ]
             subprocess.run(cmd, capture_output=True, timeout=60, check=False)
@@ -96,12 +102,13 @@ class MultimodalAnalyzer:
         finally:
             os.unlink(tmp_path)
             import shutil
+
             shutil.rmtree(out_dir, ignore_errors=True)
 
     def analyze_video(self, video_bytes: bytes) -> VideoAnalysis:
         """Extract video metadata using ffprobe."""
-        import subprocess
         import json as _json
+        import subprocess
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             tmp.write(video_bytes)
@@ -109,9 +116,13 @@ class MultimodalAnalyzer:
 
         try:
             cmd = [
-                "ffprobe", "-v", "quiet",
-                "-print_format", "json",
-                "-show_format", "-show_streams",
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
                 tmp_path,
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)

@@ -2,9 +2,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.models.entity import EntityCreate, EntityUpdate, EntityResponse
-from src.services import entity as entity_service
 from src.database.postgres import db_pool
+from src.models.entity import EntityCreate, EntityResponse, EntityUpdate
+from src.services import entity as entity_service
 
 router = APIRouter()
 
@@ -39,6 +39,7 @@ def _resolve_user_id(user_id: str) -> UUID:
         return UUID(user_id)
     except ValueError:
         import hashlib
+
         h = hashlib.md5(user_id.encode()).hexdigest()
         return UUID(f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}")
 
@@ -50,7 +51,12 @@ async def create(data: EntityCreate, user_id: str = Query("default")):
 
 
 @router.get("/", response_model=list[EntityResponse])
-async def list_all(user_id: str = Query("default"), entity_type: str | None = None, offset: int = 0, limit: int = 50):
+async def list_all(
+    user_id: str = Query("default"),
+    entity_type: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
+):
     uid = _resolve_user_id(user_id)
     return await entity_service.list_entities(uid, entity_type, offset, limit)
 

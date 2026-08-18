@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any
 
 import psutil
@@ -141,10 +141,16 @@ class MetricsCollector:
         qps_list = [e["qps"] for e in recent]
         return {
             "entries": len(recent),
-            "span_minutes": round((recent[-1]["ts"] - recent[0]["ts"]) / 60, 1) if len(recent) > 1 else 0,
+            "span_minutes": round((recent[-1]["ts"] - recent[0]["ts"]) / 60, 1)
+            if len(recent) > 1
+            else 0,
             "cpu": {"min": min(cpus), "max": max(cpus), "avg": round(sum(cpus) / len(cpus), 1)},
             "memory": {"min": min(mems), "max": max(mems), "avg": round(sum(mems) / len(mems), 1)},
-            "qps": {"min": min(qps_list), "max": max(qps_list), "avg": round(sum(qps_list) / len(qps_list), 2)},
+            "qps": {
+                "min": min(qps_list),
+                "max": max(qps_list),
+                "avg": round(sum(qps_list) / len(qps_list), 2),
+            },
         }
 
     async def _collect(self) -> MetricsSnapshot:
@@ -158,8 +164,8 @@ class MetricsCollector:
         snap.system.memory_total_mb = mem.total / (1024 * 1024)
         disk = psutil.disk_usage("/")
         snap.system.disk_percent = disk.percent
-        snap.system.disk_used_gb = disk.used / (1024 ** 3)
-        snap.system.disk_total_gb = disk.total / (1024 ** 3)
+        snap.system.disk_used_gb = disk.used / (1024**3)
+        snap.system.disk_total_gb = disk.total / (1024**3)
         net = psutil.net_io_counters()
         snap.system.net_sent_bytes = net.bytes_sent
         snap.system.net_recv_bytes = net.bytes_recv

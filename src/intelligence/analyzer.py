@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import time
-import threading
 import statistics
+import threading
+import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class InsightType(str, Enum):
+class InsightType(StrEnum):
     ANOMALY = "anomaly"
     OPTIMIZATION = "optimization"
     TREND = "trend"
@@ -18,7 +18,7 @@ class InsightType(str, Enum):
     INFO = "info"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -132,7 +132,7 @@ class SystemIntelligence:
                 severity=Severity.CRITICAL,
                 component=component,
                 title=f"Component {component} is unhealthy",
-                description=f"Health check returned error status",
+                description="Health check returned error status",
                 recommendation=f"Restart {component} or check dependencies.",
             )
 
@@ -162,17 +162,19 @@ class SystemIntelligence:
                 continue
             if severity and insight.severity != severity:
                 continue
-            results.append({
-                "id": insight.insight_id,
-                "type": insight.insight_type.value,
-                "severity": insight.severity.value,
-                "component": insight.component,
-                "title": insight.title,
-                "description": insight.description,
-                "recommendation": insight.recommendation,
-                "timestamp": insight.timestamp,
-                "metadata": insight.metadata,
-            })
+            results.append(
+                {
+                    "id": insight.insight_id,
+                    "type": insight.insight_type.value,
+                    "severity": insight.severity.value,
+                    "component": insight.component,
+                    "title": insight.title,
+                    "description": insight.description,
+                    "recommendation": insight.recommendation,
+                    "timestamp": insight.timestamp,
+                    "metadata": insight.metadata,
+                }
+            )
             if len(results) >= limit:
                 break
         return results
@@ -183,9 +185,7 @@ class SystemIntelligence:
         history = self._metrics_history.get(key, deque())
         cutoff = time.time() - duration_seconds
         return [
-            {"timestamp": p.timestamp, "value": p.value}
-            for p in history
-            if p.timestamp >= cutoff
+            {"timestamp": p.timestamp, "value": p.value} for p in history if p.timestamp >= cutoff
         ]
 
     def get_system_summary(self) -> dict:
@@ -197,7 +197,11 @@ class SystemIntelligence:
             unknown = total - healthy - unhealthy
 
             # Calculate average response time
-            response_times = [m.response_time_ms for m in self._component_metrics.values() if m.response_time_ms > 0]
+            response_times = [
+                m.response_time_ms
+                for m in self._component_metrics.values()
+                if m.response_time_ms > 0
+            ]
             avg_response = statistics.mean(response_times) if response_times else 0
 
             # Count recent insights by severity
@@ -258,36 +262,42 @@ class SystemIntelligence:
             for name, m in self._component_metrics.items():
                 # Slow component recommendation
                 if m.response_time_ms > 1000:
-                    recommendations.append({
-                        "component": name,
-                        "type": "performance",
-                        "priority": "high",
-                        "title": f"{name} is responding slowly",
-                        "description": f"Average response time: {m.response_time_ms:.0f}ms",
-                        "suggestion": "Consider adding caching, optimizing queries, or scaling horizontally.",
-                    })
+                    recommendations.append(
+                        {
+                            "component": name,
+                            "type": "performance",
+                            "priority": "high",
+                            "title": f"{name} is responding slowly",
+                            "description": f"Average response time: {m.response_time_ms:.0f}ms",
+                            "suggestion": "Consider adding caching, optimizing queries, or scaling horizontally.",
+                        }
+                    )
 
                 # High error rate recommendation
                 if m.request_count > 10 and m.error_count / max(m.request_count, 1) > 0.05:
                     error_rate = m.error_count / m.request_count
-                    recommendations.append({
-                        "component": name,
-                        "type": "reliability",
-                        "priority": "medium",
-                        "title": f"{name} has elevated error rate",
-                        "description": f"Error rate: {error_rate:.1%}",
-                        "suggestion": "Review error logs, add retry logic, or implement circuit breaker.",
-                    })
+                    recommendations.append(
+                        {
+                            "component": name,
+                            "type": "reliability",
+                            "priority": "medium",
+                            "title": f"{name} has elevated error rate",
+                            "description": f"Error rate: {error_rate:.1%}",
+                            "suggestion": "Review error logs, add retry logic, or implement circuit breaker.",
+                        }
+                    )
 
                 # Stale data recommendation
                 if m.last_check > 0 and time.time() - m.last_check > 300:
-                    recommendations.append({
-                        "component": name,
-                        "type": "monitoring",
-                        "priority": "low",
-                        "title": f"{name} metrics are stale",
-                        "description": f"Last update: {int(time.time() - m.last_check)}s ago",
-                        "suggestion": "Check if the component's metrics endpoint is responding.",
-                    })
+                    recommendations.append(
+                        {
+                            "component": name,
+                            "type": "monitoring",
+                            "priority": "low",
+                            "title": f"{name} metrics are stale",
+                            "description": f"Last update: {int(time.time() - m.last_check)}s ago",
+                            "suggestion": "Check if the component's metrics endpoint is responding.",
+                        }
+                    )
 
         return recommendations

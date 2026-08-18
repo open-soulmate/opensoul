@@ -1,7 +1,5 @@
 """Integration tests for OpenNest (巢穴) — multi-tenant isolation."""
 
-import pytest
-
 
 class TestNestHealth:
     def test_health(self, client):
@@ -14,11 +12,14 @@ class TestNestHealth:
 
 class TestNestTenants:
     def test_create_list_delete_tenant(self, client):
-        resp = client.post("/api/nest/tenants", json={
-            "name": "test_tenant",
-            "tier": "free",
-            "config": {},
-        })
+        resp = client.post(
+            "/api/nest/tenants",
+            json={
+                "name": "test_tenant",
+                "tier": "free",
+                "config": {},
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         tid = data["tenant_id"]
@@ -30,9 +31,12 @@ class TestNestTenants:
         assert resp.status_code == 200
 
         # Update
-        resp = client.patch(f"/api/nest/tenants/{tid}", json={
-            "tier": "pro",
-        })
+        resp = client.patch(
+            f"/api/nest/tenants/{tid}",
+            json={
+                "tier": "pro",
+            },
+        )
         assert resp.status_code == 200
 
         # Quota

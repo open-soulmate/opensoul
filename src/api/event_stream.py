@@ -11,11 +11,11 @@ import asyncio
 import json
 import time
 import uuid
-from datetime import datetime, timezone
 from collections import deque
+
+import httpx
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
-import httpx
 
 router = APIRouter()
 
@@ -47,6 +47,7 @@ def push_event(event: dict) -> None:
     without waiting for the next probe cycle.
     """
     import uuid as _uuid
+
     event.setdefault("id", f"evt_{_uuid.uuid4().hex[:12]}")
     event.setdefault("collected_at", time.time())
     _event_buffer.append(event)
@@ -59,10 +60,12 @@ def push_event(event: dict) -> None:
     except RuntimeError:
         pass  # No event loop running (e.g. during tests)
 
+
 _BASE = "http://127.0.0.1:8090"
 
 # ── Organ Activity Probes ──────────────────────────────────────
 # Each probe fetches recent activity from an organ's API
+
 
 async def _probe_vein(client: httpx.AsyncClient) -> list[dict]:
     """Get recent file operations from Vein."""
@@ -73,16 +76,19 @@ async def _probe_vein(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             store = data.get("store", {})
             if store.get("total_files", 0) > 0:
-                events.append({
-                    "organ": "vein",
-                    "emoji": "🩸",
-                    "type": "stats",
-                    "summary": f"{store['total_files']} files stored, {store['unique_blobs']} unique blobs",
-                    "detail": store,
-                })
+                events.append(
+                    {
+                        "organ": "vein",
+                        "emoji": "🩸",
+                        "type": "stats",
+                        "summary": f"{store['total_files']} files stored, {store['unique_blobs']} unique blobs",
+                        "detail": store,
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_gland(client: httpx.AsyncClient) -> list[dict]:
     """Get recent LLM usage from Gland."""
@@ -92,17 +98,20 @@ async def _probe_gland(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for rec in data.get("records", [])[:3]:
-                events.append({
-                    "organ": "gland",
-                    "emoji": "🧪",
-                    "type": "llm_call",
-                    "summary": f"{rec.get('model', 'unknown')} — {rec.get('total_tokens', 0)} tokens",
-                    "detail": rec,
-                    "timestamp": rec.get("timestamp"),
-                })
+                events.append(
+                    {
+                        "organ": "gland",
+                        "emoji": "🧪",
+                        "type": "llm_call",
+                        "summary": f"{rec.get('model', 'unknown')} — {rec.get('total_tokens', 0)} tokens",
+                        "detail": rec,
+                        "timestamp": rec.get("timestamp"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_immune(client: httpx.AsyncClient) -> list[dict]:
     """Get recent security events from Immune."""
@@ -112,17 +121,20 @@ async def _probe_immune(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for entry in data.get("entries", [])[:3]:
-                events.append({
-                    "organ": "immune",
-                    "emoji": "🛡",
-                    "type": "security",
-                    "summary": f"{entry.get('action', 'unknown')} — {entry.get('detail', '')}",
-                    "detail": entry,
-                    "timestamp": entry.get("timestamp"),
-                })
+                events.append(
+                    {
+                        "organ": "immune",
+                        "emoji": "🛡",
+                        "type": "security",
+                        "summary": f"{entry.get('action', 'unknown')} — {entry.get('detail', '')}",
+                        "detail": entry,
+                        "timestamp": entry.get("timestamp"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_trajectory(client: httpx.AsyncClient) -> list[dict]:
     """Get recent trajectory events."""
@@ -132,17 +144,20 @@ async def _probe_trajectory(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for ev in data.get("events", [])[:3]:
-                events.append({
-                    "organ": "trajectory",
-                    "emoji": "📊",
-                    "type": "agent_event",
-                    "summary": f"[{ev.get('agent_id', '')}] {ev.get('event_type', '')}: {ev.get('content', '')[:80]}",
-                    "detail": ev,
-                    "timestamp": ev.get("timestamp"),
-                })
+                events.append(
+                    {
+                        "organ": "trajectory",
+                        "emoji": "📊",
+                        "type": "agent_event",
+                        "summary": f"[{ev.get('agent_id', '')}] {ev.get('event_type', '')}: {ev.get('content', '')[:80]}",
+                        "detail": ev,
+                        "timestamp": ev.get("timestamp"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_echo(client: httpx.AsyncClient) -> list[dict]:
     """Get recent message dispatches from Echo."""
@@ -152,17 +167,20 @@ async def _probe_echo(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for msg in data.get("messages", [])[:3]:
-                events.append({
-                    "organ": "echo",
-                    "emoji": "🔊",
-                    "type": "message",
-                    "summary": f"[{msg.get('channel', '')}] {msg.get('title', '')}",
-                    "detail": msg,
-                    "timestamp": msg.get("timestamp"),
-                })
+                events.append(
+                    {
+                        "organ": "echo",
+                        "emoji": "🔊",
+                        "type": "message",
+                        "summary": f"[{msg.get('channel', '')}] {msg.get('title', '')}",
+                        "detail": msg,
+                        "timestamp": msg.get("timestamp"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_mirror(client: httpx.AsyncClient) -> list[dict]:
     """Get recent sandbox activities from Mirror."""
@@ -172,17 +190,20 @@ async def _probe_mirror(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for sb in data.get("sandboxes", [])[:3]:
-                events.append({
-                    "organ": "mirror",
-                    "emoji": "🪞",
-                    "type": "sandbox",
-                    "summary": f"Sandbox '{sb.get('name', sb.get('sandbox_id', ''))}' — {sb.get('status', '')}",
-                    "detail": sb,
-                    "timestamp": sb.get("created_at"),
-                })
+                events.append(
+                    {
+                        "organ": "mirror",
+                        "emoji": "🪞",
+                        "type": "sandbox",
+                        "summary": f"Sandbox '{sb.get('name', sb.get('sandbox_id', ''))}' — {sb.get('status', '')}",
+                        "detail": sb,
+                        "timestamp": sb.get("created_at"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_link(client: httpx.AsyncClient) -> list[dict]:
     """Get recent webhook events from Link."""
@@ -192,17 +213,20 @@ async def _probe_link(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for ev in data.get("events", [])[:3]:
-                events.append({
-                    "organ": "link",
-                    "emoji": "🔗",
-                    "type": "webhook",
-                    "summary": f"[{ev.get('direction', '')}] {ev.get('event_type', '')}: {ev.get('payload_summary', '')[:60]}",
-                    "detail": ev,
-                    "timestamp": ev.get("timestamp"),
-                })
+                events.append(
+                    {
+                        "organ": "link",
+                        "emoji": "🔗",
+                        "type": "webhook",
+                        "summary": f"[{ev.get('direction', '')}] {ev.get('event_type', '')}: {ev.get('payload_summary', '')[:60]}",
+                        "detail": ev,
+                        "timestamp": ev.get("timestamp"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_limb(client: httpx.AsyncClient) -> list[dict]:
     """Get recent RPA tasks from Limb."""
@@ -212,17 +236,20 @@ async def _probe_limb(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for task in data.get("tasks", [])[:3]:
-                events.append({
-                    "organ": "limb",
-                    "emoji": "💪",
-                    "type": "rpa_task",
-                    "summary": f"Task '{task.get('name', '')}' — {task.get('status', '')}",
-                    "detail": task,
-                    "timestamp": task.get("created_at"),
-                })
+                events.append(
+                    {
+                        "organ": "limb",
+                        "emoji": "💪",
+                        "type": "rpa_task",
+                        "summary": f"Task '{task.get('name', '')}' — {task.get('status', '')}",
+                        "detail": task,
+                        "timestamp": task.get("created_at"),
+                    }
+                )
     except Exception:
         pass
     return events
+
 
 async def _probe_cron(client: httpx.AsyncClient) -> list[dict]:
     """Get recent cron job executions."""
@@ -233,16 +260,19 @@ async def _probe_cron(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             for job in (data.get("jobs", data) if isinstance(data, (list, dict)) else [])[:3]:
                 if isinstance(job, dict):
-                    events.append({
-                        "organ": "will",
-                        "emoji": "✨",
-                        "type": "cron_job",
-                        "summary": f"Cron '{job.get('name', job.get('id', ''))}' — last: {job.get('last_run', 'never')}",
-                        "detail": job,
-                    })
+                    events.append(
+                        {
+                            "organ": "will",
+                            "emoji": "✨",
+                            "type": "cron_job",
+                            "summary": f"Cron '{job.get('name', job.get('id', ''))}' — last: {job.get('last_run', 'never')}",
+                            "detail": job,
+                        }
+                    )
     except Exception:
         pass
     return events
+
 
 async def _probe_hippo(client: httpx.AsyncClient) -> list[dict]:
     """Get recent memory operations from Hippo."""
@@ -253,13 +283,15 @@ async def _probe_hippo(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             total = data.get("total", 0)
             if total > 0:
-                events.append({
-                    "organ": "hippo",
-                    "emoji": "🧠",
-                    "type": "memory",
-                    "summary": f"{total} memories tracked ({data.get('active', 0)} active, {data.get('archived', 0)} archived)",
-                    "detail": data,
-                })
+                events.append(
+                    {
+                        "organ": "hippo",
+                        "emoji": "🧠",
+                        "type": "memory",
+                        "summary": f"{total} memories tracked ({data.get('active', 0)} active, {data.get('archived', 0)} archived)",
+                        "detail": data,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -275,13 +307,15 @@ async def _probe_reflex(client: httpx.AsyncClient) -> list[dict]:
             cache = data.get("cache", data)
             total_hits = cache.get("total_hits", 0)
             if total_hits > 0:
-                events.append({
-                    "organ": "reflex",
-                    "emoji": "⚡",
-                    "type": "cache_stats",
-                    "summary": f"Reflex cache: {cache.get('active_entries', 0)} entries, {total_hits} hits ({cache.get('hit_rate_percent', 0):.1f}% hit rate)",
-                    "detail": cache,
-                })
+                events.append(
+                    {
+                        "organ": "reflex",
+                        "emoji": "⚡",
+                        "type": "cache_stats",
+                        "summary": f"Reflex cache: {cache.get('active_entries', 0)} entries, {total_hits} hits ({cache.get('hit_rate_percent', 0):.1f}% hit rate)",
+                        "detail": cache,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -295,14 +329,16 @@ async def _probe_nerve(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             for ev in data.get("events", [])[:3]:
-                events.append({
-                    "organ": "nerve",
-                    "emoji": "⚡",
-                    "type": "bus_event",
-                    "summary": f"[{ev.get('topic', '')}] {ev.get('event_type', '')}: {str(ev.get('payload', ''))[:60]}",
-                    "detail": ev,
-                    "timestamp": ev.get("timestamp"),
-                })
+                events.append(
+                    {
+                        "organ": "nerve",
+                        "emoji": "⚡",
+                        "type": "bus_event",
+                        "summary": f"[{ev.get('topic', '')}] {ev.get('event_type', '')}: {str(ev.get('payload', ''))[:60]}",
+                        "detail": ev,
+                        "timestamp": ev.get("timestamp"),
+                    }
+                )
     except Exception:
         pass
     return events
@@ -318,13 +354,15 @@ async def _probe_cortex(client: httpx.AsyncClient) -> list[dict]:
             modules = data.get("modules", {})
             avail = [k for k, v in modules.items() if v == "available"]
             if avail:
-                events.append({
-                    "organ": "cortex",
-                    "emoji": "🧩",
-                    "type": "cortex_status",
-                    "summary": f"Cortex modules active: {', '.join(avail)}",
-                    "detail": modules,
-                })
+                events.append(
+                    {
+                        "organ": "cortex",
+                        "emoji": "🧩",
+                        "type": "cortex_status",
+                        "summary": f"Cortex modules active: {', '.join(avail)}",
+                        "detail": modules,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -338,15 +376,19 @@ async def _probe_sense(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             engines = data.get("engines", {})
-            available = [k for k, v in engines.items() if isinstance(v, dict) and v.get("available")]
+            available = [
+                k for k, v in engines.items() if isinstance(v, dict) and v.get("available")
+            ]
             if available:
-                events.append({
-                    "organ": "sense",
-                    "emoji": "👁",
-                    "type": "sense_status",
-                    "summary": f"Sense engines active: {', '.join(available)}",
-                    "detail": engines,
-                })
+                events.append(
+                    {
+                        "organ": "sense",
+                        "emoji": "👁",
+                        "type": "sense_status",
+                        "summary": f"Sense engines active: {', '.join(available)}",
+                        "detail": engines,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -362,13 +404,15 @@ async def _probe_vital(client: httpx.AsyncClient) -> list[dict]:
             components = data.get("components", [])
             down = [c for c in components if isinstance(c, dict) and c.get("status") == "down"]
             if down:
-                events.append({
-                    "organ": "vital",
-                    "emoji": "📊",
-                    "type": "health_alert",
-                    "summary": f"⚠️ {len(down)} component(s) DOWN: {', '.join(c.get('name', '') for c in down)}",
-                    "detail": {"down_components": down},
-                })
+                events.append(
+                    {
+                        "organ": "vital",
+                        "emoji": "📊",
+                        "type": "health_alert",
+                        "summary": f"⚠️ {len(down)} component(s) DOWN: {', '.join(c.get('name', '') for c in down)}",
+                        "detail": {"down_components": down},
+                    }
+                )
     except Exception:
         pass
     return events
@@ -384,13 +428,15 @@ async def _probe_pulse(client: httpx.AsyncClient) -> list[dict]:
             signals = data.get("signals", [])
             active = [s for s in signals if isinstance(s, dict) and s.get("status") == "active"]
             if active:
-                events.append({
-                    "organ": "pulse",
-                    "emoji": "💓",
-                    "type": "pulse_signals",
-                    "summary": f"{len(active)} active pulse signal(s): {', '.join(s.get('name', s.get('signal_id', ''))[:20] for s in active[:3])}",
-                    "detail": {"active_count": len(active), "total": len(signals)},
-                })
+                events.append(
+                    {
+                        "organ": "pulse",
+                        "emoji": "💓",
+                        "type": "pulse_signals",
+                        "summary": f"{len(active)} active pulse signal(s): {', '.join(s.get('name', s.get('signal_id', ''))[:20] for s in active[:3])}",
+                        "detail": {"active_count": len(active), "total": len(signals)},
+                    }
+                )
     except Exception:
         pass
     return events
@@ -405,13 +451,15 @@ async def _probe_voice(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             total = data.get("total_synthesized", 0)
             if total > 0:
-                events.append({
-                    "organ": "voice",
-                    "emoji": "🎤",
-                    "type": "tts_stats",
-                    "summary": f"Voice: {total} syntheses, {data.get('total_characters', 0)} chars, backend: {data.get('preferred_backend', 'unknown')}",
-                    "detail": data,
-                })
+                events.append(
+                    {
+                        "organ": "voice",
+                        "emoji": "🎤",
+                        "type": "tts_stats",
+                        "summary": f"Voice: {total} syntheses, {data.get('total_characters', 0)} chars, backend: {data.get('preferred_backend', 'unknown')}",
+                        "detail": data,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -426,13 +474,15 @@ async def _probe_vision(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             total = data.get("total_generated", 0)
             if total > 0:
-                events.append({
-                    "organ": "vision",
-                    "emoji": "🎨",
-                    "type": "vision_stats",
-                    "summary": f"Vision: {total} images generated ({data.get('errors', 0)} errors)",
-                    "detail": data,
-                })
+                events.append(
+                    {
+                        "organ": "vision",
+                        "emoji": "🎨",
+                        "type": "vision_stats",
+                        "summary": f"Vision: {total} images generated ({data.get('errors', 0)} errors)",
+                        "detail": data,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -448,13 +498,15 @@ async def _probe_mind(client: httpx.AsyncClient) -> list[dict]:
             emotion = data.get("emotion", {})
             total = emotion.get("total_analyzed", 0)
             if total > 0:
-                events.append({
-                    "organ": "mind",
-                    "emoji": "💭",
-                    "type": "emotion_stats",
-                    "summary": f"Mind: {total} emotions analyzed, active personality: {data.get('personality', {}).get('active', 'default')}",
-                    "detail": emotion,
-                })
+                events.append(
+                    {
+                        "organ": "mind",
+                        "emoji": "💭",
+                        "type": "emotion_stats",
+                        "summary": f"Mind: {total} emotions analyzed, active personality: {data.get('personality', {}).get('active', 'default')}",
+                        "detail": emotion,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -469,13 +521,15 @@ async def _probe_nest(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             tenants = data.get("tenants", [])
             if tenants:
-                events.append({
-                    "organ": "nest",
-                    "emoji": "🏠",
-                    "type": "tenant_activity",
-                    "summary": f"Nest: {len(tenants)} tenant(s) configured",
-                    "detail": {"count": len(tenants)},
-                })
+                events.append(
+                    {
+                        "organ": "nest",
+                        "emoji": "🏠",
+                        "type": "tenant_activity",
+                        "summary": f"Nest: {len(tenants)} tenant(s) configured",
+                        "detail": {"count": len(tenants)},
+                    }
+                )
     except Exception:
         pass
     return events
@@ -491,14 +545,16 @@ async def _probe_marrow(client: httpx.AsyncClient) -> list[dict]:
             backups = data.get("backups", [])
             if backups:
                 latest = backups[0] if isinstance(backups[0], dict) else {}
-                events.append({
-                    "organ": "marrow",
-                    "emoji": "🦴",
-                    "type": "backup",
-                    "summary": f"Marrow: {len(backups)} backup(s), latest: {latest.get('name', 'unknown')} ({latest.get('status', '')})",
-                    "detail": {"total": len(backups), "latest": latest},
-                    "timestamp": latest.get("created_at"),
-                })
+                events.append(
+                    {
+                        "organ": "marrow",
+                        "emoji": "🦴",
+                        "type": "backup",
+                        "summary": f"Marrow: {len(backups)} backup(s), latest: {latest.get('name', 'unknown')} ({latest.get('status', '')})",
+                        "detail": {"total": len(backups), "latest": latest},
+                        "timestamp": latest.get("created_at"),
+                    }
+                )
     except Exception:
         pass
     return events
@@ -514,13 +570,15 @@ async def _probe_heredity(client: httpx.AsyncClient) -> list[dict]:
             reg = data.get("registry", {})
             total_migrations = reg.get("total_migrations", 0)
             if total_migrations > 0:
-                events.append({
-                    "organ": "heredity",
-                    "emoji": "🔗",
-                    "type": "evolution",
-                    "summary": f"Heredity: {reg.get('total_components', 0)} components, {total_migrations} migrations",
-                    "detail": reg,
-                })
+                events.append(
+                    {
+                        "organ": "heredity",
+                        "emoji": "🔗",
+                        "type": "evolution",
+                        "summary": f"Heredity: {reg.get('total_components', 0)} components, {total_migrations} migrations",
+                        "detail": reg,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -536,13 +594,15 @@ async def _probe_gene(client: httpx.AsyncClient) -> list[dict]:
             total = data.get("total_templates", 0)
             user_count = data.get("user_count", 0)
             if user_count > 0:
-                events.append({
-                    "organ": "gene",
-                    "emoji": "🧬",
-                    "type": "template_stats",
-                    "summary": f"Gene: {total} templates ({data.get('builtin_count', 0)} builtin, {user_count} user)",
-                    "detail": data,
-                })
+                events.append(
+                    {
+                        "organ": "gene",
+                        "emoji": "🧬",
+                        "type": "template_stats",
+                        "summary": f"Gene: {total} templates ({data.get('builtin_count', 0)} builtin, {user_count} user)",
+                        "detail": data,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -557,13 +617,15 @@ async def _probe_learn(client: httpx.AsyncClient) -> list[dict]:
             data = r.json()
             total = data.get("total_courses", 0)
             if total > 0:
-                events.append({
-                    "organ": "learn",
-                    "emoji": "📚",
-                    "type": "learn_stats",
-                    "summary": f"Learn: {total} courses, {data.get('completed_chapters', 0)} chapters completed",
-                    "detail": data,
-                })
+                events.append(
+                    {
+                        "organ": "learn",
+                        "emoji": "📚",
+                        "type": "learn_stats",
+                        "summary": f"Learn: {total} courses, {data.get('completed_chapters', 0)} chapters completed",
+                        "detail": data,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -579,13 +641,15 @@ async def _probe_mcp(client: httpx.AsyncClient) -> list[dict]:
             total = data.get("total_servers", 0)
             connected = data.get("connected", 0)
             if total > 0:
-                events.append({
-                    "organ": "mcp",
-                    "emoji": "🔌",
-                    "type": "mcp_stats",
-                    "summary": f"MCP: {total} servers ({connected} connected), {data.get('total_tools', 0)} tools",
-                    "detail": data,
-                })
+                events.append(
+                    {
+                        "organ": "mcp",
+                        "emoji": "🔌",
+                        "type": "mcp_stats",
+                        "summary": f"MCP: {total} servers ({connected} connected), {data.get('total_tools', 0)} tools",
+                        "detail": data,
+                    }
+                )
     except Exception:
         pass
     return events
@@ -599,13 +663,18 @@ async def _probe_plugins(client: httpx.AsyncClient) -> list[dict]:
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and len(data) > 0:
-                events.append({
-                    "organ": "plugins",
-                    "emoji": "🧩",
-                    "type": "plugin_stats",
-                    "summary": f"Plugins: {len(data)} installed",
-                    "detail": {"total": len(data), "plugins": [p.get("name", "") for p in data[:5]]},
-                })
+                events.append(
+                    {
+                        "organ": "plugins",
+                        "emoji": "🧩",
+                        "type": "plugin_stats",
+                        "summary": f"Plugins: {len(data)} installed",
+                        "detail": {
+                            "total": len(data),
+                            "plugins": [p.get("name", "") for p in data[:5]],
+                        },
+                    }
+                )
     except Exception:
         pass
     return events
@@ -661,15 +730,18 @@ async def _collect_all_events() -> list[dict]:
         if isinstance(ts, str):
             try:
                 from datetime import datetime
+
                 return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
             except (ValueError, AttributeError):
                 return 0.0
         return float(ts) if ts else 0.0
+
     events.sort(key=_sort_key, reverse=True)
     return events
 
 
 # ── Endpoints ──────────────────────────────────────────────────
+
 
 @router.get("/stream")
 async def get_event_stream(
@@ -765,6 +837,7 @@ async def stream_health():
 
 # ── Server-Sent Events (SSE) ─────────────────────────────────
 
+
 async def _sse_generator(subscriber_id: str, organ_filter: str | None = None):
     """Generate SSE events for a connected client."""
     queue: asyncio.Queue = asyncio.Queue(maxsize=200)
@@ -788,7 +861,7 @@ async def _sse_generator(subscriber_id: str, organ_filter: str | None = None):
                 if organ_filter and event.get("organ") != organ_filter:
                     continue
                 yield f"event: message\ndata: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Send keepalive ping every 30s
                 yield f": keepalive {time.time()}\n\n"
     except asyncio.CancelledError:
@@ -829,8 +902,7 @@ async def list_sse_clients():
     """List active SSE connections."""
     return {
         "clients": [
-            {"subscriber_id": sid, "queue_size": q.qsize()}
-            for sid, q in _sse_subscribers.items()
+            {"subscriber_id": sid, "queue_size": q.qsize()} for sid, q in _sse_subscribers.items()
         ],
         "total": len(_sse_subscribers),
     }

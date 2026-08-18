@@ -10,6 +10,7 @@ so that cross-organ alert routing works out of the box.
 import json
 import os
 import time
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -73,7 +74,6 @@ def _load_bootstrap_wiring():
 _load_bootstrap_wiring()
 
 
-
 def _add_notification(
     source: str,
     title: str,
@@ -117,8 +117,9 @@ def _auto_forward_to_echo(notif: dict) -> None:
     if not channels:
         return
     try:
-        from src.echo.dispatcher import MessageDispatcher, Channel
         from src.api.echo import dispatcher
+        from src.echo.dispatcher import Channel
+
         emoji = notif.get("emoji", "🔔")
         title = f"{emoji} [{level.upper()}] {notif.get('title', '')}"
         body = notif.get("body", "")
@@ -155,10 +156,12 @@ def push_notification(
 
 # ── Seed some initial notifications from event stream ─────────
 
+
 def _seed_from_events():
     """Pull recent events from the event buffer and convert to notifications."""
     try:
         from src.api.event_stream import _event_buffer
+
         for evt in list(_event_buffer)[:30]:
             organ = evt.get("organ", "system")
             emoji = evt.get("emoji", "🔔")
@@ -173,7 +176,13 @@ def _seed_from_events():
                 continue
             # Map event types to notification levels
             level = "info"
-            if evt_type in ("error", "alert", "content_blocked", "ip_blacklisted", "component_error"):
+            if evt_type in (
+                "error",
+                "alert",
+                "content_blocked",
+                "ip_blacklisted",
+                "component_error",
+            ):
                 level = "error"
             elif evt_type in ("warning", "rate_limited"):
                 level = "warning"
@@ -196,10 +205,10 @@ def _seed_from_events():
 def _seed_from_vital():
     """Pull recent vital alerts and convert to notifications."""
     try:
-        from src.vital.alert import AlertManager
         # Try to get alerts from the alert manager
         from src.vital.collector import MetricsCollector
-        collector = MetricsCollector()
+
+        MetricsCollector()
         checker = __import__("src.vital.health", fromlist=["HealthChecker"]).HealthChecker()
         # Check component health
         results = checker.check_all()
@@ -230,6 +239,7 @@ def _seed_all():
 
 
 # ── API Endpoints ─────────────────────────────────────────────
+
 
 @router.get("/recent")
 async def get_recent_notifications(
@@ -359,6 +369,7 @@ async def notifications_stats():
 
 # ── Echo Forwarding Endpoints ──────────────────────────────
 
+
 @router.get("/forward/rules")
 async def get_forward_rules():
     """Get current notification-to-Echo forwarding rules."""
@@ -376,6 +387,7 @@ async def set_forward_rule(req: ForwardRuleRequest):
     if req.level not in valid_levels:
         raise HTTPException(400, f"Invalid level. Valid: {valid_levels}")
     from src.echo.dispatcher import Channel
+
     valid_channels = {c.value for c in Channel}
     for ch in req.channels:
         if ch not in valid_channels:
@@ -407,12 +419,14 @@ async def forward_notification(notif_id: str, req: ForwardNotificationRequest):
         raise HTTPException(404, "Notification not found")
 
     from src.echo.dispatcher import Channel
+
     try:
         channel = Channel(req.channel)
     except ValueError:
         raise HTTPException(400, f"Invalid channel. Valid: {[c.value for c in Channel]}")
 
     from src.api.echo import dispatcher
+
     emoji = notif.get("emoji", "🔔")
     level = notif.get("level", "info")
     title = f"{emoji} [{level.upper()}] {notif.get('title', '')}"

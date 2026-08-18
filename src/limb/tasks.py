@@ -5,15 +5,14 @@ Defines the building blocks for RPA automation:
 - Step sequences (ordered list of actions)
 - Templates for common workflows (form fill, data extraction, etc.)
 """
+
 from __future__ import annotations
 
-import time
-import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     NAVIGATE = "navigate"
     CLICK = "click"
     TYPE = "type"
@@ -32,14 +31,15 @@ class ActionType(str, Enum):
 @dataclass
 class Action:
     """A single RPA action."""
+
     action_type: ActionType
-    target: str = ""          # CSS selector, URL, or element identifier
-    value: str = ""           # Text to type, option to select, etc.
+    target: str = ""  # CSS selector, URL, or element identifier
+    value: str = ""  # Text to type, option to select, etc.
     description: str = ""
-    timeout: int = 30         # seconds
-    retry: int = 0            # number of retries on failure
-    optional: bool = False    # if True, failure doesn't stop execution
-    condition: str = ""       # for conditional actions: JS expression
+    timeout: int = 30  # seconds
+    retry: int = 0  # number of retries on failure
+    optional: bool = False  # if True, failure doesn't stop execution
+    condition: str = ""  # for conditional actions: JS expression
     metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -71,6 +71,7 @@ class Action:
 @dataclass
 class StepResult:
     """Result of executing a single step."""
+
     action_type: str
     success: bool
     action_index: int = 0
@@ -83,6 +84,7 @@ class StepResult:
 @dataclass
 class TaskTemplate:
     """Reusable RPA task template."""
+
     template_id: str
     name: str
     description: str
@@ -115,7 +117,12 @@ BUILTIN_TEMPLATES = [
         actions=[
             Action(ActionType.NAVIGATE, target="{{url}}", description="打开目标页面"),
             Action(ActionType.WAIT, target="form", timeout=10, description="等待表单加载"),
-            Action(ActionType.TYPE, target="{{field_selector}}", value="{{field_value}}", description="填写字段"),
+            Action(
+                ActionType.TYPE,
+                target="{{field_selector}}",
+                value="{{field_value}}",
+                description="填写字段",
+            ),
             Action(ActionType.SUBMIT, target="form", description="提交表单"),
             Action(ActionType.SCREENSHOT, description="截图确认"),
         ],
@@ -133,7 +140,12 @@ BUILTIN_TEMPLATES = [
         category="data_extract",
         actions=[
             Action(ActionType.NAVIGATE, target="{{url}}", description="打开目标页面"),
-            Action(ActionType.WAIT, target="{{container_selector}}", timeout=10, description="等待内容加载"),
+            Action(
+                ActionType.WAIT,
+                target="{{container_selector}}",
+                timeout=10,
+                description="等待内容加载",
+            ),
             Action(ActionType.EXTRACT, target="{{container_selector}}", description="提取数据"),
         ],
         variables=[
@@ -149,9 +161,24 @@ BUILTIN_TEMPLATES = [
         category="navigation",
         actions=[
             Action(ActionType.NAVIGATE, target="{{login_url}}", description="打开登录页"),
-            Action(ActionType.WAIT, target="input[type='text'], input[type='email']", timeout=10, description="等待登录表单"),
-            Action(ActionType.TYPE, target="{{username_selector}}", value="{{username}}", description="输入用户名"),
-            Action(ActionType.TYPE, target="{{password_selector}}", value="{{password}}", description="输入密码"),
+            Action(
+                ActionType.WAIT,
+                target="input[type='text'], input[type='email']",
+                timeout=10,
+                description="等待登录表单",
+            ),
+            Action(
+                ActionType.TYPE,
+                target="{{username_selector}}",
+                value="{{username}}",
+                description="输入用户名",
+            ),
+            Action(
+                ActionType.TYPE,
+                target="{{password_selector}}",
+                value="{{password}}",
+                description="输入密码",
+            ),
             Action(ActionType.CLICK, target="{{submit_selector}}", description="点击登录"),
             Action(ActionType.WAIT, timeout=5, description="等待登录完成"),
             Action(ActionType.SCREENSHOT, description="截图确认"),
@@ -160,9 +187,21 @@ BUILTIN_TEMPLATES = [
             {"name": "login_url", "description": "登录页URL", "default": ""},
             {"name": "username", "description": "用户名", "default": ""},
             {"name": "password", "description": "密码", "default": ""},
-            {"name": "username_selector", "description": "用户名输入框", "default": "input[type='text']"},
-            {"name": "password_selector", "description": "密码输入框", "default": "input[type='password']"},
-            {"name": "submit_selector", "description": "提交按钮", "default": "button[type='submit']"},
+            {
+                "name": "username_selector",
+                "description": "用户名输入框",
+                "default": "input[type='text']",
+            },
+            {
+                "name": "password_selector",
+                "description": "密码输入框",
+                "default": "input[type='password']",
+            },
+            {
+                "name": "submit_selector",
+                "description": "提交按钮",
+                "default": "button[type='submit']",
+            },
         ],
         tags=["login", "auth"],
     ),

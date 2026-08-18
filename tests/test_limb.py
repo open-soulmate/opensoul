@@ -1,7 +1,5 @@
 """Integration tests for OpenLimb (四肢) — RPA task executor."""
 
-import pytest
-
 
 class TestLimbHealth:
     def test_health(self, client):
@@ -14,19 +12,22 @@ class TestLimbHealth:
 
 class TestLimbTasks:
     def test_create_list_delete_task(self, client):
-        resp = client.post("/api/limb/tasks", json={
-            "name": "test_task",
-            "task_type": "http_request",
-            "actions": [
-                {
-                    "type": "http_request",
-                    "config": {
-                        "method": "GET",
-                        "url": "https://httpbin.org/get",
-                    },
-                }
-            ],
-        })
+        resp = client.post(
+            "/api/limb/tasks",
+            json={
+                "name": "test_task",
+                "task_type": "http_request",
+                "actions": [
+                    {
+                        "type": "http_request",
+                        "config": {
+                            "method": "GET",
+                            "url": "https://httpbin.org/get",
+                        },
+                    }
+                ],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         tid = data["task_id"]
