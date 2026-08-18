@@ -50,6 +50,7 @@ from src.api.knowledge import router as knowledge_router
 from src.api.knowledge_requests import router as knowledge_requests_router
 from src.api.learn import router as learn_router
 from src.api.limb import router as limb_router
+from src.api.limb_rpa import router as limb_rpa_router
 from src.api.link import router as link_router
 from src.api.llm import router as llm_router
 from src.api.marketplace import router as marketplace_router
@@ -290,6 +291,7 @@ _ORGAN_HEALTH_ROUTES = [
     ("pulse", "/api/pulse/health"),
     ("nest", "/api/nest/health"),
     ("limb", "/api/limb/health"),
+    ("limb-rpa", "/api/limb/rpa/health"),
     ("voice", "/api/voice/health"),
     ("vision", "/api/vision/health"),
     ("mind", "/api/mind/health"),
@@ -408,6 +410,7 @@ app.include_router(heredity_router, prefix="/api/heredity", tags=["heredity"])
 app.include_router(pulse_router, prefix="/api/pulse", tags=["pulse"])
 app.include_router(nest_router, prefix="/api/nest", tags=["nest"])
 app.include_router(limb_router, prefix="/api/limb", tags=["limb"])
+app.include_router(limb_rpa_router, prefix="/api/limb/rpa", tags=["Limb RPA"])
 app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
 app.include_router(vision_router, prefix="/api/vision", tags=["vision"])
 app.include_router(mind_router, prefix="/api/mind", tags=["mind"])
