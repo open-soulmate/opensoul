@@ -52,6 +52,7 @@ from src.api.learn import router as learn_router
 from src.api.limb import router as limb_router
 from src.api.limb_rpa import router as limb_rpa_router
 from src.api.link import router as link_router
+from src.api.link_gateway import router as link_gateway_router
 from src.api.llm import router as llm_router
 from src.api.marketplace import router as marketplace_router
 from src.api.marrow import router as marrow_router
@@ -404,6 +405,7 @@ app.include_router(gene_router, prefix="/api/gene", tags=["gene"])
 app.include_router(echo_router, prefix="/api/echo", tags=["echo"])
 app.include_router(mirror_router, prefix="/api/mirror", tags=["mirror"])
 app.include_router(link_router, prefix="/api/link", tags=["link"])
+app.include_router(link_gateway_router, prefix="/api/link", tags=["Link Gateway"])
 app.include_router(hippo_router, prefix="/api/hippo", tags=["hippo"])
 app.include_router(reflex_router, prefix="/api/reflex", tags=["reflex"])
 app.include_router(heredity_router, prefix="/api/heredity", tags=["heredity"])
