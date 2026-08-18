@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from src.immune.access_control import IPAccessControl
 from src.immune.audit import AuditAction, AuditLogger
+from src.immune.intrusion import IntrusionDetector
 from src.immune.moderator import ContentModerator
 from src.immune.rate_limiter import RateLimitConfig, RateLimiter
 from src.nerve.event_bridge import push_event
@@ -16,6 +17,7 @@ rate_limiter = RateLimiter()
 moderator = ContentModerator()
 ip_control = IPAccessControl()
 audit = AuditLogger()
+intrusion = IntrusionDetector()
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -268,6 +270,7 @@ async def immune_health():
             "moderator": {"patterns": len(moderator.patterns)},
             "access_control": ip_control.stats(),
             "audit": audit.stats(),
+            "intrusion_detection": intrusion.stats(),
         },
     }
 
@@ -282,4 +285,151 @@ async def immune_stats():
         "moderator": {"patterns": len(moderator.patterns)},
         "access_control": ip_control.stats(),
         "audit": audit.stats(),
+        "intrusion_detection": intrusion.stats(),
     }
+
+
+# ── Intrusion Detection ───────────────────────────────────
+
+
+class InspectRequest(BaseModel):
+    ip: str
+    method: str = "GET"
+    path: str = "/"
+    query: str = ""
+    body: str = ""
+    headers: dict = {}
+    user_agent: str = ""
+
+
+class LoginAttemptRequest(BaseModel):
+    ip: str
+    success: bool = False
+
+
+class IPBlockRequest(BaseModel):
+    ip: str
+
+
+@router.post("/intrusion/inspect")
+async def inspect_request(req: InspectRequest):
+    """Inspect a request for intrusion patterns (SQL injection, XSS, etc.)."""
+    threats = intrusion.inspect_request(
+        ip=req.ip,
+        method=req.method,
+        path=req.path,
+        query=req.query,
+        body=req.body,
+        headers=req.headers,
+        user_agent=req.user_agent,
+    )
+
+    # Emit events for critical threats
+    for threat in threats:
+        if threat.threat_level.value in ("high", "critical"):
+            push_event({
+                "organ": "immune",
+                "emoji": "🛡",
+                "type": "intrusion_detected",
+                "summary": f"🚨 {threat.attack_type.value} from {threat.source_ip}: {threat.detail}",
+                "detail": threat.to_dict(),
+            })
+            # Push notification for critical threats
+            if threat.threat_level.value == "critical":
+                try:
+                    from src.api.notifications import push_notification
+                    push_notification(
+                        source="immune",
+                        title=f"🚨 Intrusion: {threat.attack_type.value}",
+                        body=f"From {threat.source_ip}: {threat.detail}",
+                        level="error",
+                        organ="immune",
+                        emoji="🛡",
+                        action_url="/immune",
+                        metadata=threat.to_dict(),
+                    )
+                except Exception:
+                    pass
+
+    return {
+        "threats_found": len(threats),
+        "threats": [t.to_dict() for t in threats],
+    }
+
+
+@router.post("/intrusion/login-attempt")
+async def record_login_attempt(req: LoginAttemptRequest):
+    """Record a login attempt for brute-force detection."""
+    threat = intrusion.record_login_attempt(req.ip, req.success)
+    if threat:
+        push_event({
+            "organ": "immune",
+            "emoji": "🛡",
+            "type": "brute_force",
+            "summary": f"🔒 Brute force detected from {req.ip}",
+            "detail": threat.to_dict(),
+        })
+        try:
+            from src.api.notifications import push_notification
+            push_notification(
+                source="immune",
+                title=f"🔒 Brute Force: {req.ip}",
+                body=threat.detail,
+                level="error",
+                organ="immune",
+                emoji="🛡",
+                action_url="/immune",
+                metadata=threat.to_dict(),
+            )
+        except Exception:
+            pass
+        # Also auto-blacklist the IP via access control
+        ip_control.blacklist_add(req.ip, reason="brute_force_auto_block", ttl_seconds=3600)
+        return {"blocked": True, "threat": threat.to_dict()}
+    return {"blocked": False}
+
+
+@router.get("/intrusion/threats")
+async def get_threats(
+    ip: str = Query(default=None),
+    attack_type: str = Query(default=None),
+    level: str = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """Query intrusion threat history."""
+    return {"threats": intrusion.get_threats(ip=ip, attack_type=attack_type, level=level, limit=limit)}
+
+
+@router.get("/intrusion/blocked")
+async def get_blocked_ips():
+    """List auto-blocked IPs from intrusion detection."""
+    return {"blocked_ips": intrusion.get_blocked_ips()}
+
+
+@router.post("/intrusion/block")
+async def block_ip_intrusion(req: IPBlockRequest):
+    """Manually block an IP via intrusion detection."""
+    intrusion.block_ip(req.ip, reason="manual")
+    ip_control.blacklist_add(req.ip, reason="manual_intrusion_block")
+    push_event({
+        "organ": "immune",
+        "emoji": "🛡",
+        "type": "ip_blocked",
+        "summary": f"🚫 IP manually blocked: {req.ip}",
+        "detail": {"ip": req.ip},
+    })
+    return {"message": f"IP {req.ip} blocked"}
+
+
+@router.delete("/intrusion/block/{ip}")
+async def unblock_ip_intrusion(ip: str):
+    """Unblock an IP from intrusion detection."""
+    intrusion.unblock_ip(ip)
+    ip_control.blacklist_remove(ip)
+    return {"message": f"IP {ip} unblocked"}
+
+
+@router.get("/intrusion/stats")
+async def intrusion_stats():
+    """Get intrusion detection statistics."""
+    return intrusion.stats()
