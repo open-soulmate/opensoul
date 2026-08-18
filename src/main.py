@@ -93,6 +93,7 @@ from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
 from src.api.ws_chat import router as ws_router
 from src.middleware.metrics_middleware import MetricsMiddleware
+from src.middleware.intrusion_middleware import IntrusionDetectionMiddleware
 from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
@@ -270,6 +271,7 @@ app.add_middleware(
 
 # Metrics middleware — tracks request count, latency, errors
 app.add_middleware(MetricsMiddleware)
+app.add_middleware(IntrusionDetectionMiddleware)
 
 # Static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
