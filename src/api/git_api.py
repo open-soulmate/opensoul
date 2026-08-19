@@ -12,6 +12,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+@router.get("/health")
+async def git_api_health():
+    """GitAPI health check."""
+    return {"status": "ok", "component": "GitAPI"}
 
 
 async def _git(args: list[str], cwd: str | None = None) -> tuple[str, int]:

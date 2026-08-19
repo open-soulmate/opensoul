@@ -16,6 +16,10 @@ from pydantic import BaseModel
 from src.api.user import get_current_user
 
 router = APIRouter()
+@router.get("/health")
+async def agents_health():
+    """Agents health check."""
+    return {"status": "ok", "component": "Agents"}
 logger = logging.getLogger(__name__)
 
 

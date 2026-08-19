@@ -22,6 +22,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 router = APIRouter()
+@router.get("/health")
+async def gene_templates_health():
+    """GeneTemplates health check."""
+    return {"status": "ok", "component": "GeneTemplates"}
 logger = logging.getLogger(__name__)
 
 # ── Persistence ──────────────────────────────────────────────────────────

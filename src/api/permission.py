@@ -16,6 +16,10 @@ from src.services.permission import (
 )
 
 router = APIRouter()
+@router.get("/health")
+async def permission_health():
+    """Permission health check."""
+    return {"status": "ok", "component": "Permission"}
 
 
 class RoleAssign(BaseModel):

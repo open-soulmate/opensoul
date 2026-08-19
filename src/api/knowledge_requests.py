@@ -8,6 +8,10 @@ from src.api.user import get_current_user
 from src.database.postgres import db_pool
 
 router = APIRouter()
+@router.get("/health")
+async def knowledge_requests_health():
+    """KnowledgeRequests health check."""
+    return {"status": "ok", "component": "KnowledgeRequests"}
 
 
 class KnowledgeRequestCreate(BaseModel):

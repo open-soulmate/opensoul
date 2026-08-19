@@ -11,6 +11,10 @@ from src.api.user import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+@router.get("/health")
+async def ws_chat_health():
+    """WSChat health check."""
+    return {"status": "ok", "component": "WSChat"}
 
 # Agent proxy registry (same as agent_proxy.py)
 AGENT_REGISTRY = {

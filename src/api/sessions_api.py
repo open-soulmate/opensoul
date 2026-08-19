@@ -17,6 +17,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from src.api.user import get_current_user
 
 router = APIRouter()
+@router.get("/health")
+async def sessions_api_health():
+    """SessionsAPI health check."""
+    return {"status": "ok", "component": "SessionsAPI"}
 logger = logging.getLogger(__name__)
 
 _DB_PATH = os.path.expanduser("~/.hermes/state.db")

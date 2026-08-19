@@ -11,6 +11,10 @@ from src.api.user import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+@router.get("/health")
+async def agent_proxy_health():
+    """AgentProxy health check."""
+    return {"status": "ok", "component": "AgentProxy"}
 
 # Registry of CLI agents and their commands
 AGENT_REGISTRY = {

@@ -381,6 +381,23 @@ _ORGAN_HEALTH_ROUTES = [
     ("healer", "/api/healer/health"),
     ("timeline", "/api/timeline/health"),
     ("benchmark", "/api/benchmark/health"),
+    ("agent-proxy", "/api/agent-proxy/health"),
+    ("agents", "/api/agents/health"),
+    ("ai-engine", "/api/ai-engine/health"),
+    ("ai-groups", "/api/ai-groups/health"),
+    ("config", "/api/config/health"),
+    ("dedup", "/api/dedup/health"),
+    ("download", "/api/download/health"),
+    ("enterprise", "/api/enterprise/health"),
+    ("git", "/api/git/health"),
+    ("hermes-bridge", "/api/hermes/health"),
+    ("hermes-cron", "/api/cron/health"),
+    ("kb-sharing", "/api/kb-sharing/health"),
+    ("knowledge-requests", "/api/knowledge-requests/health"),
+    ("permission", "/api/permission/health"),
+    ("sessions", "/api/sessions/health"),
+    ("terminal", "/api/terminal/health"),
+    ("ws-chat", "/api/ws/health"),
     ("system-overview", "/api/system/health"),
 ]
 
@@ -427,13 +444,13 @@ app.include_router(agent_proxy_router, prefix="/api/agent-proxy", tags=["agent-p
 app.include_router(a2a_router, tags=["a2a"])
 app.include_router(acp_router, prefix="/api/acp", tags=["acp"])
 app.include_router(hermes_bridge_router, prefix="/api/hermes", tags=["hermes-bridge"])
-app.include_router(ws_router, tags=["websocket"])
+app.include_router(ws_router, prefix="/api/ws", tags=["websocket"])
 app.include_router(hermes_cron_router, prefix="/api/cron", tags=["cron"])
 app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
 app.include_router(marketplace_router, prefix="/api/marketplace", tags=["marketplace"])
 app.include_router(download_router, prefix="/api/download", tags=["download"])
-app.include_router(terminal_router, tags=["terminal"])
+app.include_router(terminal_router, prefix="/api/terminal", tags=["terminal"])
 app.include_router(ai_groups_router, tags=["ai-groups"])
 app.include_router(ai_engine_router, tags=["ai-engine"])
 app.include_router(agent_collab_router, prefix="/api/collab", tags=["agent-collaboration"])

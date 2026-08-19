@@ -11,6 +11,10 @@ import termios
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
+@router.get("/health")
+async def terminal_ws_health():
+    """TerminalWS health check."""
+    return {"status": "ok", "component": "TerminalWS"}
 
 
 @router.websocket("/ws/terminal")

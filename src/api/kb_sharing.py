@@ -7,6 +7,10 @@ from src.api.user import get_current_user
 from src.database.postgres import db_pool
 
 router = APIRouter()
+@router.get("/health")
+async def kb_sharing_health():
+    """KBSharing health check."""
+    return {"status": "ok", "component": "KBSharing"}
 
 
 class SharingRequestCreate(BaseModel):

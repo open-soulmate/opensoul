@@ -6,6 +6,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/ai-engine", tags=["ai-engine"])
+@router.get("/health")
+async def ai_engine_health():
+    """AIEngine health check."""
+    return {"status": "ok", "component": "AIEngine"}
 
 
 # ── Prompt层：任务分析 ─────────────────────────────────
