@@ -1,113 +1,337 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenSoul</title>
-    <link rel="stylesheet" href="/static/admin-framework.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenSoul</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            background: '#0a0a0f',
+            foreground: '#e4e4e7',
+            card: '#111118',
+            primary: '#7c3aed',
+            'primary-foreground': '#fafafa',
+            border: '#27272a',
+            sidebar: '#111118',
+            'sidebar-foreground': '#a1a1aa',
+            'sidebar-accent': '#1a1a20',
+            muted: '#18181b',
+            'muted-foreground': '#71717a',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* sidebar展开/折叠 */
+    #sidebar.expanded { width: 15rem !important; }
+    #sidebar.expanded ~ main { margin-left: 15rem !important; }
+
+    /* nav-item */
+    .nav-item {
+      display: flex;
+      align-items: center;
+      height: 2rem;
+      padding: 0 0.625rem;
+      border-radius: 0.375rem;
+      font-size: 13px;
+      font-weight: 500;
+      color: #a1a1aa;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+    .nav-item:hover {
+      background: #18181b;
+      color: #e4e4e7;
+    }
+    .nav-item.active {
+      color: #7c3aed;
+      border-left-color: #7c3aed;
+      background: rgba(124, 58, 237, 0.12);
+    }
+    .nav-label {
+      opacity: 0;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .group:hover .nav-label,
+    #sidebar.expanded .nav-label {
+      opacity: 1;
+    }
+
+    /* group label */
+    .group-label span {
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .group:hover .group-label span,
+    #sidebar.expanded .group-label span {
+      opacity: 1;
+    }
+    .group-label .group-dot {
+      transition: opacity 0.15s;
+    }
+    .group:hover .group-label .group-dot,
+    #sidebar.expanded .group-label .group-dot {
+      opacity: 0;
+    }
+
+    /* header/footer label */
+    .sidebar-label {
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .group:hover .sidebar-label,
+    #sidebar.expanded .sidebar-label {
+      opacity: 1;
+    }
+
+    /* toggle button */
+    #sidebar-toggle {
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    #sidebar:hover #sidebar-toggle,
+    #sidebar.expanded #sidebar-toggle {
+      opacity: 1;
+    }
+
+    /* 滚动条 */
+    nav::-webkit-scrollbar { width: 4px; }
+    nav::-webkit-scrollbar-track { background: transparent; }
+    nav::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+    nav::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+    /* page visibility */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* responsive */
+    @media (max-width: 768px) {
+      #sidebar { width: 0 !important; transform: translateX(-100%); }
+      #sidebar.mobile-open { width: 15rem !important; transform: translateX(0); }
+      main { margin-left: 0 !important; }
+      .menu-toggle { display: block !important; }
+    }
+  </style>
 </head>
-<body class="sidebar-expanded">
-    <!-- Mobile overlay -->
-    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+<body class="bg-background text-foreground min-h-screen">
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed top-0 left-0 bottom-0 z-[100] flex flex-col bg-card border-r border-border transition-all duration-200 w-14 group">
+    <!-- Toggle -->
+    <button id="sidebar-toggle" class="absolute top-1/2 -right-3 -translate-y-1/2 w-6 h-6 rounded-full bg-card border border-border text-muted-foreground text-xs flex items-center justify-center hover:bg-primary hover:border-primary hover:text-white transition z-10">◀</button>
 
-    <!-- Sidebar -->
-    <aside class="sidebar expanded" id="sidebar">
-        <!-- Toggle button (desktop collapse/expand) -->
-        <button class="sidebar-toggle" id="sidebar-toggle" title="折叠/展开侧边栏">◀</button>
+    <!-- Header -->
+    <div class="h-12 px-3 border-b border-border flex items-center gap-3 shrink-0">
+      <div class="w-8 h-8 min-w-[2rem] rounded-full bg-primary flex items-center justify-center text-xs font-bold text-white">OS</div>
+      <div class="flex items-center gap-2 sidebar-label">
+        <span class="text-[15px] font-bold text-foreground">OpenSoul</span>
+        <span class="text-[10px] text-muted-foreground bg-background px-1.5 py-0.5 rounded" id="sidebar-version">v0.1.0</span>
+      </div>
+    </div>
 
-        <!-- Header: Logo + Name + Version -->
-        <div class="sidebar-header">
-            <div class="logo-icon-wrap">OS</div>
-            <div class="logo-text-group">
-                <span class="logo-name">OpenSoul</span>
-                <span class="logo-version" id="sidebar-version">v0.1.0</span>
-            </div>
+    <!-- Nav Menu -->
+    <nav class="flex-1 overflow-y-auto overflow-x-hidden p-1.5 flex flex-col gap-px">
+
+      <!-- 核心 -->
+      <div class="mb-1">
+        <div class="group-label h-7 flex items-center px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span>核心</span>
+          <div class="group-dot w-4 h-px bg-border mx-auto"></div>
         </div>
+        <a href="#dashboard" class="nav-item active" data-page="dashboard">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">⊞</span>
+          <span class="nav-label">仪表盘</span>
+        </a>
+      </div>
 
-        <!-- Navigation -->
-        <nav class="nav-menu">
-            <a href="#dashboard" class="nav-item active" data-page="dashboard">
-                <span class="nav-icon-wrap">⊞</span>
-                <span class="nav-label">仪表盘</span>
-            </a>
-            <a href="#knowledge" class="nav-item" data-page="knowledge">
-                <span class="nav-icon-wrap">◈</span>
-                <span class="nav-label">知识库</span>
-            </a>
-            <a href="#graph" class="nav-item" data-page="graph">
-                <span class="nav-icon-wrap">◇</span>
-                <span class="nav-label">图谱</span>
-            </a>
-            <a href="#search" class="nav-item" data-page="search">
-                <span class="nav-icon-wrap">⌕</span>
-                <span class="nav-label">搜索</span>
-            </a>
-            <a href="#agents" class="nav-item" data-page="agents">
-                <span class="nav-icon-wrap">◎</span>
-                <span class="nav-label">Agent节点</span>
-            </a>
-            <a href="#marketplace" class="nav-item" data-page="marketplace">
-                <span class="nav-icon-wrap">🏪</span>
-                <span class="nav-label">技能源</span>
-            </a>
-            <a href="#agent-sources" class="nav-item" data-page="agent-sources">
-                <span class="nav-icon-wrap">📦</span>
-                <span class="nav-label">Agent源</span>
-            </a>
-            <a href="#settings" class="nav-item" data-page="settings">
-                <span class="nav-icon-wrap">⚙</span>
-                <span class="nav-label">系统设置</span>
-            </a>
-            <a href="#llm" class="nav-item" data-page="llm">
-                <span class="nav-icon-wrap">✦</span>
-                <span class="nav-label">LLM配置</span>
-            </a>
-        </nav>
-
-        <!-- Footer: User info -->
-        <div class="sidebar-footer">
-            <div class="sidebar-user">
-                <div class="user-avatar">A</div>
-                <div class="user-info">
-                    <span class="user-name">Admin</span>
-                    <span class="user-role" id="sidebar-status-text">Soul 状态</span>
-                </div>
-            </div>
+      <!-- 知识 -->
+      <div class="mb-1">
+        <div class="group-label h-7 flex items-center px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span>知识</span>
+          <div class="group-dot w-4 h-px bg-border mx-auto"></div>
         </div>
-    </aside>
+        <a href="#knowledge" class="nav-item" data-page="knowledge">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">◈</span>
+          <span class="nav-label">知识库</span>
+        </a>
+        <a href="#graph" class="nav-item" data-page="graph">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">◇</span>
+          <span class="nav-label">图谱</span>
+        </a>
+        <a href="#search" class="nav-item" data-page="search">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">⌕</span>
+          <span class="nav-label">搜索</span>
+        </a>
+      </div>
 
-    <!-- Main Content -->
-    <main class="main-content">
-        <!-- Top Bar -->
-        <header class="top-bar">
-            <div class="top-bar-left">
-                <button class="menu-toggle" id="menu-toggle">☰</button>
-                <span class="breadcrumb">OpenSoul</span>
-                <span class="breadcrumb-sep">/</span>
-                <h1 class="page-title" id="page-title">仪表盘</h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="status-badge">
-                    <span class="status-label">版本</span>
-                    <span class="status-value" id="header-version">-</span>
-                </div>
-                <div class="status-badge">
-                    <span class="status-label">运行时间</span>
-                    <span class="status-value" id="uptime">-</span>
-                </div>
-                <div class="status-badge">
-                    <span class="status-label">状态</span>
-                    <span class="status-value status-ok" id="header-status">-</span>
-                </div>
-            </div>
-        </header>
-
-        <!-- Page Content Area -->
-        <div class="page-content" id="page-content">
-            <!-- Dynamic content loaded here -->
+      <!-- Agent -->
+      <div class="mb-1">
+        <div class="group-label h-7 flex items-center px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span>Agent</span>
+          <div class="group-dot w-4 h-px bg-border mx-auto"></div>
         </div>
-    </main>
+        <a href="#agents" class="nav-item" data-page="agents">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">◎</span>
+          <span class="nav-label">Agent节点</span>
+        </a>
+        <a href="#marketplace" class="nav-item" data-page="marketplace">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">🏪</span>
+          <span class="nav-label">技能源</span>
+        </a>
+        <a href="#agent-sources" class="nav-item" data-page="agent-sources">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">📦</span>
+          <span class="nav-label">Agent源</span>
+        </a>
+      </div>
 
-    <script src="/static/admin-framework.js"></script>
+      <!-- 系统 -->
+      <div class="mb-1">
+        <div class="group-label h-7 flex items-center px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span>系统</span>
+          <div class="group-dot w-4 h-px bg-border mx-auto"></div>
+        </div>
+        <a href="#settings" class="nav-item" data-page="settings">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">⚙</span>
+          <span class="nav-label">系统设置</span>
+        </a>
+        <a href="#llm" class="nav-item" data-page="llm">
+          <span class="w-8 min-w-[2rem] h-8 flex items-center justify-center text-[15px]">✦</span>
+          <span class="nav-label">LLM配置</span>
+        </a>
+      </div>
+
+    </nav>
+
+    <!-- Footer -->
+    <div class="p-3 border-t border-border shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 min-w-[2rem] rounded-full bg-primary flex items-center justify-center text-xs font-bold text-white">A</div>
+        <div class="flex flex-col sidebar-label">
+          <span class="text-[13px] font-semibold text-foreground">Admin</span>
+          <span class="text-[11px] text-muted-foreground" id="sidebar-status-text">Soul 状态</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="ml-14 transition-all duration-200 h-screen flex flex-col">
+    <header class="h-12 px-5 border-b border-border flex items-center justify-between bg-card shrink-0">
+      <div class="flex items-center gap-3">
+        <button class="menu-toggle hidden bg-none border-none text-muted-foreground text-lg cursor-pointer p-1 rounded" id="menu-toggle">☰</button>
+        <span class="text-sm text-muted-foreground">OpenSoul</span>
+        <span class="text-sm text-muted-foreground">/</span>
+        <h1 id="page-title" class="text-base font-semibold">仪表盘</h1>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-1.5 text-xs">
+          <span class="text-muted-foreground">版本</span>
+          <span class="text-secondary font-mono text-[11px]" id="header-version">-</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs">
+          <span class="text-muted-foreground">运行时间</span>
+          <span class="text-secondary font-mono text-[11px]" id="uptime">-</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs">
+          <span class="text-muted-foreground">状态</span>
+          <span class="text-green-500 font-mono text-[11px]" id="header-status">-</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-y-auto p-5">
+      <div id="page-content">
+        <!-- Dynamic content loaded here -->
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // sidebar展开/折叠
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.getElementById('sidebar-toggle');
+    let expanded = localStorage.getItem('sidebar-expanded') === 'true';
+
+    function updateSidebar() {
+      if (expanded) {
+        sidebar.classList.add('expanded');
+        toggle.textContent = '▶';
+      } else {
+        sidebar.classList.remove('expanded');
+        toggle.textContent = '◀';
+      }
+    }
+    updateSidebar();
+
+    toggle.addEventListener('click', () => {
+      expanded = !expanded;
+      localStorage.setItem('sidebar-expanded', expanded);
+      updateSidebar();
+    });
+
+    // Mobile menu toggle
+    const menuToggle = document.getElementById('menu-toggle');
+    if (menuToggle) {
+      menuToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('mobile-open');
+      });
+    }
+
+    // 导航高亮 + 页面标题更新
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+        const label = item.querySelector('.nav-label');
+        if (label) {
+          document.getElementById('page-title').textContent = label.textContent;
+        }
+      });
+    });
+
+    // Hash routing for OpenSoul
+    function navigateToPage(page) {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      const activeItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+      if (activeItem) {
+        activeItem.classList.add('active');
+        const label = activeItem.querySelector('.nav-label');
+        if (label) {
+          document.getElementById('page-title').textContent = label.textContent;
+        }
+      }
+      // Load page content via fetch
+      loadPage(page);
+    }
+
+    async function loadPage(page) {
+      const content = document.getElementById('page-content');
+      try {
+        const resp = await fetch(`/static/pages/${page}.html`);
+        if (resp.ok) {
+          content.innerHTML = await resp.text();
+        } else {
+          content.innerHTML = `<div class="text-center text-muted-foreground py-12">页面未找到: ${page}</div>`;
+        }
+      } catch (e) {
+        content.innerHTML = `<div class="text-center text-muted-foreground py-12">加载失败: ${e.message}</div>`;
+      }
+    }
+
+    // Handle hash changes
+    function handleHash() {
+      const hash = location.hash.slice(1) || 'dashboard';
+      navigateToPage(hash);
+    }
+    window.addEventListener('hashchange', handleHash);
+    handleHash();
+  </script>
 </body>
 </html>
