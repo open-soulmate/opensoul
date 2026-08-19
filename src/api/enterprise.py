@@ -20,6 +20,10 @@ from pydantic import BaseModel
 from src.config import settings
 
 router = APIRouter(prefix="/api/enterprise", tags=["enterprise"])
+@router.get("/health")
+async def enterprise_health():
+    """Enterprise health check."""
+    return {"status": "ok", "component": "Enterprise"}
 security = HTTPBearer()
 
 # ── SQLite database ─────────────────────────────────────────────────────

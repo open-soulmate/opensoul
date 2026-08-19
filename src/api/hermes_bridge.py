@@ -14,6 +14,10 @@ from pydantic import BaseModel
 from src.api.user import get_current_user
 
 router = APIRouter()
+@router.get("/health")
+async def hermes_bridge_health():
+    """HermesBridge health check."""
+    return {"status": "ok", "component": "HermesBridge"}
 logger = logging.getLogger(__name__)
 
 

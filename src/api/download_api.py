@@ -17,6 +17,10 @@ from src.api.download_plugins import get_download_manager
 from src.api.native_downloader import get_downloader
 
 router = APIRouter()
+@router.get("/health")
+async def download_api_health():
+    """DownloadAPI health check."""
+    return {"status": "ok", "component": "DownloadAPI"}
 logger = logging.getLogger(__name__)
 
 # Cache dir for downloaded packages

@@ -10,6 +10,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/ai-groups", tags=["ai-groups"])
+@router.get("/health")
+async def ai_groups_health():
+    """AIGroups health check."""
+    return {"status": "ok", "component": "AIGroups"}
 DB_PATH = Path.home() / "opensoul" / "data" / "ai_groups.db"
 
 
