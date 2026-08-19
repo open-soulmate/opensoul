@@ -34,7 +34,7 @@ class TestNerveSubscriptions:
     def test_subscribe(self, client):
         resp = client.post(
             "/api/nerve/subscribe",
-            json={"topic": "test.*", "subscriber_id": "test-sub-1"},
+            json={"topic_pattern": "test.*", "subscriber_id": "test-sub-1"},
         )
         assert resp.status_code == 200
 
@@ -48,7 +48,7 @@ class TestNerveSubscriptions:
         # Subscribe first
         client.post(
             "/api/nerve/subscribe",
-            json={"topic": "unsub.test", "subscriber_id": "test-sub-2"},
+            json={"topic_pattern": "unsub.test", "subscriber_id": "test-sub-2"},
         )
         resp = client.delete("/api/nerve/subscribe/test-sub-2")
         assert resp.status_code in (200, 204, 404)
