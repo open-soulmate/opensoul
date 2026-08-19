@@ -282,7 +282,7 @@ app.mount("/admin", StaticFiles(directory=os.path.join(_static_dir, "admin")), n
 # Root route — serve admin dashboard
 @app.get("/")
 async def index():
-    return FileResponse(os.path.join(_static_dir, "index.html"))
+    return {"message": "OpenSoul API — 前端请访问 OpenMate (http://localhost:3002)", "docs": "/docs"}
 
 
 import asyncio
