@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Response
 
 router = APIRouter()
 

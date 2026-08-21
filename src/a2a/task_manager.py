@@ -204,7 +204,7 @@ class TaskManager:
     async def _handle_graph(self, text: str, task: Task) -> str:
         """Query knowledge graph using real OpenSoul graph service."""
         try:
-            from src.services.graph import get_graph, list_relations
+            from src.services.graph import get_graph
 
             user_id = task.metadata.get("user_id", "default")
             uid = _resolve_user_id(user_id)

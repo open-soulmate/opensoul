@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -793,7 +793,7 @@ async def scroll(amount: int = 3, direction: str = "down"):
     """Scroll the mouse wheel. direction: 'up' or 'down'."""
     tool = _tool_for_mouse()
 
-    scroll_val = amount if direction == "up" else -amount
+    _scroll_val = amount if direction == "up" else -amount
     if tool == "ydotool":
         # ydotool mousemove with wheel: use button 4/5 or wheel flag
         btn = "4" if direction == "up" else "5"

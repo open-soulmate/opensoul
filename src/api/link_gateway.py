@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.nerve.event_bridge import push_event
 
@@ -689,7 +689,7 @@ async def websocket_proxy(ws: WebSocket):
                     "organ": "link",
                     "emoji": "🔗",
                     "type": "ws_message",
-                    "summary": f"🔌 WebSocket message received",
+                    "summary": "🔌 WebSocket message received",
                     "detail": {"payload": payload},
                 })
             except Exception:

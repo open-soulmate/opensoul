@@ -13,7 +13,7 @@ try:
     import matplotlib
 
     matplotlib.use("Agg")
-    import matplotlib.font_manager as fm
+    import matplotlib.font_manager  # noqa: F401 as fm
     import matplotlib.pyplot as plt
 
     HAS_MATPLOTLIB = True
@@ -21,7 +21,7 @@ except ImportError:
     pass
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw, ImageFont  # noqa: F401
 
     HAS_PIL = True
 except ImportError:

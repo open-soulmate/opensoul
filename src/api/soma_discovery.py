@@ -13,7 +13,7 @@ Results are cached for 60 seconds to avoid repeated system scans.
 
 import asyncio
 import fnmatch
-import json
+
 import logging
 import os
 import shutil
@@ -378,7 +378,7 @@ async def scan_processes() -> list[ProcessInfo]:
             executable = command_full.split()[0] if command_full else None
 
             # Extract a short name from the executable path
-            exe_name = Path(executable).name if executable else command_full[:40]
+            _exe_name = Path(executable).name if executable else command_full[:40]
 
             results.append(
                 ProcessInfo(

@@ -52,7 +52,7 @@ except ImportError:
     pass
 
 try:
-    import pyttsx3
+    import pyttsx3  # noqa: F401
 
     HAS_PYTTSX3 = True
 except ImportError:
