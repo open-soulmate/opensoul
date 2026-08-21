@@ -3,6 +3,7 @@
 Connects to real OpenSoul services: knowledge, search, graph, LLM.
 """
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -140,7 +141,7 @@ class TaskManager:
 
             user_id = task.metadata.get("user_id", "default")
             uid = _resolve_user_id(user_id)
-            results = await hybrid_search(text, uid, limit=5)
+            results = await asyncio.wait_for(hybrid_search(text, uid, limit=5), timeout=10.0)
 
             if not results:
                 return f"知识库查询：「{text}」\n\n未找到相关知识条目。请确保知识库已配置且包含相关内容。"
@@ -158,6 +159,9 @@ class TaskManager:
 
             return "\n".join(lines)
 
+        except asyncio.TimeoutError:
+            logger.warning("Knowledge handler timed out")
+            return f"知识库查询超时：「{text}」\n\n请确保数据库和向量搜索服务已启动。"
         except Exception as e:
             logger.error(f"Knowledge handler error: {e}")
             return f"知识库查询出错：{str(e)}\n\n请确保数据库和向量搜索服务已启动。"
@@ -170,29 +174,44 @@ class TaskManager:
             user_id = task.metadata.get("user_id", "default")
             uid = _resolve_user_id(user_id)
 
-            # Try hybrid search first
-            semantic_results = await semantic_search(text, uid, limit=5)
-            fulltext_results = await fulltext_search(text, uid, limit=5)
+            # Try hybrid search first with timeout
+            semantic_results, fulltext_results = await asyncio.gather(
+                asyncio.wait_for(semantic_search(text, uid, limit=5), timeout=10.0),
+                asyncio.wait_for(fulltext_search(text, uid, limit=5), timeout=10.0),
+                return_exceptions=True,
+            )
+
+            # Handle exceptions from gather
+            sem_list: list[dict] = []
+            ft_list: list[dict] = []
+            if isinstance(semantic_results, BaseException):
+                logger.warning(f"Semantic search failed: {semantic_results}")
+            elif isinstance(semantic_results, list):
+                sem_list = semantic_results
+            if isinstance(fulltext_results, BaseException):
+                logger.warning(f"Fulltext search failed: {fulltext_results}")
+            elif isinstance(fulltext_results, list):
+                ft_list = fulltext_results
 
             lines = [f"搜索结果：「{text}」\n"]
 
-            if semantic_results:
+            if sem_list:
                 lines.append("📐 语义搜索：")
-                for i, r in enumerate(semantic_results[:3], 1):
+                for i, r in enumerate(sem_list[:3], 1):
                     chunk = r.get("chunk", "")[:150]
                     score = r.get("score", 0)
                     lines.append(f"  {i}. [{score:.2f}] {chunk}")
                 lines.append("")
 
-            if fulltext_results:
+            if ft_list:
                 lines.append("📝 全文搜索：")
-                for i, r in enumerate(fulltext_results[:3], 1):
+                for i, r in enumerate(ft_list[:3], 1):
                     title = r.get("title", "无标题")
                     content = r.get("content", "")[:100]
                     lines.append(f"  {i}. **{title}**: {content}")
                 lines.append("")
 
-            if not semantic_results and not fulltext_results:
+            if not sem_list and not ft_list:
                 lines.append("未找到匹配结果。请检查搜索服务配置。")
 
             return "\n".join(lines)
@@ -209,8 +228,8 @@ class TaskManager:
             user_id = task.metadata.get("user_id", "default")
             uid = _resolve_user_id(user_id)
 
-            # Get graph overview
-            graph_data = await get_graph(uid, depth=1)
+            # Get graph overview with timeout
+            graph_data = await asyncio.wait_for(get_graph(uid, depth=1), timeout=10.0)
 
             lines = ["🕸️ 知识图谱概览：\n"]
 
@@ -237,6 +256,9 @@ class TaskManager:
 
             return "\n".join(lines)
 
+        except asyncio.TimeoutError:
+            logger.warning("Graph handler timed out")
+            return f"图谱查询超时：「{text}」\n\n请确保图谱数据库已启动。"
         except Exception as e:
             logger.error(f"Graph handler error: {e}")
             return f"图谱查询出错：{str(e)}\n\n请确保图谱数据库已启动。"
@@ -254,7 +276,7 @@ class TaskManager:
 
             if not api_key or not base_url:
                 # Fallback to ACP/hermes if no LLM configured
-                return await self._handle_acp_chat(text, task)
+                return await asyncio.wait_for(self._handle_acp_chat(text, task), timeout=10.0)
 
             # Build conversation history from task
             messages = [{"role": "system", "content": "你是OpenSoul智能助手，基于知识库回答用户问题。请用简洁专业的中文回复。"}]
@@ -264,7 +286,7 @@ class TaskManager:
                 if text_parts:
                     messages.append({"role": role, "content": "\n".join(text_parts)})
 
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
                     f"{base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
@@ -284,7 +306,10 @@ class TaskManager:
 
         except Exception as e:
             logger.error(f"Chat handler error: {e}")
-            return await self._handle_acp_chat(text, task)
+            try:
+                return await asyncio.wait_for(self._handle_acp_chat(text, task), timeout=10.0)
+            except asyncio.TimeoutError:
+                return f"收到您的消息：{text}\n\nAI服务超时，请检查服务配置。"
 
     async def _handle_acp_chat(self, text: str, task: Task) -> str:
         """Fallback chat using ACP (hermes subprocess)."""
