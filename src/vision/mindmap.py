@@ -54,7 +54,7 @@ class MindMapGenerator:
         start = time.time()
 
         try:
-            from PIL import Image, ImageDraw, ImageFont
+            from PIL import Image, ImageDraw, ImageFont  # noqa: F401
 
             HAS_PIL = True
         except ImportError:
