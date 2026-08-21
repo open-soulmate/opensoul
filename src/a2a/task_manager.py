@@ -1,6 +1,10 @@
-"""A2A Task Manager - manages task lifecycle and agent execution."""
+"""A2A Task Manager - manages task lifecycle and agent execution.
+
+Connects to real OpenSoul services: knowledge, search, graph, LLM.
+"""
 
 import logging
+from uuid import UUID
 
 from src.a2a.models import (
     DEFAULT_AGENT_CARD,
@@ -13,8 +17,19 @@ from src.a2a.models import (
 logger = logging.getLogger(__name__)
 
 
+def _resolve_user_id(user_id: str = "default") -> UUID:
+    """Convert user_id to UUID — accept both UUID strings and plain usernames."""
+    try:
+        return UUID(user_id)
+    except ValueError:
+        import hashlib
+
+        h = hashlib.md5(user_id.encode()).hexdigest()
+        return UUID(f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}")
+
+
 class TaskManager:
-    """In-memory task manager for A2A protocol."""
+    """In-memory task manager for A2A protocol with real service integration."""
 
     def __init__(self):
         self.tasks: dict[str, Task] = {}
@@ -97,19 +112,18 @@ class TaskManager:
         return "\n".join(texts)
 
     async def _process_message(self, text: str, task: Task) -> str:
-        """Process a message and return response. Override for custom logic."""
+        """Process a message and return response using skill routing."""
         # Default: echo back with skill routing
         for skill in self.agent_card.skills:
             for tag in skill.tags:
                 if tag.lower() in text.lower():
                     return await self._handle_skill(skill.id, text, task)
 
-        return (
-            f"收到您的消息：{text}\n\n可用技能：{', '.join(s.name for s in self.agent_card.skills)}"
-        )
+        # No skill match — use LLM chat as fallback
+        return await self._handle_chat(text, task)
 
     async def _handle_skill(self, skill_id: str, text: str, task: Task) -> str:
-        """Handle a specific skill. Override for custom logic."""
+        """Handle a specific skill by routing to the appropriate service."""
         handlers = {
             "knowledge": self._handle_knowledge,
             "chat": self._handle_chat,
@@ -120,19 +134,176 @@ class TaskManager:
         return await handler(text, task)
 
     async def _handle_knowledge(self, text: str, task: Task) -> str:
-        return f"[知识库] 处理请求：{text}\n\n知识库功能正在开发中。"
+        """Query knowledge base using real OpenSoul knowledge service."""
+        try:
+            from src.services.search import hybrid_search
 
-    async def _handle_chat(self, text: str, task: Task) -> str:
-        return f"[对话] {text}\n\nAI对话功能正在开发中。"
+            user_id = task.metadata.get("user_id", "default")
+            uid = _resolve_user_id(user_id)
+            results = await hybrid_search(text, uid, limit=5)
+
+            if not results:
+                return f"知识库查询：「{text}」\n\n未找到相关知识条目。请确保知识库已配置且包含相关内容。"
+
+            lines = [f"知识库搜索结果（共 {len(results)} 条）：\n"]
+            for i, r in enumerate(results, 1):
+                title = r.get("title", "无标题")
+                content = r.get("content", "")[:200]
+                source = r.get("source", "unknown")
+                score = r.get("score", 0)
+                lines.append(f"{i}. **{title}** (来源: {source}, 相关度: {score:.2f})")
+                if content:
+                    lines.append(f"   {content}...")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"Knowledge handler error: {e}")
+            return f"知识库查询出错：{str(e)}\n\n请确保数据库和向量搜索服务已启动。"
 
     async def _handle_search(self, text: str, task: Task) -> str:
-        return f"[搜索] 搜索请求：{text}\n\n搜索功能正在开发中。"
+        """Search using real OpenSoul search service (hybrid semantic + fulltext)."""
+        try:
+            from src.services.search import fulltext_search, semantic_search
+
+            user_id = task.metadata.get("user_id", "default")
+            uid = _resolve_user_id(user_id)
+
+            # Try hybrid search first
+            semantic_results = await semantic_search(text, uid, limit=5)
+            fulltext_results = await fulltext_search(text, uid, limit=5)
+
+            lines = [f"搜索结果：「{text}」\n"]
+
+            if semantic_results:
+                lines.append("📐 语义搜索：")
+                for i, r in enumerate(semantic_results[:3], 1):
+                    chunk = r.get("chunk", "")[:150]
+                    score = r.get("score", 0)
+                    lines.append(f"  {i}. [{score:.2f}] {chunk}")
+                lines.append("")
+
+            if fulltext_results:
+                lines.append("📝 全文搜索：")
+                for i, r in enumerate(fulltext_results[:3], 1):
+                    title = r.get("title", "无标题")
+                    content = r.get("content", "")[:100]
+                    lines.append(f"  {i}. **{title}**: {content}")
+                lines.append("")
+
+            if not semantic_results and not fulltext_results:
+                lines.append("未找到匹配结果。请检查搜索服务配置。")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"Search handler error: {e}")
+            return f"搜索出错：{str(e)}\n\n请确保搜索服务已配置。"
 
     async def _handle_graph(self, text: str, task: Task) -> str:
-        return f"[图谱] 图谱请求：{text}\n\n图谱功能正在开发中。"
+        """Query knowledge graph using real OpenSoul graph service."""
+        try:
+            from src.services.graph import get_graph, list_relations
+
+            user_id = task.metadata.get("user_id", "default")
+            uid = _resolve_user_id(user_id)
+
+            # Get graph overview
+            graph_data = await get_graph(uid, depth=1)
+
+            lines = ["🕸️ 知识图谱概览：\n"]
+
+            nodes = graph_data.nodes if graph_data else []
+            edges = graph_data.edges if graph_data else []
+
+            lines.append(f"实体数量：{len(nodes)}")
+            lines.append(f"关系数量：{len(edges)}")
+            lines.append("")
+
+            if nodes:
+                lines.append("最近实体：")
+                for node in nodes[:10]:
+                    lines.append(f"  • [{node.node_type}] {node.label}")
+                lines.append("")
+
+            if edges:
+                lines.append("最近关系：")
+                for edge in edges[:10]:
+                    lines.append(f"  • {edge.source} --[{edge.relation_type}]--> {edge.target}")
+
+            if not nodes and not edges:
+                lines.append("图谱为空。请先添加实体和关系。")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"Graph handler error: {e}")
+            return f"图谱查询出错：{str(e)}\n\n请确保图谱数据库已启动。"
+
+    async def _handle_chat(self, text: str, task: Task) -> str:
+        """AI chat using real LLM proxy or ACP fallback."""
+        try:
+            from src.config import settings
+            import httpx
+
+            # Gather config
+            api_key = settings.llm_api_key
+            base_url = settings.llm_base_url
+            model = settings.llm_model
+
+            if not api_key or not base_url:
+                # Fallback to ACP/hermes if no LLM configured
+                return await self._handle_acp_chat(text, task)
+
+            # Build conversation history from task
+            messages = [{"role": "system", "content": "你是OpenSoul智能助手，基于知识库回答用户问题。请用简洁专业的中文回复。"}]
+            for msg in task.history[-10:]:  # Last 10 messages for context
+                role = "user" if msg.role == "user" else "assistant"
+                text_parts = [p.get("text", "") for p in msg.parts if p.get("type") == "text"]
+                if text_parts:
+                    messages.append({"role": role, "content": "\n".join(text_parts)})
+
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0.7,
+                        "max_tokens": 2048,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"]
+                else:
+                    logger.warning(f"LLM API error {resp.status_code}, falling back to ACP")
+                    return await self._handle_acp_chat(text, task)
+
+        except Exception as e:
+            logger.error(f"Chat handler error: {e}")
+            return await self._handle_acp_chat(text, task)
+
+    async def _handle_acp_chat(self, text: str, task: Task) -> str:
+        """Fallback chat using ACP (hermes subprocess)."""
+        try:
+            from src.acp.proxy import get_acp_process
+
+            acp = get_acp_process()
+            result = await acp.send_message(text)
+            response = result.get("response_text", "")
+            if response:
+                return response
+            return f"收到您的消息：{text}\n\nAI服务暂时不可用，请检查LLM配置或hermes服务。"
+
+        except Exception as e:
+            logger.error(f"ACP fallback error: {e}")
+            return f"收到您的消息：{text}\n\nAI服务暂时不可用（{str(e)}），请检查服务配置。"
 
     async def _handle_default(self, text: str, task: Task) -> str:
-        return f"收到：{text}"
+        return await self._handle_chat(text, task)
 
 
 # Global task manager instance
