@@ -287,6 +287,38 @@ async def nerve_stats():
 # ── Real-Time Event Streaming (StreamEvents) ─────────────────
 
 
+class BatchPublishRequest(BaseModel):
+    """Batch publish request — send multiple events in a single HTTP call."""
+    events: list[PublishRequest] = Field(min_length=1, max_length=500)
+
+
+@router.post("/publish/batch")
+async def publish_batch(req: BatchPublishRequest):
+    """Publish multiple events to the bus in a single request.
+
+    More efficient than calling /publish N times — reduces HTTP overhead
+    for high-throughput sources like OpenSoma batch uploads.
+
+    Returns per-event results with accepted/rejected counts.
+    """
+    accepted = 0
+    rejected = 0
+    results = []
+    for item in req.events:
+        try:
+            event = bus.publish(item.topic, item.data, item.source)
+            results.append({"status": "ok", "event_id": event["id"]})
+            accepted += 1
+        except Exception as e:
+            results.append({"status": "error", "error": str(e)})
+            rejected += 1
+    return {
+        "accepted": accepted,
+        "rejected": rejected,
+        "results": results,
+    }
+
+
 class StreamEventRequest(BaseModel):
     """Single event upload via the streaming endpoint."""
     id: str = ""
