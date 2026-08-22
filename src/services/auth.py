@@ -3,23 +3,20 @@ from functools import wraps
 from uuid import UUID
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 
 from src.config import settings
 from src.database.postgres import db_pool
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-# ── Password hashing ───────────────────────────────────────────────────
-
-
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ── JWT token ──────────────────────────────────────────────────────────
