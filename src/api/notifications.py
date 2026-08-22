@@ -8,10 +8,9 @@ so that cross-organ alert routing works out of the box.
 """
 
 import json
+import logging
 import os
 import time
-import logging
-
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel

@@ -6,13 +6,12 @@ and system resource metrics in Prometheus exposition format.
 Compatible with Grafana dashboards and Prometheus scraping.
 """
 
+import logging
 import os
 import platform
 import time
 from collections import defaultdict
 from threading import Lock
-import logging
-
 
 from fastapi import APIRouter, Response
 

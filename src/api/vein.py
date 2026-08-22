@@ -1,10 +1,10 @@
 """OpenVein API — 血管系统：大文件分片上传、缓存管理、资源同步。"""
 
+import logging
+
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-import logging
-
 
 from src.nerve.event_bridge import push_event
 from src.vein.cache import CacheManager
