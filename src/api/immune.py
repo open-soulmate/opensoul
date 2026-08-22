@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+import logging
+
 
 from src.immune.access_control import IPAccessControl
 from src.immune.audit import AuditAction, AuditLogger
@@ -10,6 +12,8 @@ from src.immune.moderator import ContentModerator
 from src.immune.rate_limiter import RateLimitConfig, RateLimiter
 from src.nerve.event_bridge import push_event
 
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
@@ -176,8 +180,8 @@ async def blacklist_ip(req: IPActionRequest, request: Request):
             action_url="/immune",
             metadata={"ip": req.ip, "reason": req.reason, "ttl_seconds": req.ttl_seconds},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return {"message": f"IP {req.ip} blacklisted", "reason": req.reason}
 
 

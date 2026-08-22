@@ -10,10 +10,14 @@ so that cross-organ alert routing works out of the box.
 import json
 import os
 import time
+import logging
+
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── In-memory notification store ──────────────────────────────
@@ -136,8 +140,8 @@ def _auto_forward_to_echo(notif: dict) -> None:
                 )
             except (ValueError, Exception):
                 pass  # Skip invalid or failed channels
-    except Exception:
-        pass  # Non-fatal — don't break notifications if Echo is down
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)  # Non-fatal — don't break notifications if Echo is down
 
 
 def push_notification(
@@ -198,8 +202,8 @@ def _seed_from_events():
                 action_url=f"/{organ}",
                 metadata={"event_id": evt_id, "event_type": evt_type},
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
 
 def _seed_from_vital():
@@ -228,8 +232,8 @@ def _seed_from_vital():
                         action_url="/vital",
                         metadata={"component": name, "check_type": "health"},
                     )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
 
 def _seed_all():

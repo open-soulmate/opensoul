@@ -9,6 +9,7 @@ Features:
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from collections import deque
@@ -17,6 +18,7 @@ import httpx
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # In-memory event ring buffer (max 1000 events)
@@ -85,8 +87,8 @@ async def _probe_vein(client: httpx.AsyncClient) -> list[dict]:
                         "detail": store,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -108,8 +110,8 @@ async def _probe_gland(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": rec.get("timestamp"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -131,8 +133,8 @@ async def _probe_immune(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": entry.get("timestamp"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -154,8 +156,8 @@ async def _probe_trajectory(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": ev.get("timestamp"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -177,8 +179,8 @@ async def _probe_echo(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": msg.get("timestamp"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -200,8 +202,8 @@ async def _probe_mirror(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": sb.get("created_at"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -223,8 +225,8 @@ async def _probe_link(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": ev.get("timestamp"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -246,8 +248,8 @@ async def _probe_limb(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": task.get("created_at"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -269,8 +271,8 @@ async def _probe_cron(client: httpx.AsyncClient) -> list[dict]:
                             "detail": job,
                         }
                     )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -292,8 +294,8 @@ async def _probe_hippo(client: httpx.AsyncClient) -> list[dict]:
                         "detail": data,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -316,8 +318,8 @@ async def _probe_reflex(client: httpx.AsyncClient) -> list[dict]:
                         "detail": cache,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -339,8 +341,8 @@ async def _probe_nerve(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": ev.get("timestamp"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -363,8 +365,8 @@ async def _probe_cortex(client: httpx.AsyncClient) -> list[dict]:
                         "detail": modules,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -389,8 +391,8 @@ async def _probe_sense(client: httpx.AsyncClient) -> list[dict]:
                         "detail": engines,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -413,8 +415,8 @@ async def _probe_vital(client: httpx.AsyncClient) -> list[dict]:
                         "detail": {"down_components": down},
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -437,8 +439,8 @@ async def _probe_pulse(client: httpx.AsyncClient) -> list[dict]:
                         "detail": {"active_count": len(active), "total": len(signals)},
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -460,8 +462,8 @@ async def _probe_voice(client: httpx.AsyncClient) -> list[dict]:
                         "detail": data,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -483,8 +485,8 @@ async def _probe_vision(client: httpx.AsyncClient) -> list[dict]:
                         "detail": data,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -507,8 +509,8 @@ async def _probe_mind(client: httpx.AsyncClient) -> list[dict]:
                         "detail": emotion,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -530,8 +532,8 @@ async def _probe_nest(client: httpx.AsyncClient) -> list[dict]:
                         "detail": {"count": len(tenants)},
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -555,8 +557,8 @@ async def _probe_marrow(client: httpx.AsyncClient) -> list[dict]:
                         "timestamp": latest.get("created_at"),
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -579,8 +581,8 @@ async def _probe_heredity(client: httpx.AsyncClient) -> list[dict]:
                         "detail": reg,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -603,8 +605,8 @@ async def _probe_gene(client: httpx.AsyncClient) -> list[dict]:
                         "detail": data,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -626,8 +628,8 @@ async def _probe_learn(client: httpx.AsyncClient) -> list[dict]:
                         "detail": data,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -650,8 +652,8 @@ async def _probe_mcp(client: httpx.AsyncClient) -> list[dict]:
                         "detail": data,
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 
@@ -675,8 +677,8 @@ async def _probe_plugins(client: httpx.AsyncClient) -> list[dict]:
                         },
                     }
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("stream probe skipped: %s", exc)
     return events
 
 

@@ -328,8 +328,8 @@ async def get_config():
             import json
 
             return json.loads(proc.stdout.strip())
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return {"threads": 8, "speed_limit": 0, "download_dir": "~/Downloads", "proxy": None}
 
 
