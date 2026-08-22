@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -26,9 +27,8 @@ class ConnectionManager:
             for ws in self.active[user_id]:
                 try:
                     await ws.send_json(message)
-                except Exception:
-                    pass
-
+                except Exception as exc:
+                    logging.getLogger(__name__).debug("probe skipped: %s", exc)
     async def broadcast(self, message: dict):
         for user_id in self.active:
             await self.send_to_user(user_id, message)

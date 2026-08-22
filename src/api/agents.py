@@ -844,8 +844,8 @@ async def detect_agents():
                     env={**os.environ, "NO_COLOR": "1"},
                 )
                 version = r.stdout.strip()[:50] or None
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         result.append(
             {
                 "id": agent_id,

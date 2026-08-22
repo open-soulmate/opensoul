@@ -1,6 +1,7 @@
 """Voice profiles — 语音角色配置管理。"""
 
 import json
+import logging
 import os
 import time
 from dataclasses import asdict, dataclass, field
@@ -123,9 +124,8 @@ class ProfileManager:
                 p = VoiceProfile(**item)
                 p.builtin = False
                 self._user[p.profile_id] = p
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
     def _save_user_profiles(self):
         path = os.path.join(self._data_dir, "profiles.json")
         data = [asdict(p) for p in self._user.values()]

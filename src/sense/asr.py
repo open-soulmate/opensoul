@@ -9,6 +9,7 @@ Supports multiple backends:
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -95,9 +96,8 @@ class ASREngine:
                 return loop.run_until_complete(
                     self._transcribe_via_llm(audio_bytes, language, format)
                 )
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         return ASRResult(
             text="[ASR unavailable: no whisper and no LLM fallback configured]",
             language="",
@@ -114,15 +114,13 @@ class ASREngine:
         if HAS_WHISPER:
             try:
                 return self._transcribe_whisper(audio_bytes, language, format)
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         if self._llm_gateway:
             try:
                 return await self._transcribe_via_llm(audio_bytes, language, format)
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         return ASRResult(
             text="[ASR unavailable: no whisper and no LLM fallback configured]",
             language="",

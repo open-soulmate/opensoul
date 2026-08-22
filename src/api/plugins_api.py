@@ -123,9 +123,8 @@ async def get_sidebar_entries():
         for item in plugin.get("sidebar", []):
             try:
                 entries.append(SidebarEntry(**item))
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
     entries.sort(key=lambda e: e.sort_order)
     return entries
 

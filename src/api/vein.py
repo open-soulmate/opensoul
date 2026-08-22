@@ -951,9 +951,8 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                                 tag_row["id"],
                             )
                     promoted = True
-                except Exception:
-                    pass
-
+                except Exception as exc:
+                    logging.getLogger(__name__).debug("probe skipped: %s", exc)
             results.append(
                 {
                     "file_id": f.file_id,

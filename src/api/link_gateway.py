@@ -692,9 +692,8 @@ async def websocket_proxy(ws: WebSocket):
                     "summary": "🔌 WebSocket message received",
                     "detail": {"payload": payload},
                 })
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
             # Broadcast to all other connected WS clients
             disconnected = []
             for client in _ws_clients:

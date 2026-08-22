@@ -301,9 +301,8 @@ class QualityScorer:
                 score += 0.20
             elif chunk_count >= 1:
                 score += 0.10
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         return min(1.0, score)
 
     def _score_readability(self, text: str) -> float:

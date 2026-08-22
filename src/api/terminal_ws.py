@@ -3,6 +3,7 @@
 import asyncio
 import fcntl
 import json
+import logging
 import os
 import pty
 import struct
@@ -43,9 +44,8 @@ async def terminal_ws(websocket: WebSocket):
                         await websocket.send_text(data.decode("utf-8", errors="replace"))
                 except OSError:
                     break
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
     async def read_ws():
         """Read from WebSocket and write to PTY."""
         try:

@@ -5,6 +5,7 @@ and notifies through OpenEcho when issues are detected or resolved.
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -215,9 +216,8 @@ class OrganHealer:
                 if success:
                     result.severity = Severity.RECOVERED
                 return result
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         # Try built-in repair strategies
         strategies = _REPAIR_STRATEGIES.get(result.organ, [])
         for strategy in strategies:

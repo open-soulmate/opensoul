@@ -230,9 +230,8 @@ async def system_overview():
                 res = await client.get(f"{_BASE}{endpoint}")
                 if res.status_code == 200:
                     overview["stats"][name] = res.json()
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return overview
 
 
@@ -274,9 +273,8 @@ async def export_config():
                 res = await client.get(f"{_BASE}{endpoint}")
                 if res.status_code == 200:
                     config["components"][name] = res.json()
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
     # Include gland providers
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -328,17 +326,15 @@ async def system_report():
             res = await client.get(f"{_BASE}/api/registry/components")
             if res.status_code == 200:
                 report["components"] = res.json()
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         # 3. Recent events
         try:
             res = await client.get(f"{_BASE}/api/events/summary")
             if res.status_code == 200:
                 report["recent_events"] = res.json()
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         # 4. Key stats
         stats = {}
         stat_endpoints = {
@@ -356,8 +352,8 @@ async def system_report():
                 res = await client.get(f"{_BASE}{endpoint}")
                 if res.status_code == 200:
                     stats[name] = res.json()
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         report["stats"] = stats
 
     # 5. Summary

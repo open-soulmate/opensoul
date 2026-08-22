@@ -129,9 +129,8 @@ async def emit(
                     "collected_at": time.time(),
                 }
             )
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         # 3) Push to Notification Center
         try:
             from src.api.notifications import push_notification

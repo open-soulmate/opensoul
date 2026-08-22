@@ -202,5 +202,5 @@ async def chat_websocket(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
         try:
             await websocket.send_json({"type": "error", "message": str(e)})
-        except:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug("operation skipped: %s", exc)

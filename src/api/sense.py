@@ -1,5 +1,7 @@
 """OpenSense API — 感官感知：OCR图像识别、ASR语音转写、多模态解析。"""
 
+import logging
+
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
@@ -28,8 +30,8 @@ def _get_gateway():
             _llm_gateway = gateway
             ocr_engine.set_llm_gateway(gateway)
             asr_engine.set_llm_gateway(gateway)  # Also wire ASR fallback
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return _llm_gateway
 
 

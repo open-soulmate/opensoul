@@ -1212,8 +1212,8 @@ class OdlPlugin(DownloadPlugin):
                         progress.downloaded_bytes = data.get("total_bytes", 0)
                         progress.total_bytes = data.get("total_bytes", 0)
                         progress.status = "done"
-                except:
-                    pass
+                except Exception as exc:
+                    logging.getLogger(__name__).debug("operation skipped: %s", exc)
             await proc.wait()
             if proc.returncode != 0:
                 progress.status = "error"

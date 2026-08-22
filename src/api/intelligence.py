@@ -1,6 +1,7 @@
 """OpenIntelligence API — System intelligence: cross-component analytics, anomaly detection, optimization insights."""
 
 import asyncio
+import logging
 import time
 
 import httpx
