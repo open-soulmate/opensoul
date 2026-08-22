@@ -82,3 +82,67 @@ class TestNerveStats:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, dict)
+
+
+class TestNerveBatchPublish:
+    def test_batch_publish(self, client):
+        """Test batch publish endpoint with multiple events."""
+        resp = client.post(
+            "/api/nerve/publish/batch",
+            json={
+                "events": [
+                    {"topic": "soma.test1", "data": {"msg": "first"}, "source": "test"},
+                    {"topic": "soma.test2", "data": {"msg": "second"}, "source": "test"},
+                    {"topic": "soma.test3", "data": {"msg": "third"}, "source": "test"},
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["accepted"] == 3
+        assert data["rejected"] == 0
+        assert len(data["results"]) == 3
+        for r in data["results"]:
+            assert r["status"] == "ok"
+            assert "event_id" in r
+
+    def test_batch_publish_single_event(self, client):
+        """Batch with single event should work like /publish."""
+        resp = client.post(
+            "/api/nerve/publish/batch",
+            json={
+                "events": [
+                    {"topic": "soma.single", "data": {"key": "value"}},
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["accepted"] == 1
+        assert data["rejected"] == 0
+
+    def test_batch_publish_empty_rejected(self, client):
+        """Empty batch should be rejected by Pydantic validation."""
+        resp = client.post(
+            "/api/nerve/publish/batch",
+            json={"events": []},
+        )
+        assert resp.status_code == 422  # Validation error: min_length=1
+
+    def test_batch_publish_preserves_topics(self, client):
+        """Events with different topics should be published independently."""
+        resp = client.post(
+            "/api/nerve/publish/batch",
+            json={
+                "events": [
+                    {"topic": "alpha.one", "data": {"n": 1}},
+                    {"topic": "beta.two", "data": {"n": 2}},
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["accepted"] == 2
+        # Verify events appear in the bus
+        events_resp = client.get("/api/nerve/events?limit=10")
+        assert events_resp.status_code == 200
