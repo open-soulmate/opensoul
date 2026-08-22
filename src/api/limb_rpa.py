@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 import tempfile
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Optional
 
@@ -29,7 +29,7 @@ TIMEOUT = 10  # seconds — every subprocess gets this ceiling
 
 # ── Display-server detection ─────────────────────────────────────────────────
 
-class DisplayServer(str, Enum):
+class DisplayServer(StrEnum):
     WAYLAND = "wayland"
     X11 = "x11"
     UNKNOWN = "unknown"
@@ -70,7 +70,7 @@ async def _run(
     )
     try:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         raise RuntimeError(f"Command timed out after {timeout}s: {' '.join(args)}")
@@ -84,20 +84,20 @@ async def _run(
 class ScreenshotResponse(BaseModel):
     base64: str
     format: str = "png"
-    width: Optional[int] = None
-    height: Optional[int] = None
+    width: int | None = None
+    height: int | None = None
     display_server: str
 
 
 class OCRRequest(BaseModel):
-    base64: Optional[str] = None  # if omitted, takes a fresh screenshot
-    region: Optional[dict] = None  # {"x": 0, "y": 0, "w": 100, "h": 100}
+    base64: str | None = None  # if omitted, takes a fresh screenshot
+    region: dict | None = None  # {"x": 0, "y": 0, "w": 100, "h": 100}
     lang: str = "eng+chi_sim"      # tesseract language codes
 
 
 class OCRResponse(BaseModel):
     text: str
-    confidence: Optional[float] = None
+    confidence: float | None = None
     lang: str
 
 
@@ -176,8 +176,8 @@ class WindowInfo(BaseModel):
 
 
 class FocusRequest(BaseModel):
-    window_id: Optional[str] = None
-    title: Optional[str] = None  # substring match
+    window_id: str | None = None
+    title: str | None = None  # substring match
 
 
 class FocusResponse(BaseModel):
@@ -195,9 +195,9 @@ class ClickTextRequest(BaseModel):
 class ClickTextResponse(BaseModel):
     success: bool
     found: bool
-    x: Optional[int] = None
-    y: Optional[int] = None
-    matched_text: Optional[str] = None
+    x: int | None = None
+    y: int | None = None
+    matched_text: str | None = None
 
 
 class WaitTextRequest(BaseModel):
@@ -290,7 +290,7 @@ def _png_dimensions(data: bytes) -> tuple[int, int]:
 async def _ocr_from_b64(
     img_b64: str,
     lang: str = "eng+chi_sim",
-    region: Optional[dict] = None,
+    region: dict | None = None,
 ) -> str:
     """Run tesseract on a base64-encoded PNG, optionally cropping to *region*."""
     _check_tool("tesseract")
