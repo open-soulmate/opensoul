@@ -1,8 +1,8 @@
 """OpenNerve API — 神经系统：事件总线、消息分发、节点管理。"""
 
-import time
 import asyncio
 import json
+import time
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -377,7 +377,7 @@ async def stream_events(
                     if topic != "*" and not bus._topic_matches(topic, event.get("topic", "")):
                         continue
                     yield f"data: {json.dumps(event)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Send keepalive ping every 30s
                     yield f": ping {datetime.now(UTC).isoformat()}\n\n"
         except asyncio.CancelledError:

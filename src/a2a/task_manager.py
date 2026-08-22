@@ -159,7 +159,7 @@ class TaskManager:
 
             return "\n".join(lines)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Knowledge handler timed out")
             return f"知识库查询超时：「{text}」\n\n请确保数据库和向量搜索服务已启动。"
         except Exception as e:
@@ -256,7 +256,7 @@ class TaskManager:
 
             return "\n".join(lines)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Graph handler timed out")
             return f"图谱查询超时：「{text}」\n\n请确保图谱数据库已启动。"
         except Exception as e:
@@ -266,8 +266,9 @@ class TaskManager:
     async def _handle_chat(self, text: str, task: Task) -> str:
         """AI chat using real LLM proxy or ACP fallback."""
         try:
-            from src.config import settings
             import httpx
+
+            from src.config import settings
 
             # Gather config
             api_key = settings.llm_api_key
@@ -308,7 +309,7 @@ class TaskManager:
             logger.error(f"Chat handler error: {e}")
             try:
                 return await asyncio.wait_for(self._handle_acp_chat(text, task), timeout=10.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return f"收到您的消息：{text}\n\nAI服务超时，请检查服务配置。"
 
     async def _handle_acp_chat(self, text: str, task: Task) -> str:

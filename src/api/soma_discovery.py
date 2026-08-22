@@ -13,7 +13,6 @@ Results are cached for 60 seconds to avoid repeated system scans.
 
 import asyncio
 import fnmatch
-
 import logging
 import os
 import shutil
@@ -335,7 +334,7 @@ async def _run_cmd(args: list[str], timeout: float = 10.0) -> tuple[str, str, in
             stderr.decode("utf-8", errors="replace"),
             proc.returncode or 0,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("Command timed out: %s", " ".join(args))
         try:
             proc.kill()
@@ -921,7 +920,7 @@ class DatabaseAdapter(SoftwareAdapter):
             return {"error": f"Unknown action: {action}. Available: {list(dispatch.keys())}"}
         try:
             return await asyncio.wait_for(handler(params), timeout=params.get("timeout", 30.0))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "Operation timed out"}
         except Exception as e:
             logger.exception("Database adapter action '%s' failed", action)
@@ -1114,7 +1113,7 @@ class FileSystemAdapter(SoftwareAdapter):
             return {"error": f"Unknown action: {action}. Available: {list(dispatch.keys())}"}
         try:
             return await asyncio.wait_for(handler(params), timeout=params.get("timeout", 30.0))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "Operation timed out"}
         except Exception as e:
             logger.exception("FileSystem adapter action '%s' failed", action)
@@ -1288,7 +1287,7 @@ class FileSystemAdapter(SoftwareAdapter):
 
         try:
             encoding = params.get("encoding", "utf-8")
-            with open(file_path, "r", encoding=encoding, errors="replace") as f:
+            with open(file_path, encoding=encoding, errors="replace") as f:
                 content = f.read()
             return {"path": file_path, "size": len(content), "content": content}
         except Exception as e:
@@ -1326,7 +1325,7 @@ class FileSystemAdapter(SoftwareAdapter):
                 try:
                     if os.path.getsize(fp) > 500_000:  # skip large files
                         continue
-                    with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                    with open(fp, encoding="utf-8", errors="replace") as f:
                         text = f.read()
                     if content_search.lower() in text.lower():
                         # Find the matching line(s)

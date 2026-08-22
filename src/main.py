@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from fastapi.staticfiles import StaticFiles
 
 from src.config import settings
@@ -58,9 +57,9 @@ from src.api.llm import router as llm_router
 from src.api.marketplace import router as marketplace_router
 from src.api.marrow import router as marrow_router
 from src.api.mcp import router as mcp_router
+from src.api.metrics_api import router as metrics_router
 from src.api.mind import router as mind_router
 from src.api.mirror import router as mirror_router
-from src.api.metrics_api import router as metrics_router
 from src.api.nerve import router as nerve_router
 from src.api.nest import router as nest_router
 from src.api.notifications import router as notifications_router
@@ -92,11 +91,11 @@ from src.api.will import router as will_router
 from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
 from src.api.ws_chat import router as ws_router
-from src.middleware.metrics_middleware import MetricsMiddleware
-from src.middleware.intrusion_middleware import IntrusionDetectionMiddleware
 from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
+from src.middleware.intrusion_middleware import IntrusionDetectionMiddleware
+from src.middleware.metrics_middleware import MetricsMiddleware
 from src.plugin_loader import load_all_plugins
 from src.vital.alert import AlertManager
 from src.vital.collector import MetricsCollector
@@ -179,9 +178,9 @@ async def lifespan(app: FastAPI):
     # Metrics organ health poller
     async def _metrics_organ_poller():
         """Periodically poll organ health and feed to Prometheus metrics."""
-        from src.api.metrics_api import record_organ_health
-
         import httpx as _mhttpx
+
+        from src.api.metrics_api import record_organ_health
 
         _METRIC_ORGANS = {
             "cortex": "/api/cortex/health",

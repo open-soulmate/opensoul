@@ -2,11 +2,12 @@ from datetime import UTC, datetime, timedelta
 from functools import wraps
 from uuid import UUID
 
-from jose import JWTError, jwt
 import bcrypt as _bcrypt
+from jose import JWTError, jwt
 
 from src.config import settings
 from src.database.postgres import db_pool
+
 
 def hash_password(password: str) -> str:
     return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
