@@ -10,11 +10,15 @@ Provides common admin tasks as single API calls:
 
 import time
 from pathlib import Path
+import logging
+
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _BASE = "http://127.0.0.1:8090"
@@ -280,8 +284,8 @@ async def export_config():
             res = await client.get(f"{_BASE}/api/gland/providers")
             if res.status_code == 200:
                 config["providers"] = res.json()
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     # Include gene templates count
     try:
@@ -289,8 +293,8 @@ async def export_config():
             res = await client.get(f"{_BASE}/api/gene/stats")
             if res.status_code == 200:
                 config["templates"] = res.json()
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return config
 

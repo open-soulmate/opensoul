@@ -191,8 +191,8 @@ def _record_event(
                 "status": status,
             },
         })
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return evt
 
@@ -372,8 +372,8 @@ async def receive_incoming_webhook(webhook_id: str, request: Request):
                 "payload_keys": list(payload.keys()) if isinstance(payload, dict) else [],
             },
         })
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return {"received": True, "event_id": evt.event_id, "webhook_id": webhook_id}
 

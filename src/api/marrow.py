@@ -1,6 +1,8 @@
 """OpenMarrow API — 骨髓系统：备份恢复、数据迁移、定时备份。"""
 
 import os
+import logging
+
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -9,6 +11,8 @@ from src.marrow.backup import BackupManager, BackupScheduler
 from src.marrow.migrator import DataMigrator
 from src.nerve.event_bridge import push_event
 
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
@@ -107,8 +111,8 @@ async def create_backup(req: BackupCreateRequest):
                 "size_bytes": manifest.size_bytes,
             },
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return {
         "backup_id": manifest.backup_id,

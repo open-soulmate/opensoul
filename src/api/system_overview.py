@@ -198,8 +198,8 @@ async def _get_knowledge_stats() -> dict:
         if db_pool:
             total = await db_pool.fetchval("SELECT COUNT(*) FROM knowledge") or 0
             return {"total_entries": total}
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return {"total_entries": -1}
 
 
@@ -362,7 +362,7 @@ async def run_bootstrap(req: BootstrapRequest = None):
                 "detail": result,
             }
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return result

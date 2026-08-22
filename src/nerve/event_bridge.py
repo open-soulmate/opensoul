@@ -186,8 +186,8 @@ def push_event(event: dict[str, Any]) -> None:
         if not hasattr(push_event, "_timeline"):
             push_event._timeline = TimelineStore()  # type: ignore[attr-defined]
         push_event._timeline.record(event)  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     # Also publish to Nerve bus (fire-and-forget)
     try:
@@ -210,5 +210,5 @@ async def _publish_to_nerve(topic: str, payload: dict, source: str) -> None:
                 f"{_BASE}/api/nerve/publish",
                 json={"topic": topic, "data": payload, "source": source},
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)

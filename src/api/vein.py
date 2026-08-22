@@ -3,12 +3,16 @@
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import logging
+
 
 from src.nerve.event_bridge import push_event
 from src.vein.cache import CacheManager
 from src.vein.chunked import ChunkedUploader
 from src.vein.file_store import FileStore
 
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
@@ -574,8 +578,8 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
                 "content_length": len(content),
             }
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return {
         "promoted": True,

@@ -11,9 +11,13 @@ import platform
 import time
 from collections import defaultdict
 from threading import Lock
+import logging
+
 
 from fastapi import APIRouter, Response
 
+logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── In-process metrics collector ──────────────────────────────
@@ -127,8 +131,8 @@ def _format_metrics() -> str:
         lines.append("# HELP opensoul_process_cpu_seconds_total Total CPU time")
         lines.append("# TYPE opensoul_process_cpu_seconds_total counter")
         lines.append(f"opensoul_process_cpu_seconds_total {ru.ru_utime + ru.ru_stime:.3f}")
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
     lines.append("")
 
     # ── HTTP request counter ──
@@ -210,8 +214,8 @@ def _format_metrics() -> str:
         lines.append("# HELP opensoul_system_disk_free_bytes Free disk space")
         lines.append("# TYPE opensoul_system_disk_free_bytes gauge")
         lines.append(f"opensoul_system_disk_free_bytes {disk.free}")
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
     return "\n".join(lines) + "\n"
 
