@@ -51,7 +51,7 @@ class ACPProcess:
             self._proc.terminate()
             try:
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
-            except:
+            except Exception:
                 self._proc.kill()
             self._proc = None
         self._initialized = False
@@ -233,7 +233,7 @@ class ACPProcess:
     def _parse(raw: bytes) -> dict | None:
         try:
             return json.loads(raw.decode().strip())
-        except:
+        except Exception:
             return None
 
     def _get_agent_info(self) -> dict:

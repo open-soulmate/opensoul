@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import tarfile
 import threading
@@ -406,6 +407,6 @@ class BackupScheduler:
         while self._running:
             try:
                 self.run_due_backups()
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
             time.sleep(60)  # Check every minute

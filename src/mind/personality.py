@@ -1,6 +1,7 @@
 """Personality Engine — 对话人格库、语气风格调节。"""
 
 import json
+import logging
 import os
 import time
 from dataclasses import asdict, dataclass, field
@@ -146,9 +147,8 @@ class PersonalityManager:
                 p = Personality(**item)
                 p.builtin = False
                 self._user[p.personality_id] = p
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
     def _save_user(self):
         path = os.path.join(self._data_dir, "personalities.json")
         data = [asdict(p) for p in self._user.values()]

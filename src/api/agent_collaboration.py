@@ -356,8 +356,8 @@ async def agent_ws(websocket: WebSocket, agent_id: str):
                                     "created_at": msg_now,
                                 }
                             )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logging.getLogger(__name__).debug("probe skipped: %s", exc)
             elif event_type == "heartbeat":
                 hb_now = datetime.now(UTC).isoformat()
                 conn = _get_db()

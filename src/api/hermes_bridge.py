@@ -186,8 +186,8 @@ async def delete_session(session_id: str, user_id: UUID = Depends(get_current_us
         # Try to delete from session_lineage too
         try:
             db.execute("DELETE FROM session_lineage WHERE session_id = ?", (session_id,))
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         db.commit()
         db.close()
         return {"success": True, "deleted_session": session_id}

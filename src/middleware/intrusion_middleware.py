@@ -76,9 +76,8 @@ class IntrusionDetectionMiddleware(BaseHTTPMiddleware):
             try:
                 body_bytes = await request.body()
                 body = body_bytes[:8192].decode("utf-8", errors="replace")
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
         # Run detection
         start = time.time()
         threats = detector.inspect_request(
@@ -117,9 +116,8 @@ class IntrusionDetectionMiddleware(BaseHTTPMiddleware):
                         "threat_types": list(set(t.attack_type.value for t in threats)),
                     },
                 })
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
             return JSONResponse(
                 status_code=403,
                 content={

@@ -198,16 +198,14 @@ class MetricsCollector:
             from src.database.postgres import db_pool
 
             biz.knowledge_entries = await db_pool.fetchval("SELECT count(*) FROM knowledge")
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         try:
             from src.database.meilisearch import meili_client
 
             if meili_client.AVAILABLE and meili_client.client is not None:
                 stats = meili_client.get_stats()
                 biz.search_count = stats.get("numberOfSearches", 0)
-        except Exception:
-            pass
-
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         return biz

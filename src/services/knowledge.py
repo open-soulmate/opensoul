@@ -1,4 +1,5 @@
 import json
+import logging
 from uuid import UUID
 
 from src.database.meilisearch import meili_client
@@ -104,7 +105,7 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
     if isinstance(d.get("metadata"), str):
         try:
             d["metadata"] = json.loads(d["metadata"])
-        except:
+        except Exception:
             d["metadata"] = {}
     return d
 
@@ -123,7 +124,7 @@ async def get_knowledge(knowledge_id: UUID, user_id: UUID) -> dict | None:
     if isinstance(d.get("metadata"), str):
         try:
             d["metadata"] = json.loads(d["metadata"])
-        except:
+        except Exception:
             d["metadata"] = {}
     return d if row else None
 
@@ -177,7 +178,7 @@ async def list_knowledge(
         if isinstance(d.get("metadata"), str):
             try:
                 d["metadata"] = json.loads(d["metadata"])
-            except:
+            except Exception:
                 d["metadata"] = {}
         result.append(d)
     return result

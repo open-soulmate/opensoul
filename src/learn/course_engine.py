@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -67,9 +68,8 @@ class CourseEngine:
                 data["chapters"] = chapters
                 c = Course(**data)
                 self._courses[c.course_id] = c
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
     def _save_course(self, course: Course):
         path = self.storage_dir / f"{course.course_id}.json"
         data = asdict(course)

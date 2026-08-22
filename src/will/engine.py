@@ -315,8 +315,8 @@ class WorkflowEngine:
                         try:
                             if self._eval_condition(edge.condition, execution.variables):
                                 queue.append(edge.target_node_id)
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logging.getLogger(__name__).debug("probe skipped: %s", exc)
                     else:
                         queue.append(edge.target_node_id)
 

@@ -82,9 +82,8 @@ async def moderate_text(req: ModerateRequest):
                         "findings_count": len(result.findings),
                     },
                 )
-            except Exception:
-                pass
-
+            except Exception as exc:
+                logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return {
         "is_safe": result.is_safe,
         "risk_level": result.risk_level,
@@ -352,9 +351,8 @@ async def inspect_request(req: InspectRequest):
                         action_url="/immune",
                         metadata=threat.to_dict(),
                     )
-                except Exception:
-                    pass
-
+                except Exception as exc:
+                    logging.getLogger(__name__).debug("probe skipped: %s", exc)
     return {
         "threats_found": len(threats),
         "threats": [t.to_dict() for t in threats],
@@ -385,8 +383,8 @@ async def record_login_attempt(req: LoginAttemptRequest):
                 action_url="/immune",
                 metadata=threat.to_dict(),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug("probe skipped: %s", exc)
         # Also auto-blacklist the IP via access control
         ip_control.blacklist_add(req.ip, reason="brute_force_auto_block", ttl_seconds=3600)
         return {"blocked": True, "threat": threat.to_dict()}
