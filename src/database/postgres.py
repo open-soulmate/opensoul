@@ -19,7 +19,12 @@ def _convert_sql_for_sqlite(sql: str, args: tuple) -> tuple[str, tuple]:
     - $N → ? positional placeholders
     - ANY($N) → expanded IN (?, ?, ...)
     - NOW() → datetime('now')
+    - UUID objects → str for SQLite compatibility
     """
+    from uuid import UUID
+
+    # 0. Convert UUID objects to strings (SQLite doesn't support UUID type)
+    args = tuple(str(a) if isinstance(a, UUID) else a for a in args)
 
     # 1. Handle ANY($N) first — expand list args into IN (?, ...)
     def _replace_any(m: re.Match) -> str:
@@ -116,6 +121,12 @@ class _SQLiteConnection:
         sql, params = _convert_sql_for_sqlite(query, args)
         cursor = await self._conn.execute(sql, params)
         await self._conn.commit()
+        # Detect operation type from SQL to return PostgreSQL-compatible status
+        sql_upper = sql.strip().upper()
+        if sql_upper.startswith("DELETE"):
+            return f"DELETE {cursor.rowcount}"
+        elif sql_upper.startswith("UPDATE"):
+            return f"UPDATE {cursor.rowcount}"
         return f"INSERT 0 {cursor.rowcount}"
 
     async def executemany(self, query: str, args_list: list) -> None:
