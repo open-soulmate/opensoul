@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from src.api.user import get_current_user
 
-DB_PATH = Path("data/opensoul.db")
+DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "opensoul.db"
 
 router = APIRouter()
 
@@ -539,14 +539,24 @@ async def get_synced_agents(user_id: UUID = Depends(get_current_user)):
 @router.get("/stats")
 async def get_marketplace_stats(user_id: UUID = Depends(get_current_user)):
     """Get marketplace statistics"""
-    db = get_marketplace_db()
-    skill_sources = db.execute("SELECT COUNT(*) FROM skill_sources WHERE enabled = 1").fetchone()[0]
-    agent_sources = db.execute("SELECT COUNT(*) FROM agent_sources WHERE enabled = 1").fetchone()[0]
-    total_skills = db.execute("SELECT COUNT(*) FROM marketplace_skills").fetchone()[0]
-    total_agents = db.execute("SELECT COUNT(*) FROM marketplace_agents").fetchone()[0]
-    return {
-        "skill_sources": skill_sources,
-        "agent_sources": agent_sources,
-        "total_skills": total_skills,
-        "total_agents": total_agents,
-    }
+    try:
+        db = get_marketplace_db()
+        skill_sources = db.execute("SELECT COUNT(*) FROM skill_sources WHERE enabled = 1").fetchone()[0]
+        agent_sources = db.execute("SELECT COUNT(*) FROM agent_sources WHERE enabled = 1").fetchone()[0]
+        total_skills = db.execute("SELECT COUNT(*) FROM marketplace_skills").fetchone()[0]
+        total_agents = db.execute("SELECT COUNT(*) FROM marketplace_agents").fetchone()[0]
+        return {
+            "skill_sources": skill_sources,
+            "agent_sources": agent_sources,
+            "total_skills": total_skills,
+            "total_agents": total_agents,
+        }
+    except Exception as e:
+        logger.error("marketplace stats error: %s", e, exc_info=True)
+        return {
+            "skill_sources": 0,
+            "agent_sources": 0,
+            "total_skills": 0,
+            "total_agents": 0,
+            "error": str(e),
+        }
