@@ -20,10 +20,12 @@ class TestChannel:
         assert Channel.WECHAT_WORK == "wechat_work"
         assert Channel.TELEGRAM == "telegram"
         assert Channel.FEISHU == "feishu"
+        assert Channel.SLACK == "slack"
+        assert Channel.DISCORD == "discord"
         assert Channel.CONSOLE == "console"
 
     def test_channel_count(self):
-        assert len(Channel) == 7
+        assert len(Channel) == 9
 
 
 class TestChannelConfig:

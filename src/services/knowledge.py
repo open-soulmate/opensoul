@@ -1,5 +1,4 @@
 import json
-import logging
 from uuid import UUID
 
 from src.database.meilisearch import meili_client
