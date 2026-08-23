@@ -19,6 +19,8 @@ class Channel(StrEnum):
     WECHAT_WORK = "wechat_work"
     TELEGRAM = "telegram"
     FEISHU = "feishu"
+    SLACK = "slack"
+    DISCORD = "discord"
     CONSOLE = "console"
 
 
@@ -148,6 +150,12 @@ class MessageDispatcher:
 
         elif config.channel == Channel.WECHAT_WORK:
             return self._send_wechat_work(msg, config)
+
+        elif config.channel == Channel.SLACK:
+            return self._send_slack(msg, config)
+
+        elif config.channel == Channel.DISCORD:
+            return self._send_discord(msg, config)
 
         else:
             return SendResult(
@@ -369,6 +377,111 @@ class MessageDispatcher:
 
         except Exception as e:
             return SendResult(success=False, msg_id=msg.msg_id, channel="wechat_work", error=str(e))
+
+    def _send_slack(self, msg: Message, config: ChannelConfig) -> SendResult:
+        """Send via Slack Incoming Webhook."""
+        try:
+            webhook_url = config.endpoint
+            if not webhook_url:
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="slack",
+                    error="Missing Slack webhook URL",
+                )
+
+            # Slack Block Kit message with header and section
+            payload = json.dumps(
+                {
+                    "blocks": [
+                        {
+                            "type": "header",
+                            "text": {"type": "plain_text", "text": msg.title},
+                        },
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": msg.content},
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": f"Priority: {msg.priority} | OpenEcho",
+                                }
+                            ],
+                        },
+                    ],
+                    "text": f"{msg.title}: {msg.content[:200]}",  # fallback text
+                }
+            ).encode("utf-8")
+
+            req = urllib.request.Request(
+                webhook_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = resp.read().decode("utf-8").strip()
+                if body == "ok" or resp.status == 200:
+                    return SendResult(success=True, msg_id=msg.msg_id, channel="slack")
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="slack",
+                    error=f"Slack returned: {body}",
+                )
+
+        except Exception as e:
+            return SendResult(success=False, msg_id=msg.msg_id, channel="slack", error=str(e))
+
+    def _send_discord(self, msg: Message, config: ChannelConfig) -> SendResult:
+        """Send via Discord Webhook."""
+        try:
+            webhook_url = config.endpoint
+            if not webhook_url:
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="discord",
+                    error="Missing Discord webhook URL",
+                )
+
+            # Discord embed message
+            payload = json.dumps(
+                {
+                    "embeds": [
+                        {
+                            "title": msg.title,
+                            "description": msg.content,
+                            "color": 0x7C3AED,  # purple accent
+                            "footer": {"text": f"OpenEcho · Priority: {msg.priority}"},
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+
+            # Discord webhooks support ?wait=true for confirmation
+            url = webhook_url + ("&" if "?" in webhook_url else "?") + "wait=true"
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status in (200, 204):
+                    return SendResult(success=True, msg_id=msg.msg_id, channel="discord")
+                return SendResult(
+                    success=False,
+                    msg_id=msg.msg_id,
+                    channel="discord",
+                    error=f"Discord returned HTTP {resp.status}",
+                )
+
+        except Exception as e:
+            return SendResult(success=False, msg_id=msg.msg_id, channel="discord", error=str(e))
 
     def history(self, limit: int = 50, channel: Channel | None = None) -> list[dict]:
         with self._lock:
