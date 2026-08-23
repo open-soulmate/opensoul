@@ -14,7 +14,6 @@ import shutil
 import tempfile
 from enum import StrEnum
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

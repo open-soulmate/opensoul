@@ -306,7 +306,7 @@ class ChartGenerator:
             lines.append(title)
             lines.append("=" * len(title))
         max_val = max(values) if values else 1
-        max_label = max(len(str(l)) for l in labels) if labels else 5
+        max_label = max(len(str(lbl)) for lbl in labels) if labels else 5
         for label, val in zip(labels, values):
             bar_len = int((val / max_val) * 30) if max_val > 0 else 0
             lines.append(f"{str(label):<{max_label}} | {'█' * bar_len} {val}")

@@ -6,9 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.config import settings
-
-logger = logging.getLogger(__name__)
 from src.a2a.api import router as a2a_router
 from src.acp.api import router as acp_router
 from src.api.admin_actions import router as admin_actions_router
@@ -91,6 +88,7 @@ from src.api.will import router as will_router
 from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
 from src.api.ws_chat import router as ws_router
+from src.config import settings
 from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
 from src.database.qdrant import qdrant_client
@@ -100,6 +98,8 @@ from src.plugin_loader import load_all_plugins
 from src.vital.alert import AlertManager
 from src.vital.collector import MetricsCollector
 from src.vital.health import HealthChecker
+
+logger = logging.getLogger(__name__)
 
 
 async def _intelligence_auto_collect():

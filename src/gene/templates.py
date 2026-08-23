@@ -1089,9 +1089,9 @@ class TemplateEngine:
     def import_template(self, data: dict, overwrite: bool = False) -> tuple[Template | None, str]:
         """Import a template from a dict. Returns (template, message)."""
         required = ["name", "category"]
-        for field in required:
-            if field not in data:
-                return None, f"Missing required field: {field}"
+        for req_field in required:
+            if req_field not in data:
+                return None, f"Missing required field: {req_field}"
 
         tid = data.get("template_id", f"imported-{int(time.time())}")
 
