@@ -52,7 +52,7 @@ class CaptureResponse(BaseModel):
 async def _ensure_table():
     await db_pool.execute(
         """CREATE TABLE IF NOT EXISTS captures (
-            id            SERIAL PRIMARY KEY,
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
             capture_type  TEXT    NOT NULL,
             title         TEXT    NOT NULL DEFAULT '',
             url           TEXT    NOT NULL DEFAULT '',
