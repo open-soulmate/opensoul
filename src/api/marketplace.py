@@ -255,7 +255,8 @@ def seed_builtin_sources(db: sqlite3.Connection):
 
 def get_marketplace_db() -> sqlite3.Connection:
     """Get marketplace database connection"""
-    db = sqlite3.connect(DB_PATH)
+    db = sqlite3.connect(DB_PATH, check_same_thread=False)
+    db.execute("PRAGMA journal_mode=WAL")
     init_marketplace_tables(db)
     seed_builtin_sources(db)
     return db
