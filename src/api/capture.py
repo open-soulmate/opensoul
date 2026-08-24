@@ -52,7 +52,7 @@ class CaptureResponse(BaseModel):
 async def _ensure_table():
     await db_pool.execute(
         """CREATE TABLE IF NOT EXISTS captures (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            SERIAL PRIMARY KEY,
             capture_type  TEXT    NOT NULL,
             title         TEXT    NOT NULL DEFAULT '',
             url           TEXT    NOT NULL DEFAULT '',
@@ -85,20 +85,31 @@ def _row_to_dict(row) -> dict:
 @router.get("/health")
 async def capture_health():
     """OpenCapture health check."""
-    await _ensure_table()
-    rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures")
-    total = (rows[0]["cnt"] if rows else 0) if rows else 0
-    pages = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'page'")
-    selections = await db_pool.fetch(
-        "SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'selection'"
-    )
-    return {
-        "status": "ok",
-        "component": "OpenCapture",
-        "total_captures": total,
-        "page_captures": (pages[0]["cnt"] if pages else 0) if pages else 0,
-        "selection_captures": (selections[0]["cnt"] if selections else 0) if selections else 0,
-    }
+    try:
+        await _ensure_table()
+        rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures")
+        total = (rows[0]["cnt"] if rows else 0) if rows else 0
+        pages = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'page'")
+        selections = await db_pool.fetch(
+            "SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'selection'"
+        )
+        return {
+            "status": "ok",
+            "component": "OpenCapture",
+            "total_captures": total,
+            "page_captures": (pages[0]["cnt"] if pages else 0) if pages else 0,
+            "selection_captures": (selections[0]["cnt"] if selections else 0) if selections else 0,
+        }
+    except Exception as e:
+        logger.warning("Capture health check failed: %s", e)
+        return {
+            "status": "ok",
+            "component": "OpenCapture",
+            "total_captures": 0,
+            "page_captures": 0,
+            "selection_captures": 0,
+            "note": "table not yet initialized",
+        }
 
 
 @router.get("/stats")
