@@ -3,21 +3,21 @@
 import asyncio
 import hashlib
 import time
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock, mock_open
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+
+import pytest
 
 from src.api.native_downloader import (
-    DownloadStatus,
-    DownloadTask,
-    NativeDownloader,
     CHUNK_SIZE,
     DEFAULT_SEGMENTS,
     MAX_SEGMENTS,
     SEGMENT_MIN_SIZE,
+    DownloadStatus,
+    DownloadTask,
+    NativeDownloader,
     get_downloader,
 )
-
 
 # ─── Constants ────────────────────────────────────────────────────
 

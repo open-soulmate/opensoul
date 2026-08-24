@@ -43,7 +43,6 @@ class TestLLMConfig:
     def test_save_config_partial_update(self, client):
         """Only provided fields should be updated."""
         # Get current config
-        current = client.get("/api/llm/config").json()
         # Update only model
         resp = client.post("/api/llm/config", json={"model": "partial-test"})
         assert resp.status_code == 200

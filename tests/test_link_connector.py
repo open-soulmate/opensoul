@@ -2,8 +2,10 @@
 
 import json
 import time
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from src.link.connector import (
     Connector,
     ConnectorStatus,
