@@ -1,24 +1,25 @@
 """Unit tests for download_plugins.py — plugin system for pluggable download protocols."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+
 from src.api.download_plugins import (
-    DownloadProgress,
-    PluginInfo,
-    PluginStatus,
-    DownloadManager,
     Aria2Plugin,
-    WgetPlugin,
+    AxelPlugin,
     CurlPlugin,
     CurlResumePlugin,
-    AxelPlugin,
+    DownloadManager,
+    DownloadProgress,
     OdlPlugin,
+    PluginInfo,
+    PluginStatus,
+    WgetPlugin,
     _detect_os,
     _refresh_path,
     get_download_manager,
 )
-
 
 # ─── Data class tests ────────────────────────────────────────────
 

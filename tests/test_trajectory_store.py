@@ -2,8 +2,10 @@
 
 import json
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+
 from src.trajectory.store import (
     EventType,
     TrajectoryEvent,

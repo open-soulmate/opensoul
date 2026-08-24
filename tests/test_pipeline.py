@@ -18,7 +18,6 @@ class TestPipelineTypes:
         types = data["types"]
         assert isinstance(types, list)
         # Should have at least the basic pipeline types
-        type_names = [t.get("name", t.get("type", "")) for t in types]
         assert len(types) > 0
 
 
