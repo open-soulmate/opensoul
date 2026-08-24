@@ -44,6 +44,17 @@ class SidebarEntry(BaseModel):
 
 
 async def _ensure_table():
+    # Check if table exists with old schema (has 'enabled' column but no 'manifest_json')
+    try:
+        cols = await db_pool.fetch("PRAGMA table_info(plugins)")
+        col_names = {c["name"] for c in cols} if cols else set()
+        if col_names and "manifest_json" not in col_names:
+            # Old schema detected — drop and recreate
+            await db_pool.execute("DROP TABLE IF EXISTS plugins")
+            col_names = set()
+    except Exception:
+        col_names = set()
+
     await db_pool.execute(
         """CREATE TABLE IF NOT EXISTS plugins (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
