@@ -155,6 +155,19 @@ async def _intelligence_auto_collect():
 async def lifespan(app: FastAPI):
     # Startup
     await db_pool.connect()
+
+    # Ensure kb_sharing_requests and knowledge_requests tables exist
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS kb_sharing_requests (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, user_name TEXT DEFAULT '',
+        kb_id TEXT NOT NULL, kb_name TEXT NOT NULL, status TEXT DEFAULT 'pending',
+        reviewer_id TEXT, review_note TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')), reviewed_at TEXT)""")
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS knowledge_requests (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, user_name TEXT DEFAULT '',
+        kb_name TEXT NOT NULL, kb_description TEXT DEFAULT '',
+        status TEXT DEFAULT 'pending', reviewer_id TEXT, review_note TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')), reviewed_at TEXT)""")
+
     try:
         qdrant_client.ensure_collection()
     except Exception:
