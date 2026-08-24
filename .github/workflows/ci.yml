@@ -53,6 +53,17 @@ jobs:
           pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Start OpenSoul server
+        env:
+          DATABASE_URL: sqlite:///tmp/opensoul-test.db
+          REDIS_URL: redis://localhost:6379/0
+          OPENSOUL_PORT: "8090"
+        run: |
+          python -m uvicorn src.main:app --host 0.0.0.0 --port 8090 &
+          sleep 5
+          curl -f http://localhost:8090/health || echo "Server not ready, waiting more..."
+          sleep 5
+
       - name: Run tests
         run: pytest tests/ -v --tb=short --junitxml=test-results.xml
 
