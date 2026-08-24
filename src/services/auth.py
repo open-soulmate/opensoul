@@ -37,15 +37,49 @@ def create_access_token(user_id: UUID, role: str = "user", extra: dict | None = 
 
 
 def decode_token(token: str) -> dict | None:
-    """Decode JWT and return payload dict, or None on failure."""
+    """Decode JWT and return payload dict, or None on failure.
+
+    Handles both UUID sub (standard auth) and integer sub (enterprise auth).
+    """
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
         if not user_id:
             return None
+        # Try UUID first (standard auth), fall back to int (enterprise auth)
+        try:
+            uid = UUID(user_id)
+        except ValueError:
+            # Enterprise auth uses integer IDs — look up UUID by username
+            username = payload.get("username")
+            if not username:
+                return None
+            import sqlite3 as _sqlite3
+            from pathlib import Path as _Path
+            # Verify enterprise user exists
+            _ent_db = _Path(__file__).parent.parent.parent / "data" / "enterprise.db"
+            _os_db = _Path(__file__).parent.parent.parent / "data" / "opensoul.db"
+            try:
+                with _sqlite3.connect(str(_ent_db)) as _conn:
+                    _conn.row_factory = _sqlite3.Row
+                    if not _conn.execute(
+                        "SELECT id FROM users WHERE id = ? AND is_active = 1", (int(user_id),)
+                    ).fetchone():
+                        return None
+                # Look up UUID from opensoul.db by username
+                with _sqlite3.connect(str(_os_db)) as _conn:
+                    _conn.row_factory = _sqlite3.Row
+                    _row = _conn.execute(
+                        "SELECT id FROM users WHERE username = ?", (username,)
+                    ).fetchone()
+                    if not _row:
+                        return None
+                    uid = UUID(_row["id"])
+            except Exception:
+                return None
         return {
-            "user_id": UUID(user_id),
-            "role": payload.get("role", "user"),
+            "user_id": uid,
+            "role": payload.get("role", payload.get("scope", "user")),
         }
     except (JWTError, KeyError, ValueError):
         return None
