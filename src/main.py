@@ -157,6 +157,14 @@ async def lifespan(app: FastAPI):
     await db_pool.connect()
 
     # Ensure kb_sharing_requests and knowledge_requests tables exist
+    # Ensure workflow_tasks table exists with all columns
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS workflow_tasks (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+        description TEXT DEFAULT '', task_type TEXT DEFAULT 'manual',
+        config TEXT DEFAULT '{}', schedule TEXT, status TEXT DEFAULT 'idle',
+        last_run_at TEXT, next_run_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+
     await db_pool.execute("""CREATE TABLE IF NOT EXISTS kb_sharing_requests (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL, user_name TEXT DEFAULT '',
         kb_id TEXT NOT NULL, kb_name TEXT NOT NULL, status TEXT DEFAULT 'pending',
