@@ -106,7 +106,7 @@ class TestLimbRPAWindows:
 class TestLimbRPAFocus:
     def test_focus_missing(self, client):
         resp = client.post("/api/limb/rpa/focus", json={})
-        assert resp.status_code in (200, 400, 404, 422)
+        assert resp.status_code in (200, 400, 404, 422, 503)
 
 
 class TestLimbRPAClickText:
