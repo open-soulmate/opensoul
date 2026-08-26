@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.a2a.api import router as a2a_router
-from src.acp.api import router as acp_router
+
 from src.api.admin_actions import router as admin_actions_router
 from src.api.agent import router as agent_router
 from src.api.agent_collaboration import router as agent_collab_router
@@ -87,7 +87,7 @@ from src.api.voice import router as voice_router
 from src.api.will import router as will_router
 from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
-from src.api.ws_chat import router as ws_router
+
 from src.config import settings
 from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
@@ -417,7 +417,6 @@ _ORGAN_HEALTH_ROUTES = [
     ("permission", "/api/permission/health"),
     ("sessions", "/api/sessions/health"),
     ("terminal", "/api/terminal/health"),
-    ("ws-chat", "/api/ws/health"),
     ("system-overview", "/api/system/health"),
 ]
 
@@ -462,9 +461,8 @@ app.include_router(dedup_router, prefix="/api/dedup", tags=["dedup"])
 app.include_router(permission_router, prefix="/api/permission", tags=["permission"])
 app.include_router(agent_proxy_router, prefix="/api/agent-proxy", tags=["agent-proxy"])
 app.include_router(a2a_router, tags=["a2a"])
-app.include_router(acp_router, prefix="/api/acp", tags=["acp"])
+
 app.include_router(hermes_bridge_router, prefix="/api/hermes", tags=["hermes-bridge"])
-app.include_router(ws_router, prefix="/api/ws", tags=["websocket"])
 app.include_router(hermes_cron_router, prefix="/api/cron", tags=["cron"])
 app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
