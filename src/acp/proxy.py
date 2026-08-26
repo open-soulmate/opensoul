@@ -86,7 +86,7 @@ class ACPProcess:
                 parts.append({"type": "text", "text": text})
             b64 = image_data.split(",")[-1] if "," in image_data else image_data
             parts.append(
-                {"type": "image", "source": {"type": "base64", "mediaType": mime_type, "data": b64}}
+                {"type": "image", "data": b64, "mimeType": mime_type}
             )
             result = await self._prompt_parts(parts, sid)
             if result.get("response_text"):
