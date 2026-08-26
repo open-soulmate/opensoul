@@ -85,6 +85,7 @@ from src.api.vision import router as vision_router
 from src.api.vital import router as vital_router
 from src.api.voice import router as voice_router
 from src.api.will import router as will_router
+from src.api.ws_chat import router as ws_chat_router
 from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
 
@@ -534,6 +535,7 @@ app.include_router(timeline_router, prefix="/api/timeline", tags=["timeline"])
 app.include_router(benchmark_router, prefix="/api/benchmark", tags=["benchmark"])
 app.include_router(system_overview_router, prefix="/api/system", tags=["system-overview"])
 app.include_router(metrics_router, tags=["metrics"])
+app.include_router(ws_chat_router, prefix="/api/ws", tags=["ws-chat"])
 
 # Load and mount external plugins from ~/.openmate/plugins/
 load_all_plugins(app)
