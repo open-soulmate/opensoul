@@ -1,9 +1,11 @@
 """ACP proxy with hermes -z fallback."""
 
 import asyncio
+import base64
 import json
 import logging
 import os
+import tempfile
 import time
 from typing import Any
 
@@ -121,7 +123,23 @@ class ACPProcess:
             except Exception as e:
                 print(f"ACP: image error {e}", flush=True)
             break
-        return await self._cli(text or "用户发送了一张图片")
+        # Fallback: save image to temp file, let hermes read via vision tool
+        tmp_path = None
+        try:
+            b64_clean = image_data.split(",")[-1] if "," in image_data else image_data
+            ext = mime_type.split("/")[-1].split(";")[0] or "png"
+            fd, tmp_path = tempfile.mkstemp(suffix=f".{ext}", prefix="openmate_img_")
+            with os.fdopen(fd, "wb") as f:
+                f.write(base64.b64decode(b64_clean))
+            prompt = f"{text or '用户发送了一张图片'}\n\n[图片已保存到: {tmp_path}]"
+            return await self._cli(prompt)
+        except Exception as e:
+            print(f"ACP: image fallback error {e}", flush=True)
+            return await self._cli(text or "用户发送了一张图片")
+        finally:
+            # Clean up temp file after a delay (hermes needs time to read it)
+            if tmp_path:
+                asyncio.get_event_loop().call_later(300, lambda: os.unlink(tmp_path) if os.path.exists(tmp_path) else None)
 
     async def list_sessions(self) -> list[dict]:
         if not self.is_running or not self._initialized:
