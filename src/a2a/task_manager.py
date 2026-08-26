@@ -313,19 +313,22 @@ class TaskManager:
                 return f"收到您的消息：{text}\n\nAI服务超时，请检查服务配置。"
 
     async def _handle_acp_chat(self, text: str, task: Task) -> str:
-        """Fallback chat using ACP (hermes subprocess)."""
+        """Fallback chat using ACP proxy service."""
         try:
-            from src.acp.proxy import get_acp_process
-
-            acp = get_acp_process()
-            result = await acp.send_message(text)
-            response = result.get("response_text", "")
-            if response:
-                return response
+            import httpx
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    "http://localhost:8092/acp/send",
+                    json={"text": text, "session_id": str(task.id)},
+                )
+                data = resp.json()
+                response = data.get("content", "")
+                if response:
+                    return response
             return f"收到您的消息：{text}\n\nAI服务暂时不可用，请检查LLM配置或hermes服务。"
 
         except Exception as e:
-            logger.error(f"ACP fallback error: {e}")
+            logger.error(f"ACP proxy error: {e}")
             return f"收到您的消息：{text}\n\nAI服务暂时不可用（{str(e)}），请检查服务配置。"
 
     async def _handle_default(self, text: str, task: Task) -> str:
