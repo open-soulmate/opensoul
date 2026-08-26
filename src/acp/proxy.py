@@ -20,7 +20,12 @@ class ACPProcess:
 
     @property
     def is_running(self) -> bool:
-        return self._proc is not None and self._proc.returncode is None
+        if self._proc is None or self._proc.returncode is not None:
+            return False
+        # Also check if stdin pipe is still alive
+        if self._proc.stdin and self._proc.stdin.is_closing():
+            return False
+        return True
 
     async def start(self):
         if self.is_running:
@@ -57,17 +62,32 @@ class ACPProcess:
         self._initialized = False
         self._default_session_id = None
 
+    async def _restart(self):
+        """Force-stop and restart the ACP process."""
+        print("ACP: restarting due to broken pipe / stale process", flush=True)
+        logger.warning("ACP: restarting due to broken pipe / stale process")
+        await self.stop()
+        await self.start()
+
     async def send_message(self, text: str, session_id: str | None = None) -> dict[str, Any]:
         if not self.is_running or not self._initialized:
             await self.start()
         sid = session_id or self._default_session_id or "default"
-        try:
-            result = await self._prompt(text, sid)
-            if result.get("response_text"):
-                return result
-            print("ACP: events not captured (buffering), using hermes -z", flush=True)
-        except Exception as e:
-            print(f"ACP: error {e}, falling back to hermes -z", flush=True)
+        for attempt in range(2):
+            try:
+                result = await self._prompt(text, sid)
+                if result.get("response_text"):
+                    return result
+                print("ACP: events not captured (buffering), using hermes -z", flush=True)
+            except (BrokenPipeError, OSError) as e:
+                print(f"ACP: pipe error {e}, restarting (attempt {attempt+1})", flush=True)
+                logger.warning(f"ACP pipe error: {e}, restarting")
+                if attempt == 0:
+                    await self._restart()
+                    continue
+            except Exception as e:
+                print(f"ACP: error {e}, falling back to hermes -z", flush=True)
+            break
         return await self._cli(text)
 
     async def send_message_with_image(
@@ -80,19 +100,27 @@ class ACPProcess:
         if not self.is_running or not self._initialized:
             await self.start()
         sid = session_id or self._default_session_id or "default"
-        try:
-            parts = []
-            if text:
-                parts.append({"type": "text", "text": text})
-            b64 = image_data.split(",")[-1] if "," in image_data else image_data
-            parts.append(
-                {"type": "image", "data": b64, "mimeType": mime_type}
-            )
-            result = await self._prompt_parts(parts, sid)
-            if result.get("response_text"):
-                return result
-        except Exception as e:
-            print(f"ACP: image error {e}", flush=True)
+        for attempt in range(2):
+            try:
+                parts = []
+                if text:
+                    parts.append({"type": "text", "text": text})
+                b64 = image_data.split(",")[-1] if "," in image_data else image_data
+                parts.append(
+                    {"type": "image", "data": b64, "mimeType": mime_type}
+                )
+                result = await self._prompt_parts(parts, sid)
+                if result.get("response_text"):
+                    return result
+            except (BrokenPipeError, OSError) as e:
+                print(f"ACP: image pipe error {e}, restarting (attempt {attempt+1})", flush=True)
+                logger.warning(f"ACP image pipe error: {e}, restarting")
+                if attempt == 0:
+                    await self._restart()
+                    continue
+            except Exception as e:
+                print(f"ACP: image error {e}", flush=True)
+            break
         return await self._cli(text or "用户发送了一张图片")
 
     async def list_sessions(self) -> list[dict]:
