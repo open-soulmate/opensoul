@@ -8,17 +8,13 @@ import sys
 logger = logging.getLogger(__name__)
 
 try:
-    from mcp.server.stdio import stdio_server
-    from mcp.types import TextContent, Tool
-
-    from mcp.server import Server
+    from mcp.server.mcpserver import MCPServer
+    from mcp.types import TextContent
 
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
-    Server = None
-    stdio_server = None
-    Tool = None
+    MCPServer = None
     TextContent = None
     logger.warning("mcp not installed — MCP server disabled")
 
@@ -30,132 +26,56 @@ from src.services import knowledge as knowledge_service
 from src.services.rag import rag_query
 from src.services.search import hybrid_search
 
-server = Server("opensoul") if MCP_AVAILABLE else None
+server = MCPServer("opensoul") if MCP_AVAILABLE else None
 
 
 if MCP_AVAILABLE:
 
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name="remember",
-                description="Store a new piece of knowledge into long-term memory",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "Title of the knowledge"},
-                        "content": {"type": "string", "description": "Content to remember"},
-                        "tags": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Tags for categorization",
-                        },
-                        "user_id": {"type": "string", "description": "User UUID"},
-                    },
-                    "required": ["title", "content", "user_id"],
-                },
-            ),
-            Tool(
-                name="recall",
-                description="Search and retrieve relevant memories using semantic search",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "What to search for"},
-                        "user_id": {"type": "string", "description": "User UUID"},
-                        "top_k": {
-                            "type": "integer",
-                            "description": "Number of results",
-                            "default": 5,
-                        },
-                    },
-                    "required": ["query", "user_id"],
-                },
-            ),
-            Tool(
-                name="ask",
-                description="Ask a question and get an answer based on stored knowledge (RAG)",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "question": {"type": "string", "description": "The question to answer"},
-                        "user_id": {"type": "string", "description": "User UUID"},
-                        "top_k": {
-                            "type": "integer",
-                            "description": "Number of context chunks",
-                            "default": 5,
-                        },
-                    },
-                    "required": ["question", "user_id"],
-                },
-            ),
-            Tool(
-                name="search",
-                description="Hybrid search combining semantic and full-text search",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query"},
-                        "user_id": {"type": "string", "description": "User UUID"},
-                        "limit": {"type": "integer", "description": "Max results", "default": 10},
-                    },
-                    "required": ["query", "user_id"],
-                },
-            ),
-            Tool(
-                name="list_memories",
-                description="List all stored memories for a user",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string", "description": "User UUID"},
-                        "offset": {"type": "integer", "default": 0},
-                        "limit": {"type": "integer", "default": 20},
-                    },
-                    "required": ["user_id"],
-                },
-            ),
-        ]
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    @server.tool()
+    async def remember(title: str, content: str, user_id: str, tags: list[str] | None = None) -> str:
+        """Store a new piece of knowledge into long-term memory."""
         from uuid import UUID
 
-        user_id = UUID(arguments["user_id"])
+        uid = UUID(user_id)
+        data = KnowledgeCreate(title=title, content=content, tags=tags or [])
+        row = await knowledge_service.create_knowledge(data, uid)
+        return json.dumps({"status": "remembered", "id": str(row["id"])})
 
-        if name == "remember":
-            data = KnowledgeCreate(
-                title=arguments["title"],
-                content=arguments["content"],
-                tags=arguments.get("tags", []),
-            )
-            row = await knowledge_service.create_knowledge(data, user_id)
-            return [
-                TextContent(
-                    type="text", text=json.dumps({"status": "remembered", "id": str(row["id"])})
-                )
-            ]
+    @server.tool()
+    async def recall(query: str, user_id: str, top_k: int = 5) -> str:
+        """Search and retrieve relevant memories using semantic search."""
+        from uuid import UUID
 
-        elif name == "recall":
-            results = await hybrid_search(arguments["query"], user_id, arguments.get("top_k", 5))
-            return [TextContent(type="text", text=json.dumps(results, default=str))]
+        uid = UUID(user_id)
+        results = await hybrid_search(query, uid, top_k)
+        return json.dumps(results, default=str)
 
-        elif name == "ask":
-            result = await rag_query(arguments["question"], user_id, arguments.get("top_k", 5))
-            return [TextContent(type="text", text=json.dumps(result, default=str))]
+    @server.tool()
+    async def ask(question: str, user_id: str, top_k: int = 5) -> str:
+        """Ask a question and get an answer based on stored knowledge (RAG)."""
+        from uuid import UUID
 
-        elif name == "search":
-            results = await hybrid_search(arguments["query"], user_id, arguments.get("limit", 10))
-            return [TextContent(type="text", text=json.dumps(results, default=str))]
+        uid = UUID(user_id)
+        result = await rag_query(question, uid, top_k)
+        return json.dumps(result, default=str)
 
-        elif name == "list_memories":
-            rows = await knowledge_service.list_knowledge(
-                user_id, arguments.get("offset", 0), arguments.get("limit", 20)
-            )
-            return [TextContent(type="text", text=json.dumps(rows, default=str))]
+    @server.tool()
+    async def search(query: str, user_id: str, limit: int = 10) -> str:
+        """Hybrid search combining semantic and full-text search."""
+        from uuid import UUID
 
-        return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
+        uid = UUID(user_id)
+        results = await hybrid_search(query, uid, limit)
+        return json.dumps(results, default=str)
+
+    @server.tool()
+    async def list_memories(user_id: str, offset: int = 0, limit: int = 20) -> str:
+        """List all stored memories for a user."""
+        from uuid import UUID
+
+        uid = UUID(user_id)
+        rows = await knowledge_service.list_knowledge(uid, offset, limit)
+        return json.dumps(rows, default=str)
 
 
 async def main():
@@ -165,8 +85,7 @@ async def main():
     await db_pool.connect()
     qdrant_client.ensure_collection()
     meili_client.ensure_index()
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    await server.run("stdio")
     await db_pool.disconnect()
 
 
