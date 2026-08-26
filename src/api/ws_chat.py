@@ -81,7 +81,7 @@ async def run_agent_proxy(agent_id: str, text: str) -> tuple[str, str, bool]:
         return str(e), "error", False
 
 
-@router.websocket("/ws/chat")
+@router.websocket("/chat")
 async def chat_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time chat.
 
