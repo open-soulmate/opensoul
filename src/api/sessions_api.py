@@ -1,7 +1,7 @@
 """Sessions API — unified session management.
 
 Provides session search, delete, and message retrieval at /api/sessions.
-Reads directly from the Hermes state SQLite database.
+Reads from both Hermes state SQLite database and OpenSoul agent_sessions.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ async def sessions_api_health():
 logger = logging.getLogger(__name__)
 
 _DB_PATH = os.path.expanduser("~/.hermes/state.db")
+_OPENSOUL_DB = "/home/climbing/opensoul/data/opensoul.db"
 
 
 def _get_db():
@@ -31,6 +32,15 @@ def _get_db():
     if not os.path.exists(_DB_PATH):
         return None
     db = sqlite3.connect(_DB_PATH)
+    db.row_factory = sqlite3.Row
+    return db
+
+
+def _get_agent_db():
+    """Get a connection to the OpenSoul database for agent sessions."""
+    if not os.path.exists(_OPENSOUL_DB):
+        return None
+    db = sqlite3.connect(_OPENSOUL_DB)
     db.row_factory = sqlite3.Row
     return db
 
@@ -45,53 +55,93 @@ def _ts_to_iso(ts):
         return str(ts)
 
 
-@router.get("")
-async def list_sessions(
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-):
-    """List recent sessions (no auth required for dashboard)."""
-    db = _get_db()
-    if not db:
-        return {"sessions": [], "total": 0}
-
+def _get_agent_sessions(limit: int = 100, offset: int = 0) -> list[dict]:
+    """Get agent proxy sessions from OpenSoul DB."""
+    adb = _get_agent_db()
+    if not adb:
+        return []
     try:
-        rows = db.execute(
+        rows = adb.execute(
             """
-            SELECT id, title, started_at, last_activity_at, source,
-                   message_count, input_tokens, output_tokens
-            FROM sessions
+            SELECT id, agent_id, title, created_at, last_activity_at, message_count
+            FROM agent_sessions
             WHERE archived = 0
             ORDER BY last_activity_at DESC
             LIMIT ? OFFSET ?
         """,
             (limit, offset),
         ).fetchall()
-
-        count_row = db.execute("SELECT COUNT(*) as cnt FROM sessions WHERE archived = 0").fetchone()
-        total = count_row["cnt"] if count_row else 0
-
         sessions = []
         for r in rows:
             sessions.append(
                 {
                     "id": r["id"],
                     "title": r["title"] or "Untitled",
-                    "created_at": _ts_to_iso(r["started_at"]),
+                    "created_at": _ts_to_iso(r["created_at"]),
                     "updated_at": _ts_to_iso(r["last_activity_at"]),
-                    "source": r["source"],
+                    "source": r["agent_id"],  # agent_id as source for frontend grouping
                     "message_count": r["message_count"] or 0,
-                    "input_tokens": r["input_tokens"] or 0,
-                    "output_tokens": r["output_tokens"] or 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
                 }
             )
-
-        return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
+        return sessions
     except Exception as e:
-        logger.error("list_sessions error: %s", e)
-        return {"sessions": [], "error": str(e)}
+        logger.error("get_agent_sessions error: %s", e)
+        return []
     finally:
-        db.close()
+        adb.close()
+
+
+@router.get("")
+async def list_sessions(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """List recent sessions — merges Hermes sessions and agent proxy sessions."""
+    all_sessions = []
+
+    # 1. Hermes sessions
+    db = _get_db()
+    if db:
+        try:
+            rows = db.execute(
+                """
+                SELECT id, title, started_at, last_activity_at, source,
+                       message_count, input_tokens, output_tokens
+                FROM sessions
+                WHERE archived = 0
+                ORDER BY last_activity_at DESC
+                LIMIT ? OFFSET ?
+            """,
+                (limit, offset),
+            ).fetchall()
+            for r in rows:
+                all_sessions.append(
+                    {
+                        "id": r["id"],
+                        "title": r["title"] or "Untitled",
+                        "created_at": _ts_to_iso(r["started_at"]),
+                        "updated_at": _ts_to_iso(r["last_activity_at"]),
+                        "source": r["source"],
+                        "message_count": r["message_count"] or 0,
+                        "input_tokens": r["input_tokens"] or 0,
+                        "output_tokens": r["output_tokens"] or 0,
+                    }
+                )
+        except Exception as e:
+            logger.error("list_sessions error: %s", e)
+        finally:
+            db.close()
+
+    # 2. Agent proxy sessions
+    agent_sessions = _get_agent_sessions(limit, offset)
+    all_sessions.extend(agent_sessions)
+
+    # 3. Sort by last_activity_at descending
+    all_sessions.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
+
+    return {"sessions": all_sessions[:limit], "total": len(all_sessions), "limit": limit, "offset": offset}
 
 
 @router.get("/search")
@@ -191,42 +241,61 @@ async def get_session(
     session_id: str,
     user_id: UUID = Depends(get_current_user),
 ):
-    """Get session details."""
+    """Get session details — checks both Hermes and agent sessions."""
+    # Try Hermes first
     db = _get_db()
-    if not db:
-        raise HTTPException(status_code=404, detail="Session database not found")
+    if db:
+        try:
+            row = db.execute(
+                """
+                SELECT id, title, started_at, last_activity_at, source,
+                       message_count, input_tokens, output_tokens, estimated_cost_usd
+                FROM sessions WHERE id = ? AND archived = 0
+            """,
+                (session_id,),
+            ).fetchone()
+            if row:
+                return {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "created_at": _ts_to_iso(row["started_at"]),
+                    "updated_at": _ts_to_iso(row["last_activity_at"]),
+                    "source": row["source"],
+                    "message_count": row["message_count"] or 0,
+                    "input_tokens": row["input_tokens"] or 0,
+                    "output_tokens": row["output_tokens"] or 0,
+                    "estimated_cost_usd": row["estimated_cost_usd"] or 0,
+                }
+        finally:
+            db.close()
 
-    try:
-        row = db.execute(
-            """
-            SELECT id, title, started_at, last_activity_at, source,
-                   message_count, input_tokens, output_tokens, estimated_cost_usd
-            FROM sessions WHERE id = ? AND archived = 0
-        """,
-            (session_id,),
-        ).fetchone()
+    # Try agent sessions
+    adb = _get_agent_db()
+    if adb:
+        try:
+            row = adb.execute(
+                """
+                SELECT id, agent_id, title, created_at, last_activity_at, message_count
+                FROM agent_sessions WHERE id = ? AND archived = 0
+            """,
+                (session_id,),
+            ).fetchone()
+            if row:
+                return {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "created_at": _ts_to_iso(row["created_at"]),
+                    "updated_at": _ts_to_iso(row["last_activity_at"]),
+                    "source": row["agent_id"],
+                    "message_count": row["message_count"] or 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "estimated_cost_usd": 0,
+                }
+        finally:
+            adb.close()
 
-        if not row:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        return {
-            "id": row["id"],
-            "title": row["title"],
-            "created_at": _ts_to_iso(row["started_at"]),
-            "updated_at": _ts_to_iso(row["last_activity_at"]),
-            "source": row["source"],
-            "message_count": row["message_count"] or 0,
-            "input_tokens": row["input_tokens"] or 0,
-            "output_tokens": row["output_tokens"] or 0,
-            "estimated_cost_usd": row["estimated_cost_usd"] or 0,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("get_session error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+    raise HTTPException(status_code=404, detail="Session not found")
 
 
 @router.patch("/{session_id}")
@@ -234,30 +303,36 @@ async def rename_session(
     session_id: str,
     body: dict,
 ):
-    """Rename a session (update title)."""
+    """Rename a session (update title) — works for both Hermes and agent sessions."""
     new_title = body.get("title", "").strip()
     if not new_title:
         raise HTTPException(status_code=400, detail="Title is required")
 
+    # Try Hermes first
     db = _get_db()
-    if not db:
-        raise HTTPException(status_code=404, detail="Session database not found")
+    if db:
+        try:
+            row = db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if row:
+                db.execute("UPDATE sessions SET title = ? WHERE id = ?", (new_title, session_id))
+                db.commit()
+                return {"success": True, "id": session_id, "title": new_title}
+        finally:
+            db.close()
 
-    try:
-        row = db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Session not found")
+    # Try agent sessions
+    adb = _get_agent_db()
+    if adb:
+        try:
+            row = adb.execute("SELECT id FROM agent_sessions WHERE id = ?", (session_id,)).fetchone()
+            if row:
+                adb.execute("UPDATE agent_sessions SET title = ? WHERE id = ?", (new_title, session_id))
+                adb.commit()
+                return {"success": True, "id": session_id, "title": new_title}
+        finally:
+            adb.close()
 
-        db.execute("UPDATE sessions SET title = ? WHERE id = ?", (new_title, session_id))
-        db.commit()
-        return {"success": True, "id": session_id, "title": new_title}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("rename_session error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+    raise HTTPException(status_code=404, detail="Session not found")
 
 
 @router.delete("/{session_id}")
@@ -265,35 +340,38 @@ async def delete_session(
     session_id: str,
     user_id: UUID = Depends(get_current_user),
 ):
-    """Delete a session and all its messages."""
+    """Delete a session and all its messages — works for both Hermes and agent sessions."""
+    # Try Hermes first
     db = _get_db()
-    if not db:
-        raise HTTPException(status_code=404, detail="Session database not found")
-
-    try:
-        row = db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        # Delete messages first
-        db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-        # Delete session
-        db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-        # Try to delete from session_lineage too
+    if db:
         try:
-            db.execute("DELETE FROM session_lineage WHERE session_id = ?", (session_id,))
-        except Exception as exc:
-            logging.getLogger(__name__).debug("probe skipped: %s", exc)
-        db.commit()
+            row = db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if row:
+                db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+                db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+                try:
+                    db.execute("DELETE FROM session_lineage WHERE session_id = ?", (session_id,))
+                except Exception as exc:
+                    logging.getLogger(__name__).debug("probe skipped: %s", exc)
+                db.commit()
+                return {"success": True, "deleted_session": session_id}
+        finally:
+            db.close()
 
-        return {"success": True, "deleted_session": session_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("delete_session error: %s", e)
-        return {"success": False, "error": str(e)}
-    finally:
-        db.close()
+    # Try agent sessions
+    adb = _get_agent_db()
+    if adb:
+        try:
+            row = adb.execute("SELECT id FROM agent_sessions WHERE id = ?", (session_id,)).fetchone()
+            if row:
+                adb.execute("DELETE FROM agent_messages WHERE session_id = ?", (session_id,))
+                adb.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
+                adb.commit()
+                return {"success": True, "deleted_session": session_id}
+        finally:
+            adb.close()
+
+    return {"success": False, "error": "Session not found"}
 
 
 @router.get("/{session_id}/messages")
@@ -301,44 +379,68 @@ async def get_session_messages(
     session_id: str,
     user_id: UUID = Depends(get_current_user),
 ):
-    """Get messages for a session."""
+    """Get messages for a session — works for both Hermes and agent sessions."""
+    # Try Hermes first
     db = _get_db()
-    if not db:
-        raise HTTPException(status_code=404, detail="Session database not found")
+    if db:
+        try:
+            rows = db.execute(
+                """
+                SELECT id, role, content, tool_calls, tool_name, timestamp
+                FROM messages
+                WHERE session_id = ? AND active = 1 AND compacted = 0
+                ORDER BY id
+            """,
+                (session_id,),
+            ).fetchall()
+            if rows:
+                messages = []
+                for r in rows:
+                    role = r["role"]
+                    content = r["content"] or ""
+                    if role == "tool":
+                        continue
+                    if role == "assistant" and not content.strip():
+                        continue
+                    messages.append(
+                        {
+                            "id": str(r["id"]),
+                            "role": role,
+                            "content": content,
+                            "timestamp": _ts_to_iso(r["timestamp"]),
+                            "source": "hermes-db",
+                        }
+                    )
+                return {"messages": messages, "total": len(messages)}
+        finally:
+            db.close()
 
-    try:
-        rows = db.execute(
-            """
-            SELECT id, role, content, tool_calls, tool_name, timestamp
-            FROM messages
-            WHERE session_id = ? AND active = 1 AND compacted = 0
-            ORDER BY id
-        """,
-            (session_id,),
-        ).fetchall()
+    # Try agent sessions
+    adb = _get_agent_db()
+    if adb:
+        try:
+            rows = adb.execute(
+                """
+                SELECT id, role, content, timestamp
+                FROM agent_messages
+                WHERE session_id = ?
+                ORDER BY id
+            """,
+                (session_id,),
+            ).fetchall()
+            messages = []
+            for r in rows:
+                messages.append(
+                    {
+                        "id": str(r["id"]),
+                        "role": r["role"],
+                        "content": r["content"] or "",
+                        "timestamp": _ts_to_iso(r["timestamp"]),
+                        "source": "agent-db",
+                    }
+                )
+            return {"messages": messages, "total": len(messages)}
+        finally:
+            adb.close()
 
-        messages = []
-        for r in rows:
-            role = r["role"]
-            content = r["content"] or ""
-            # Skip tool messages and empty assistant messages
-            if role == "tool":
-                continue
-            if role == "assistant" and not content.strip():
-                continue
-            messages.append(
-                {
-                    "id": str(r["id"]),
-                    "role": role,
-                    "content": content,
-                    "timestamp": _ts_to_iso(r["timestamp"]),
-                    "source": "hermes-db",
-                }
-            )
-
-        return {"messages": messages, "total": len(messages)}
-    except Exception as e:
-        logger.error("get_session_messages error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+    return {"messages": [], "total": 0}
