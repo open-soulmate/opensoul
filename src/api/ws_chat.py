@@ -2,13 +2,14 @@
 
 import asyncio
 import logging
+import os
 import shutil
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.acp.proxy import get_acp_process
 from src.api.user import decode_token
-from src.api.agents import AGENT_REGISTRY as AGENT_META
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,48 +18,103 @@ async def ws_chat_health():
     """WSChat health check."""
     return {"status": "ok", "component": "WSChat"}
 
-# CLI argument templates per binary (agent_proxy uses binary + args + text)
+# CLI argument overrides — agents not listed here default to: binary -p "message"
 CLI_ARGS: dict[str, list[str]] = {
     "hermes": ["-z"],
-    "mimo": ["run", "--prompt"],
-    "claude": ["-p"],
-    "codex": ["-q"],
-    "aider": ["--message"],
-    "cursor": ["--prompt"],
-    "copilot": ["-p"],
-    "windsurf": ["--prompt"],
+    "mimo": ["run"],
+    "codex": ["exec"],
+    "opencode": ["-q"],
+    "openclaw": ["agent", "-m"],
+    "copilot": ["copilot", "-p"],
+    "amazon-q": ["chat", "--no-interactive", "-p"],
 }
+
+# Cache of available agents from detect API
+_available_agents: dict[str, dict] = {}
+_agents_cache_ts: float = 0.0
+
+
+def _refresh_agent_list():
+    """Refresh agent list from AGENT_REGISTRY (same-process, no HTTP)."""
+    global _available_agents, _agents_cache_ts
+    now = time.time()
+    if now - _agents_cache_ts < 60 and _available_agents:
+        return
+    try:
+        from src.api.agents import AGENT_REGISTRY
+        _available_agents = {
+            k: v for k, v in AGENT_REGISTRY.items()
+            if v.get("available")
+        }
+        _agents_cache_ts = now
+        logger.info(f"Agent list refreshed: {len(_available_agents)} available")
+    except Exception as e:
+        logger.warning(f"Agent list refresh failed: {e}")
+
+
+def _get_llm_config() -> dict:
+    """Read system LLM config from .env."""
+    cfg: dict[str, str] = {}
+    try:
+        env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+        with open(os.path.abspath(env_path)) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("LLM_API_KEY="):
+                    cfg["api_key"] = line.split("=", 1)[1].strip()
+                elif line.startswith("LLM_BASE_URL="):
+                    cfg["base_url"] = line.split("=", 1)[1].strip()
+                elif line.startswith("LLM_MODEL="):
+                    cfg["model"] = line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    cfg.setdefault("api_key", os.environ.get("LLM_API_KEY", ""))
+    cfg.setdefault("base_url", os.environ.get("LLM_BASE_URL", ""))
+    cfg.setdefault("model", os.environ.get("LLM_MODEL", ""))
+    return cfg
 
 
 async def run_agent_proxy(agent_id: str, text: str) -> tuple[str, str, bool]:
-    """Run a message through agent proxy. Returns (response_text, source, success)."""
-    agent_meta = AGENT_META.get(agent_id)
-    if not agent_meta:
-        return f"未知Agent: {agent_id}", "error", False
+    """Run a message through any installed agent with system LLM config injected."""
+    _refresh_agent_list()
 
-    binary = agent_meta["binary"]
+    agent_info = _available_agents.get(agent_id)
+    binary = agent_info["binary"] if agent_info else agent_id
+
     if not shutil.which(binary):
         return f"Agent未安装: {binary}", "error", False
 
-    args = CLI_ARGS.get(binary, ["-p"])
+    args = CLI_ARGS.get(agent_id, ["-p"])
     cmd = [binary] + args + [text]
     logger.info(f"Agent proxy running: {' '.join(cmd)}")
 
     try:
+        env = os.environ.copy()
+        llm_cfg = _get_llm_config()
+        if llm_cfg.get("api_key"):
+            env["OPENAI_API_KEY"] = llm_cfg["api_key"]
+            env["ANTHROPIC_API_KEY"] = llm_cfg["api_key"]
+        if llm_cfg.get("base_url"):
+            env["OPENAI_BASE_URL"] = llm_cfg["base_url"]
+            env["OPENAI_API_BASE"] = llm_cfg["base_url"]
+        if llm_cfg.get("model"):
+            env["OPENAI_MODEL"] = llm_cfg["model"]
+            env["MODEL"] = llm_cfg["model"]
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        stdout, stderr = await proc.communicate()
         response = stdout.decode("utf-8", errors="replace").strip()
         if not response and proc.returncode != 0:
             response = stderr.decode("utf-8", errors="replace").strip()
         return response or "（无响应）", agent_id, proc.returncode == 0
-    except TimeoutError:
-        return "Agent响应超时 (120s)", "error", False
     except Exception as e:
-        return str(e), "error", False
+        logger.error(f"Agent proxy error: {e}")
+        return f"Agent执行出错: {type(e).__name__}", "error", False
 
 
 @router.websocket("/chat")
