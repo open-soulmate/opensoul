@@ -120,15 +120,28 @@ async def save_config(data: LLMConfigUpdate):
     return _get_config()
 
 
+class LLMTestRequest(BaseModel):
+    """Optional overrides for test — lets the frontend test unsaved settings."""
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+
+
 @router.post("/test")
-async def test_connection():
-    """Test LLM connection with a simple prompt."""
-    api_key = _llm_overrides.get("api_key", settings.llm_api_key)
-    base_url = _llm_overrides.get("base_url", settings.llm_base_url)
-    model = _llm_overrides.get("model", settings.llm_model)
+async def test_connection(body: LLMTestRequest | None = None):
+    """Test LLM connection with a simple prompt.
+    Accepts optional overrides so the frontend can test settings
+    the user has edited but not yet saved.
+    """
+    api_key = (body.api_key if body and body.api_key else None) or _llm_overrides.get("api_key", settings.llm_api_key)
+    base_url = (body.base_url if body and body.base_url else None) or _llm_overrides.get("base_url", settings.llm_base_url)
+    model = (body.model if body and body.model else None) or _llm_overrides.get("model", settings.llm_model)
 
     if not api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
+
+    # Mask key for display
+    masked_key = api_key[:8] + "***" + api_key[-4:] if len(api_key) > 12 else "***"
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -144,7 +157,13 @@ async def test_connection():
             resp.raise_for_status()
             data = resp.json()
             reply = data["choices"][0]["message"]["content"]
-            return {"status": "ok", "model": model, "reply": reply.strip()}
+            return {
+                "status": "ok",
+                "model": model,
+                "base_url": base_url,
+                "key_preview": masked_key,
+                "reply": reply.strip(),
+            }
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"LLM API error: {e.response.status_code}")
     except Exception as e:
