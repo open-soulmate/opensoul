@@ -229,6 +229,37 @@ async def get_session(
         db.close()
 
 
+@router.patch("/{session_id}")
+async def rename_session(
+    session_id: str,
+    body: dict,
+):
+    """Rename a session (update title)."""
+    new_title = body.get("title", "").strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="Title is required")
+
+    db = _get_db()
+    if not db:
+        raise HTTPException(status_code=404, detail="Session database not found")
+
+    try:
+        row = db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        db.execute("UPDATE sessions SET title = ? WHERE id = ?", (new_title, session_id))
+        db.commit()
+        return {"success": True, "id": session_id, "title": new_title}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("rename_session error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 @router.delete("/{session_id}")
 async def delete_session(
     session_id: str,
