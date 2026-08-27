@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.acp.proxy import get_acp_process
 from src.api.user import decode_token
+from src.api.agents import AGENT_REGISTRY as AGENT_META
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -16,52 +17,31 @@ async def ws_chat_health():
     """WSChat health check."""
     return {"status": "ok", "component": "WSChat"}
 
-# Agent proxy registry (same as agent_proxy.py)
-AGENT_REGISTRY = {
-    "hermes": {
-        "name": "Hermes Agent",
-        "binary": "hermes",
-        "args": ["-z"],
-        "description": "Nous Research Hermes Agent",
-    },
-    "mimo": {
-        "name": "MiMo Code",
-        "binary": "mimo",
-        "args": ["run", "--prompt"],
-        "description": "Xiaomi MiMo Code CLI",
-    },
-    "claude": {
-        "name": "Claude Code",
-        "binary": "claude",
-        "args": ["-p"],
-        "description": "Anthropic Claude Code CLI",
-    },
-    "codex": {
-        "name": "Codex CLI",
-        "binary": "codex",
-        "args": ["-q"],
-        "description": "OpenAI Codex CLI",
-    },
-    "aider": {
-        "name": "Aider",
-        "binary": "aider",
-        "args": ["--message"],
-        "description": "AI pair programming",
-    },
+# CLI argument templates per binary (agent_proxy uses binary + args + text)
+CLI_ARGS: dict[str, list[str]] = {
+    "hermes": ["-z"],
+    "mimo": ["run", "--prompt"],
+    "claude": ["-p"],
+    "codex": ["-q"],
+    "aider": ["--message"],
+    "cursor": ["--prompt"],
+    "copilot": ["-p"],
+    "windsurf": ["--prompt"],
 }
 
 
 async def run_agent_proxy(agent_id: str, text: str) -> tuple[str, str, bool]:
     """Run a message through agent proxy. Returns (response_text, source, success)."""
-    agent_config = AGENT_REGISTRY.get(agent_id)
-    if not agent_config:
+    agent_meta = AGENT_META.get(agent_id)
+    if not agent_meta:
         return f"未知Agent: {agent_id}", "error", False
 
-    binary = agent_config["binary"]
+    binary = agent_meta["binary"]
     if not shutil.which(binary):
         return f"Agent未安装: {binary}", "error", False
 
-    cmd = [binary] + agent_config["args"] + [text]
+    args = CLI_ARGS.get(binary, ["-p"])
+    cmd = [binary] + args + [text]
     logger.info(f"Agent proxy running: {' '.join(cmd)}")
 
     try:
