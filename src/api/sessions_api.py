@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from src.api.user import get_current_user
 
@@ -43,6 +44,38 @@ def _get_agent_db():
     db = sqlite3.connect(_OPENSOUL_DB)
     db.row_factory = sqlite3.Row
     return db
+
+
+def _ensure_session_tags_table(db: sqlite3.Connection):
+    """Create session_tags table if it doesn't exist."""
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS session_tags (
+            session_id TEXT NOT NULL,
+            tag_name TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (session_id, tag_name)
+        )"""
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_tags_name ON session_tags(tag_name)"
+    )
+    db.commit()
+
+
+def _get_session_tags_map(db: sqlite3.Connection, session_ids: list[str]) -> dict[str, list[str]]:
+    """Get tags for multiple sessions in one query. Returns {session_id: [tag_names]}."""
+    if not session_ids:
+        return {}
+    _ensure_session_tags_table(db)
+    placeholders = ",".join("?" for _ in session_ids)
+    rows = db.execute(
+        f"SELECT session_id, tag_name FROM session_tags WHERE session_id IN ({placeholders}) ORDER BY tag_name",
+        session_ids,
+    ).fetchall()
+    result: dict[str, list[str]] = {}
+    for r in rows:
+        result.setdefault(r["session_id"], []).append(r["tag_name"])
+    return result
 
 
 def _ts_to_iso(ts):
@@ -97,6 +130,7 @@ def _get_agent_sessions(limit: int = 100, offset: int = 0) -> list[dict]:
 async def list_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    tag: str = Query(default=None, description="Filter sessions by tag name"),
 ):
     """List recent sessions — merges Hermes sessions and agent proxy sessions."""
     all_sessions = []
@@ -140,6 +174,21 @@ async def list_sessions(
 
     # 3. Sort by last_activity_at descending
     all_sessions.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
+
+    # 4. Attach tags to each session
+    tag_db = _get_agent_db()
+    if tag_db:
+        try:
+            session_ids = [s["id"] for s in all_sessions if s.get("id")]
+            tags_map = _get_session_tags_map(tag_db, session_ids)
+            for s in all_sessions:
+                s["tags"] = tags_map.get(s["id"], [])
+
+            # Filter by tag if requested
+            if tag:
+                all_sessions = [s for s in all_sessions if tag.lower() in [t.lower() for t in s.get("tags", [])]]
+        finally:
+            tag_db.close()
 
     return {"sessions": all_sessions[:limit], "total": len(all_sessions), "limit": limit, "offset": offset}
 
@@ -444,3 +493,91 @@ async def get_session_messages(
             adb.close()
 
     return {"messages": [], "total": 0}
+
+
+# ── Session Tags API ──────────────────────────────────────────
+
+class TagRequest(BaseModel):
+    tag_name: str
+
+
+@router.get("/tags/all")
+async def list_all_tags():
+    """List all unique tag names across all sessions."""
+    db = _get_agent_db()
+    if not db:
+        return {"tags": []}
+    try:
+        _ensure_session_tags_table(db)
+        rows = db.execute(
+            """SELECT tag_name, COUNT(*) as count
+               FROM session_tags GROUP BY tag_name ORDER BY tag_name"""
+        ).fetchall()
+        return {"tags": [{"name": r["tag_name"], "count": r["count"]} for r in rows]}
+    except Exception as e:
+        logger.error("list_all_tags error: %s", e)
+        return {"tags": []}
+    finally:
+        db.close()
+
+
+@router.post("/{session_id}/tags")
+async def add_session_tag(session_id: str, body: TagRequest):
+    """Add a tag to a session."""
+    tag_name = body.tag_name.strip().lower()
+    if not tag_name or len(tag_name) > 50:
+        raise HTTPException(400, "Tag name must be 1-50 characters")
+    db = _get_agent_db()
+    if not db:
+        raise HTTPException(500, "Database not available")
+    try:
+        _ensure_session_tags_table(db)
+        db.execute(
+            "INSERT OR IGNORE INTO session_tags (session_id, tag_name) VALUES (?, ?)",
+            (session_id, tag_name),
+        )
+        db.commit()
+        return {"session_id": session_id, "tag": tag_name, "status": "added"}
+    except Exception as e:
+        logger.error("add_session_tag error: %s", e)
+        raise HTTPException(500, str(e))
+    finally:
+        db.close()
+
+
+@router.delete("/{session_id}/tags/{tag_name}")
+async def remove_session_tag(session_id: str, tag_name: str):
+    """Remove a tag from a session."""
+    db = _get_agent_db()
+    if not db:
+        raise HTTPException(500, "Database not available")
+    try:
+        _ensure_session_tags_table(db)
+        db.execute(
+            "DELETE FROM session_tags WHERE session_id = ? AND tag_name = ?",
+            (session_id, tag_name.strip().lower()),
+        )
+        db.commit()
+        return {"session_id": session_id, "tag": tag_name, "status": "removed"}
+    except Exception as e:
+        logger.error("remove_session_tag error: %s", e)
+        raise HTTPException(500, str(e))
+    finally:
+        db.close()
+
+
+@router.get("/{session_id}/tags")
+async def get_session_tags(session_id: str):
+    """Get all tags for a specific session."""
+    db = _get_agent_db()
+    if not db:
+        return {"tags": []}
+    try:
+        _ensure_session_tags_table(db)
+        rows = db.execute(
+            "SELECT tag_name, created_at FROM session_tags WHERE session_id = ? ORDER BY tag_name",
+            (session_id,),
+        ).fetchall()
+        return {"tags": [{"name": r["tag_name"], "created_at": r["created_at"]} for r in rows]}
+    finally:
+        db.close()
