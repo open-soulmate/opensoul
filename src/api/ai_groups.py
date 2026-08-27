@@ -1,6 +1,7 @@
 """AI群管理API — 基于Graph层四角色模型(advisor/executor/verifier/human)"""
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime
@@ -8,6 +9,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from src.api.ws_chat import run_agent_proxy
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai-groups", tags=["ai-groups"])
 @router.get("/health")
@@ -471,6 +476,134 @@ def assign_task(group_id: str, task_id: str, req: AssignTaskRequest):
         )
         conn.commit()
         return {"status": "executing", "assigned_to": req.agent_id}
+    finally:
+        conn.close()
+
+
+class ExecuteTaskRequest(BaseModel):
+    agent_id: str
+    goal: str
+
+
+def _resolve_agent_binary(agent_id: str, model: str = "") -> str:
+    """将AI群组agent_id映射到实际CLI agent二进制名。
+    
+    群组里的agent_id如 executor-1/advisor-1 不是真实binary名，
+    需要根据model字段或agent_id关键词推断应该调用哪个CLI agent。
+    """
+    import shutil
+    
+    # 直接匹配 — agent_id本身就是binary名
+    if shutil.which(agent_id):
+        return agent_id
+    
+    # 根据model字段推断
+    model_lower = model.lower()
+    model_to_agent = {
+        "claude": "claude",
+        "opus": "claude",
+        "sonnet": "claude",
+        "haiku": "claude",
+        "gpt": "codex",
+        "o4": "codex",
+        "o3": "codex",
+        "o1": "codex",
+        "mimo": "mimo",
+        "deepseek": "deepseek",
+        "qwen": "qwen",
+        "gemini": "gemini",
+        "llama": "ollama",
+        "qwen2": "ollama",
+    }
+    for keyword, binary in model_to_agent.items():
+        if keyword in model_lower and shutil.which(binary):
+            return binary
+    
+    # 根据agent_id关键词推断
+    id_lower = agent_id.lower()
+    id_to_agent = {
+        "advisor": "hermes",
+        "executor": "hermes",
+        "verifier": "hermes",
+        "claude": "claude",
+        "gpt": "codex",
+        "mimo": "mimo",
+        "codex": "codex",
+    }
+    for keyword, binary in id_to_agent.items():
+        if keyword in id_lower and shutil.which(binary):
+            return binary
+    
+    # 默认用hermes
+    if shutil.which("hermes"):
+        return "hermes"
+    
+    return agent_id  # 最后回退
+
+
+@router.post("/{group_id}/tasks/{task_id}/execute")
+async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
+    """真正执行Agent任务 — 调用run_agent_proxy获取实际结果"""
+    conn = get_db()
+    try:
+        task = conn.execute(
+            "SELECT * FROM ai_group_tasks WHERE id=? AND group_id=?", (task_id, group_id)
+        ).fetchone()
+        if not task:
+            raise HTTPException(404, "任务不存在")
+
+        # 查找agent的model信息用于resolve
+        agent_row = conn.execute(
+            "SELECT * FROM ai_group_agents WHERE group_id=? AND agent_id=?", (group_id, req.agent_id)
+        ).fetchone()
+        agent_model = agent_row["model"] if agent_row else ""
+
+        now = datetime.now().isoformat()
+
+        # 更新状态为executing
+        conn.execute(
+            "UPDATE ai_group_tasks SET assigned_agent_id=?, status='executing', updated_at=? WHERE id=?",
+            (req.agent_id, now, task_id),
+        )
+        conn.commit()
+
+        # 解析真实binary名并执行
+        real_binary = _resolve_agent_binary(req.agent_id, agent_model)
+        logger.info(f"Agent resolve: {req.agent_id} (model={agent_model}) -> {real_binary}")
+        response_text, source, success = await run_agent_proxy(real_binary, req.goal)
+
+        # 保存结果
+        result_now = datetime.now().isoformat()
+        conn.execute(
+            "UPDATE ai_group_tasks SET result=?, status='reviewing', updated_at=? WHERE id=?",
+            (response_text, result_now, task_id),
+        )
+
+        # 记录执行消息到讨论
+        conn.execute(
+            "INSERT INTO discussion_messages (id, group_id, task_id, agent_id, agent_name, intent, content, metadata, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4())[:8],
+                group_id,
+                task_id,
+                req.agent_id,
+                req.agent_id,
+                "result",
+                response_text[:2000],  # 截断过长内容
+                json.dumps({"source": source, "success": success, "full_length": len(response_text)}, ensure_ascii=False),
+                result_now,
+            ),
+        )
+        conn.commit()
+
+        return {
+            "status": "reviewing",
+            "task_id": task_id,
+            "agent_id": req.agent_id,
+            "response": response_text,
+            "source": source,
+            "success": success,
+        }
     finally:
         conn.close()
 
