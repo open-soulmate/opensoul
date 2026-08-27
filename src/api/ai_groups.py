@@ -1115,3 +1115,168 @@ def get_agent_capabilities(group_id: str, agent_id: str):
         }
     finally:
         conn.close()
+
+
+# ── Capability keyword mapping ──────────────────────────────────────
+# Maps Chinese/English task keywords to capability dimensions
+_CAPABILITY_KEYWORDS: dict[str, list[str]] = {
+    "coding": ["代码", "编程", "开发", "实现", "编写", "code", "programming", "develop", "implement", "build", "写代码", "函数", "接口", "api", "bug", "修复", "fix"],
+    "writing": ["文档", "写作", "报告", "方案", "文章", "write", "document", "report", "article", "撰写", "编写文档", "README"],
+    "analysis": ["分析", "研究", "调研", "对比", "评估", "analyze", "research", "evaluate", "compare", "数据", "统计"],
+    "design": ["设计", "架构", "规划", "UI", "UX", "design", "architecture", "plan", "界面", "交互"],
+    "devops": ["部署", "运维", "配置", "容器", "docker", "deploy", "config", "server", "服务器", "nginx", "CI", "CD"],
+    "testing": ["测试", "验证", "检查", "test", "verify", "check", "质量", "QA", "单元测试"],
+    "data": ["数据", "数据库", "SQL", "data", "database", "查询", "ETL", "pipeline"],
+    "security": ["安全", "加密", "权限", "认证", "security", "auth", "encrypt", "RBAC"],
+    "frontend": ["前端", "页面", "组件", "React", "CSS", "HTML", "frontend", "page", "component", "UI组件"],
+    "backend": ["后端", "服务", "微服务", "API", "backend", "service", "FastAPI", "Express"],
+}
+
+
+class SmartAssignRequest(BaseModel):
+    goal: str
+    constraints: list[str] = []
+
+
+def _extract_capability_tags(goal: str) -> list[str]:
+    """Extract capability dimension tags from a task goal string."""
+    goal_lower = goal.lower()
+    matched = []
+    for cap, keywords in _CAPABILITY_KEYWORDS.items():
+        if any(kw.lower() in goal_lower for kw in keywords):
+            matched.append(cap)
+    # If nothing matched, default to 'coding' as the most general
+    return matched if matched else ["coding"]
+
+
+@router.post("/{group_id}/smart-assign")
+async def smart_assign(group_id: str, req: SmartAssignRequest):
+    """智能分配 — 基于Agent能力画像匹配任务到最佳Agent。
+
+    1. 从goal提取能力维度标签
+    2. 查询群组所有Agent的能力画像
+    3. 按匹配度排序，返回推荐分配方案
+    """
+    conn = get_db()
+    try:
+        group = conn.execute("SELECT id FROM ai_groups WHERE id=?", (group_id,)).fetchone()
+        if not group:
+            raise HTTPException(404, "群组不存在")
+
+        agents = rows_to_list(
+            conn.execute("SELECT * FROM ai_group_agents WHERE group_id=?", (group_id,)).fetchall()
+        )
+        if not agents:
+            raise HTTPException(400, "群组无Agent")
+
+        tags = _extract_capability_tags(req.goal)
+        logger.info(f"Smart assign: goal='{req.goal[:50]}' → tags={tags}")
+
+        # Score each agent
+        scored_agents = []
+        for agent in agents:
+            agent_id = agent["agent_id"]
+            role = agent.get("role", "executor")
+
+            # Get capability scores for this agent
+            caps = rows_to_list(
+                conn.execute(
+                    "SELECT capability, avg_score, task_count FROM agent_capabilities WHERE group_id=? AND agent_id=?",
+                    (group_id, agent_id),
+                ).fetchall()
+            )
+
+            # Calculate match score
+            if caps:
+                cap_map = {c["capability"]: c for c in caps}
+                # Matched capabilities with scores
+                matched_scores = []
+                for tag in tags:
+                    if tag in cap_map:
+                        matched_scores.append(cap_map[tag]["avg_score"])
+                    # Also check partial matches
+                    for cap_name, cap_data in cap_map.items():
+                        if tag in cap_name or cap_name in tag:
+                            if cap_data["avg_score"] not in matched_scores:
+                                matched_scores.append(cap_data["avg_score"])
+
+                if matched_scores:
+                    avg_match = sum(matched_scores) / len(matched_scores)
+                    # Bonus for having more matching capabilities
+                    match_ratio = len(matched_scores) / len(tags) if tags else 0
+                    suitability = avg_match * 0.7 + match_ratio * 3  # max ~10
+                else:
+                    # Has capabilities but none match → use overall average
+                    all_scores = [c["avg_score"] for c in caps]
+                    suitability = sum(all_scores) / len(all_scores) * 0.5  # penalize mismatch
+            else:
+                # No capability data → neutral score (new agent)
+                suitability = 5.0
+
+            scored_agents.append({
+                "agent_id": agent_id,
+                "agent_name": agent.get("name", agent_id),
+                "role": role,
+                "suitability": round(suitability, 2),
+                "matched_capabilities": [t for t in tags if any(t in c["capability"] for c in caps)] if caps else [],
+                "overall_rank": round(sum(c["avg_score"] for c in caps) / len(caps), 2) if caps else 0,
+                "task_count": sum(c["task_count"] for c in caps) if caps else 0,
+            })
+
+        # Sort by suitability descending
+        scored_agents.sort(key=lambda a: a["suitability"], reverse=True)
+
+        # Build assignment plan
+        executors = [a for a in scored_agents if a["role"] == "executor"]
+        advisors = [a for a in scored_agents if a["role"] == "advisor"]
+        verifiers = [a for a in scored_agents if a["role"] == "verifier"]
+
+        assignments = []
+        reasoning = []
+
+        if executors:
+            # Pick the best executor
+            best = executors[0]
+            assignments.append({
+                "agent_id": best["agent_id"],
+                "subgoal": req.goal,
+                "reason": f"最佳匹配: 能力评分{best['suitability']}, 已完成{best['task_count']}个任务",
+            })
+            reasoning.append(f"执行者选择 {best['agent_name']} (匹配度{best['suitability']})")
+
+            # If task is complex (long goal), add a second executor for parallel work
+            if len(req.goal) > 50 and len(executors) > 1:
+                second = executors[1]
+                assignments.append({
+                    "agent_id": second["agent_id"],
+                    "subgoal": f"辅助完成: {req.goal}",
+                    "reason": f"辅助执行: 能力评分{second['suitability']}",
+                })
+                reasoning.append(f"辅助执行者 {second['agent_name']} (匹配度{second['suitability']})")
+
+        if advisors:
+            best_advisor = advisors[0]
+            assignments.append({
+                "agent_id": best_advisor["agent_id"],
+                "subgoal": f"审查任务执行结果: {req.goal}",
+                "reason": f"审查: 能力评分{best_advisor['suitability']}",
+            })
+            reasoning.append(f"审查者 {best_advisor['agent_name']}")
+
+        if verifiers:
+            best_verifier = verifiers[0]
+            assignments.append({
+                "agent_id": best_verifier["agent_id"],
+                "subgoal": f"验证任务完成质量: {req.goal}",
+                "reason": f"验证: 能力评分{best_verifier['suitability']}",
+            })
+            reasoning.append(f"验证者 {best_verifier['agent_name']}")
+
+        return {
+            "task_tags": tags,
+            "agents_ranked": scored_agents,
+            "assignments": assignments,
+            "reasoning": reasoning,
+        }
+    finally:
+        conn.close()
