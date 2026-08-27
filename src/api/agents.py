@@ -933,8 +933,16 @@ async def _run_install(agent_id: str, cmd: str):
     """Run install command in background with progress tracking."""
     task = _install_tasks[agent_id]
     try:
+        # Force line-buffered output for pip/npm (they buffer when not on a TTY)
+        env_prefix = ""
+        if "pip " in cmd or "pip3 " in cmd:
+            env_prefix = "PYTHONUNBUFFERED=1 "
+        elif "npm " in cmd:
+            env_prefix = ""
+        full_cmd = env_prefix + cmd
+
         proc = await asyncio.create_subprocess_shell(
-            cmd,
+            full_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -946,13 +954,13 @@ async def _run_install(agent_id: str, cmd: str):
             if text:
                 task["output"].append(text)
                 lower = text.lower()
-                if any(w in lower for w in ["success", "installed", "complete", "added"]):
+                if any(w in lower for w in ["success", "installed", "complete", "added", "satisfied"]):
                     task["progress"] = 100
                 elif any(w in lower for w in ["downloading", "fetching", "receiving"]):
                     task["progress"] = min(task["progress"] + 15, 60)
-                elif any(w in lower for w in ["building", "compiling", "linking"]):
+                elif any(w in lower for w in ["installing", "building", "compiling", "linking"]):
                     task["progress"] = min(task["progress"] + 10, 80)
-                elif any(w in lower for w in ["resolving", "collecting", "using"]):
+                elif any(w in lower for w in ["resolving", "collecting", "using", "already"]):
                     task["progress"] = min(task["progress"] + 5, 40)
                 elif "error" in lower or "failed" in lower:
                     task["progress"] = task["progress"]  # don't advance on errors
