@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import sqlite3
 import uuid
 from datetime import datetime
@@ -205,6 +206,13 @@ class ScoreTaskRequest(BaseModel):
     score: int
     reason: str = ""
     capability: str = ""
+
+
+class AutoEvaluateRequest(BaseModel):
+    """自动评估请求 — 由前端在任务执行完成后调用"""
+    capability: str = ""  # 能力维度，空则自动推断
+    success: bool = True  # 执行是否成功
+    source: str = ""  # 执行来源 (local/remote)
 
 
 # ── Helper ───────────────────────────────────────────────
@@ -594,15 +602,42 @@ async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
                 result_now,
             ),
         )
+
+        # ── 自动评分：基于结果质量启发式打分 + 更新能力画像 ──
+        auto_score, capability = _auto_score(success, response_text, task["goal"] if "goal" in task.keys() else req.goal)
+        conn.execute(
+            "UPDATE ai_group_tasks SET quality_score=?, status='scored', updated_at=? WHERE id=?",
+            (auto_score, result_now, task_id),
+        )
+        # 记录分数到agent_scores表
+        conn.execute(
+            "INSERT INTO agent_scores (id, task_id, group_id, scored_agent_id, scorer_agent_id, score, dimension, comment, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4())[:8],
+                task_id,
+                group_id,
+                req.agent_id,
+                "auto-scorer",
+                auto_score,
+                capability,
+                f"自动评分: 成功={success}, 长度={len(response_text)}, 能力类别={capability}",
+                result_now,
+            ),
+        )
+        # 更新Agent能力画像
+        update_agent_capability(group_id, req.agent_id, capability, auto_score)
+
         conn.commit()
 
         return {
-            "status": "reviewing",
+            "status": "scored",
             "task_id": task_id,
             "agent_id": req.agent_id,
             "response": response_text,
             "source": source,
             "success": success,
+            "auto_score": auto_score,
+            "capability": capability,
         }
     finally:
         conn.close()
@@ -1277,6 +1312,161 @@ async def smart_assign(group_id: str, req: SmartAssignRequest):
             "agents_ranked": scored_agents,
             "assignments": assignments,
             "reasoning": reasoning,
+        }
+    finally:
+        conn.close()
+
+
+# ── Auto-Evaluate: close the feedback loop ─────────────────────────
+
+def _auto_score_from_result(result_text: str, success: bool, goal: str) -> tuple[int, str, str]:
+    """基于执行结果自动评分，返回 (score, reason, capability)。
+
+    评分逻辑：
+    - 执行失败 → 3分
+    - 结果为空/过短 → 4分
+    - 结果有内容但很短 → 6分
+    - 结果充实 → 7-9分
+    - 结果非常完整且包含结构化内容 → 9分
+    """
+    # Auto-detect capability from goal
+    tags = _extract_capability_tags(goal)
+    capability = tags[0] if tags else "coding"
+
+    if not success:
+        return 3, "执行失败: Agent未返回有效结果", capability
+
+    text = (result_text or "").strip()
+    if not text:
+        return 4, "执行结果为空", capability
+
+    length = len(text)
+
+    # Quality signals
+    has_structure = any(marker in text for marker in ["##", "```", "| ", "- ", "1.", "2."])
+    has_code = "```" in text
+    has_explanation = length > 200
+    is_comprehensive = length > 800
+    is_very_long = length > 2000
+
+    if is_very_long and has_structure:
+        score = 9
+        reason = f"结果非常完整({length}字符)，包含结构化内容"
+    elif is_comprehensive and has_structure:
+        score = 8
+        reason = f"结果充实({length}字符)，有良好结构"
+    elif is_comprehensive:
+        score = 7
+        reason = f"结果充实({length}字符)"
+    elif has_explanation and has_code:
+        score = 7
+        reason = f"包含代码和说明({length}字符)"
+    elif has_explanation:
+        score = 6
+        reason = f"结果有说明但不够详细({length}字符)"
+    elif length > 50:
+        score = 5
+        reason = f"结果较短({length}字符)"
+    else:
+        score = 4
+        reason = f"结果过短({length}字符)，可能未完成任务"
+
+    return score, reason, capability
+
+
+@router.post("/{group_id}/tasks/{task_id}/auto-evaluate")
+async def auto_evaluate_task(group_id: str, task_id: str, req: AutoEvaluateRequest):
+    """自动评估任务结果 — 无需人工干预，直接生成评分并更新能力画像。
+
+    评分维度：
+    1. 执行成功/失败
+    2. 结果长度和结构化程度
+    3. 内容质量信号（代码、解释、格式）
+
+    自动触发能力画像更新，完成闭环。
+    """
+    conn = get_db()
+    try:
+        task = conn.execute(
+            "SELECT * FROM ai_group_tasks WHERE id=? AND group_id=?", (task_id, group_id)
+        ).fetchone()
+        if not task:
+            raise HTTPException(404, "任务不存在")
+
+        assigned_agent = task["assigned_agent_id"]
+        if not assigned_agent:
+            raise HTTPException(400, "任务未分配Agent")
+
+        result_text = task["result"] or ""
+        goal = task["goal"] or ""
+
+        # Calculate auto score
+        score, reason, capability = _auto_score_from_result(result_text, req.success, goal)
+
+        # Use user-specified capability if provided
+        if req.capability:
+            capability = req.capability
+
+        now = datetime.now().isoformat()
+
+        # Insert auto-score record
+        conn.execute(
+            "INSERT INTO agent_scores (id, task_id, group_id, scored_agent_id, scorer_agent_id, score, reason, capability, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4())[:8],
+                task_id,
+                group_id,
+                assigned_agent,
+                "auto-evaluator",
+                score,
+                reason,
+                capability,
+                now,
+            ),
+        )
+
+        # Update capability profile
+        update_agent_capability(group_id, assigned_agent, capability, score)
+
+        # Mark task as scored
+        conn.execute(
+            "UPDATE ai_group_tasks SET quality_score=?, status='scored', updated_at=? WHERE id=?",
+            (float(score), now, task_id),
+        )
+
+        # Record auto-evaluate message in discussion
+        conn.execute(
+            "INSERT INTO discussion_messages (id, group_id, task_id, agent_id, agent_name, intent, content, metadata, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4())[:8],
+                group_id,
+                task_id,
+                "auto-evaluator",
+                "Auto-Evaluator",
+                "score",
+                f"📊 自动评分: {score}/10\n能力维度: {capability}\n{reason}",
+                json.dumps({"auto": True, "score": score, "capability": capability}, ensure_ascii=False),
+                now,
+            ),
+        )
+
+        conn.commit()
+
+        # Get updated capability profile
+        caps = rows_to_list(
+            conn.execute(
+                "SELECT capability, avg_score, task_count, trend FROM agent_capabilities WHERE group_id=? AND agent_id=?",
+                (group_id, assigned_agent),
+            ).fetchall()
+        )
+
+        return {
+            "status": "scored",
+            "auto_score": score,
+            "reason": reason,
+            "capability": capability,
+            "agent_id": assigned_agent,
+            "capability_profile": caps,
         }
     finally:
         conn.close()
