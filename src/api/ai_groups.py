@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 import sqlite3
 import uuid
 from datetime import datetime
@@ -604,14 +603,15 @@ async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
         )
 
         # ── 自动评分：基于结果质量启发式打分 + 更新能力画像 ──
-        auto_score, capability = _auto_score(success, response_text, task["goal"] if "goal" in task.keys() else req.goal)
+        goal_text = task["goal"] if "goal" in task.keys() else req.goal
+        auto_score, auto_reason, capability = _auto_score_from_result(response_text, success, goal_text)
         conn.execute(
             "UPDATE ai_group_tasks SET quality_score=?, status='scored', updated_at=? WHERE id=?",
             (auto_score, result_now, task_id),
         )
         # 记录分数到agent_scores表
         conn.execute(
-            "INSERT INTO agent_scores (id, task_id, group_id, scored_agent_id, scorer_agent_id, score, dimension, comment, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO agent_scores (id, task_id, group_id, scored_agent_id, scorer_agent_id, score, reason, capability, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 str(uuid.uuid4())[:8],
                 task_id,
@@ -619,8 +619,8 @@ async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
                 req.agent_id,
                 "auto-scorer",
                 auto_score,
+                auto_reason,
                 capability,
-                f"自动评分: 成功={success}, 长度={len(response_text)}, 能力类别={capability}",
                 result_now,
             ),
         )
@@ -637,6 +637,7 @@ async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
             "source": source,
             "success": success,
             "auto_score": auto_score,
+            "reason": auto_reason,
             "capability": capability,
         }
     finally:
