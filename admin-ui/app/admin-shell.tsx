@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -34,6 +34,7 @@ const NAV = [
   { path: '/hippo', label: '海马体', icon: <Database className="w-full h-full" /> },
   { path: '/immune', label: '免疫', icon: <ShieldCheck className="w-full h-full" /> },
   { path: '/pulse', label: '脉搏', icon: <CircleDot className="w-full h-full" /> },
+  { path: '/entity', label: '实体', icon: <Layers className="w-full h-full" /> },
   { path: '/topology', label: '拓扑', icon: <NetworkIcon className="w-full h-full" /> },
   { path: '/llm', label: 'LLM', icon: <Cpu className="w-full h-full" /> },
   { path: '/voice', label: '语音', icon: <Mic className="w-full h-full" /> },
