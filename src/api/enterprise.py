@@ -99,18 +99,15 @@ _init_db()
 
 
 def _hash_password(password: str) -> str:
-    salt = os.urandom(32)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
-    return salt.hex() + ":" + key.hex()
+    import bcrypt as _bcrypt
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def _verify_password(password: str, stored: str) -> bool:
+    import bcrypt as _bcrypt
     try:
-        salt_hex, key_hex = stored.split(":", 1)
-        salt = bytes.fromhex(salt_hex)
-        key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
-        return hmac.compare_digest(key.hex(), key_hex)
-    except (ValueError, AttributeError):
+        return _bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
+    except Exception:
         return False
 
 

@@ -779,21 +779,32 @@ AGENT_REGISTRY = {
 _install_tasks: dict[str, dict] = {}
 
 
+_detect_cache: dict | None = None
+_detect_cache_time: float = 0
+_DETECT_CACHE_TTL = 300  # 5 minutes
+
 @router.get("/detect")
 async def detect_agents():
-    """检测本机安装的AI Agent"""
+    """检测本机安装的AI Agent (结果缓存5分钟)"""
+    global _detect_cache, _detect_cache_time
+    import time
+    now = time.time()
+    if _detect_cache and (now - _detect_cache_time) < _DETECT_CACHE_TTL:
+        return _detect_cache
+
     os_name = _get_os()
     result = []
     for agent_id, info in AGENT_REGISTRY.items():
         path = shutil.which(info["binary"])
         version = None
         if path:
+            # Only probe version for installed agents (skip to avoid 2s timeout per missing binary)
             try:
                 r = subprocess.run(
                     [info["binary"], "--version"],
                     capture_output=True,
                     text=True,
-                    timeout=2,
+                    timeout=3,
                     env={**os.environ, "NO_COLOR": "1"},
                 )
                 version = r.stdout.strip()[:50] or None
@@ -814,7 +825,9 @@ async def detect_agents():
                 "os": os_name,
             }
         )
-    return {"os": os_name, "agents": result, "total": len(result)}
+    _detect_cache = {"os": os_name, "agents": result, "total": len(result)}
+    _detect_cache_time = now
+    return _detect_cache
 
 
 class InstallRequest(BaseModel):

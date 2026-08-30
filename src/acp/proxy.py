@@ -92,6 +92,29 @@ class ACPProcess:
             break
         return await self._cli(text)
 
+    async def send_message_stream(self, text: str, session_id: str | None = None):
+        """Yield chunks as they arrive from ACP. Falls back to CLI if needed."""
+        if not self.is_running or not self._initialized:
+            await self.start()
+        sid = session_id or self._default_session_id or "default"
+        try:
+            async for chunk in self._prompt_parts_stream([{"type": "text", "text": text}], sid):
+                yield chunk
+        except (BrokenPipeError, OSError) as e:
+            print(f"ACP: stream pipe error {e}, restarting", flush=True)
+            await self._restart()
+            try:
+                async for chunk in self._prompt_parts_stream([{"type": "text", "text": text}], sid):
+                    yield chunk
+            except Exception as e2:
+                print(f"ACP: stream retry error {e2}, falling back to CLI", flush=True)
+                result = await self._cli(text)
+                yield result.get("response_text", "")
+        except Exception as e:
+            print(f"ACP: stream error {e}, falling back to CLI", flush=True)
+            result = await self._cli(text)
+            yield result.get("response_text", "")
+
     async def send_message_with_image(
         self,
         text: str,
@@ -258,6 +281,72 @@ class ACPProcess:
             response["response_text"] = "".join(collected)
             response["source"] = "acp"
             return response
+
+    async def _prompt_parts_stream(self, parts: list[dict], session_id: str):
+        """Send prompt and yield chunks as they arrive (async generator)."""
+        self._msg_id += 1
+        msg_id = str(self._msg_id)
+        request = {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "method": "session/prompt",
+            "params": {"prompt": parts, "sessionId": session_id},
+        }
+
+        async with self._read_lock:
+            # Drain stale events
+            while True:
+                try:
+                    stale = await asyncio.wait_for(self._proc.stdout.readline(), timeout=0.3)
+                    if stale:
+                        self._parse(stale)
+                    else:
+                        break
+                except TimeoutError:
+                    break
+
+            self._proc.stdin.write((json.dumps(request) + "\n").encode())
+            await self._proc.stdin.drain()
+
+            response_done = False
+            start = time.time()
+
+            while time.time() - start < 60:
+                try:
+                    raw = await asyncio.wait_for(self._proc.stdout.readline(), timeout=2)
+                except TimeoutError:
+                    if response_done:
+                        break
+                    continue
+                if not raw:
+                    break
+
+                msg = self._parse(raw)
+                if not msg:
+                    continue
+
+                # Our response?
+                if str(msg.get("id", "")) == msg_id:
+                    if "error" in msg:
+                        raise Exception(msg["error"])
+                    response_done = True
+                    continue
+
+                # Event?
+                method = msg.get("method", "")
+                if method == "session/update":
+                    update = msg.get("params", {}).get("update", {})
+                    su = update.get("sessionUpdate", "")
+                    if su == "agent_message_chunk":
+                        content = update.get("content", "")
+                        if (
+                            isinstance(content, dict)
+                            and content.get("type") == "text"
+                            and content.get("text")
+                        ):
+                            yield content["text"]
+                    elif su == "usage_update" and response_done:
+                        break
 
     async def _cli(self, text: str) -> dict:
         try:

@@ -45,6 +45,7 @@ from src.api.intelligence import router as intelligence_router
 from src.api.kb_sharing import router as kb_sharing_router
 from src.api.knowledge import router as knowledge_router
 from src.api.knowledge_requests import router as knowledge_requests_router
+from src.api.feedback import router as feedback_router
 from src.api.learn import router as learn_router
 from src.api.limb import router as limb_router
 from src.api.limb_rpa import router as limb_rpa_router
@@ -297,7 +298,7 @@ app.add_middleware(IntrusionDetectionMiddleware)
 # Static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
-app.mount("/admin", StaticFiles(directory=os.path.join(_static_dir, "admin")), name="admin")
+app.mount("/admin", StaticFiles(directory=os.path.join(_static_dir, "admin"), html=True), name="admin")
 
 
 # Root route — serve admin dashboard
@@ -454,6 +455,7 @@ async def version():
 
 # Register all API routers
 app.include_router(knowledge_router, prefix="/api/knowledge", tags=["knowledge"])
+app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
 app.include_router(
     knowledge_requests_router, prefix="/api/knowledge-requests", tags=["knowledge-requests"]
 )

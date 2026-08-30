@@ -128,7 +128,7 @@ def _get_agent_sessions(limit: int = 100, offset: int = 0) -> list[dict]:
 
 @router.get("")
 async def list_sessions(
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     tag: str = Query(default=None, description="Filter sessions by tag name"),
 ):

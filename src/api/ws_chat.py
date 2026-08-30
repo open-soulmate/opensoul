@@ -184,7 +184,7 @@ async def chat_websocket(websocket: WebSocket):
                         acp = get_acp_process()
 
                         if image_attachments and mode in ("hermes", "acp"):
-                            # Send with image via ACP
+                            # Send with image via ACP (no streaming for images)
                             img = image_attachments[0]
                             result = await acp.send_message_with_image(
                                 text,
@@ -194,27 +194,20 @@ async def chat_websocket(websocket: WebSocket):
                             )
                             response_text = result.get("response_text", "")
                             source = result.get("source", "acp")
-                        elif mode == "hermes":
-                            result = await acp.send_message(text, session_id)
-                            response_text = result.get("response_text", "")
-                            source = result.get("source", "hermes")
-                        elif mode == "acp":
-                            result = await acp.send_message(text, session_id)
-                            response_text = result.get("response_text", "")
-                            source = result.get("source", "acp")
+                        elif mode in ("hermes", "acp"):
+                            # Real streaming via ACP
+                            collected = []
+                            async for chunk in acp.send_message_stream(text, session_id):
+                                collected.append(chunk)
+                                await websocket.send_json({"type": "chunk", "text": chunk})
+                            response_text = "".join(collected)
+                            source = "acp"
                         else:
                             response_text = "不支持的模式"
                             source = "error"
 
                     # Send response
                     if response_text:
-                        # Simulate streaming by sending chunks
-                        chunk_size = 20
-                        for i in range(0, len(response_text), chunk_size):
-                            chunk = response_text[i : i + chunk_size]
-                            await websocket.send_json({"type": "chunk", "text": chunk})
-                            await asyncio.sleep(0.05)
-
                         await websocket.send_json(
                             {
                                 "type": "done",
