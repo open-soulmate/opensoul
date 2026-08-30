@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -22,6 +22,7 @@ const NAV = [
   { path: '/cron', label: '定时任务', icon: <Timer className="w-full h-full" /> },
   { path: '/mcp', label: 'MCP', icon: <Plug className="w-full h-full" /> },
   { path: '/pipeline', label: '流水线', icon: <Workflow className="w-full h-full" /> },
+  { path: '/workflow', label: '工作流', icon: <ListChecks className="w-full h-full" /> },
   { path: '/notifications', label: '通知', icon: <Bell className="w-full h-full" /> },
   { path: '/monitoring', label: '监控', icon: <Activity className="w-full h-full" /> },
   { path: '/llm', label: 'LLM', icon: <Cpu className="w-full h-full" /> },
