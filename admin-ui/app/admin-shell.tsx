@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -15,6 +15,7 @@ const NAV = [
   { path: '/users', label: '用户', icon: <Users className="w-full h-full" /> },
   { path: '/knowledge', label: '知识库', icon: <BookOpen className="w-full h-full" /> },
   { path: '/agents', label: 'Agent', icon: <Bot className="w-full h-full" /> },
+  { path: '/sessions', label: '会话', icon: <MessageSquare className="w-full h-full" /> },
   { path: '/permissions', label: '权限', icon: <Shield className="w-full h-full" /> },
   { path: '/system', label: '系统', icon: <Settings className="w-full h-full" /> },
 ];
