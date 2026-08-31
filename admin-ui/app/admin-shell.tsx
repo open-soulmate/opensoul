@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search, Volume2, Copy } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search, Volume2, Copy, FolderOpen } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -44,6 +44,7 @@ const NAV = [
   { path: '/events', label: '事件流', icon: <Radio className="w-full h-full" /> },
   { path: '/healer', label: '自愈', icon: <Heart className="w-full h-full" /> },
   { path: '/admin-actions', label: '运维操作', icon: <Wrench className="w-full h-full" /> },
+  { path: '/workspace', label: '工作空间', icon: <FolderOpen className="w-full h-full" /> },
   { path: '/reflex', label: '条件反射', icon: <Zap className="w-full h-full" /> },
   { path: '/heredity', label: '遗传链', icon: <Dna className="w-full h-full" /> },
   { path: '/gene', label: '基因模板', icon: <Dna className="w-full h-full" /> },
