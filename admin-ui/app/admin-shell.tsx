@@ -38,6 +38,7 @@ const NAV = [
   { path: '/limb', label: 'RPA', icon: <Hand className="w-full h-full" /> },
   { path: '/events', label: '事件流', icon: <Radio className="w-full h-full" /> },
   { path: '/healer', label: '自愈', icon: <Heart className="w-full h-full" /> },
+  { path: '/heredity', label: '遗传链', icon: <Dna className="w-full h-full" /> },
   { path: '/gene', label: '基因模板', icon: <Dna className="w-full h-full" /> },
   { path: '/registry', label: '注册中心', icon: <Package className="w-full h-full" /> },
   { path: '/benchmark', label: '基准测试', icon: <Gauge className="w-full h-full" /> },
