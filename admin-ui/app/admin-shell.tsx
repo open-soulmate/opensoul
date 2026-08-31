@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search, Volume2, Copy, FolderOpen, Tag } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search, Volume2, Copy, FolderOpen, Tag, Terminal } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -25,6 +25,7 @@ const NAV = [
   { path: '/knowledge-graph', label: '知识图谱', icon: <Network className="w-full h-full" /> },
   { path: '/brain', label: '知识大脑', icon: <Brain className="w-full h-full" /> },
   { path: '/agent-nodes', label: '节点管理', icon: <Server className="w-full h-full" /> },
+  { path: '/agent-proxy', label: 'Agent代理', icon: <Terminal className="w-full h-full" /> },
   { path: '/agents', label: 'Agent', icon: <Bot className="w-full h-full" /> },
   { path: '/collab', label: 'Agent协作', icon: <Users className="w-full h-full" /> },
   { path: '/ai-groups', label: 'AI群组', icon: <UsersRound className="w-full h-full" /> },
