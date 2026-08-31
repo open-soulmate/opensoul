@@ -60,6 +60,7 @@ const NAV = [
   { path: '/feedback', label: '反馈', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/link', label: '连接器', icon: <Link2 className="w-full h-full" /> },
   { path: '/topology', label: '拓扑', icon: <NetworkIcon className="w-full h-full" /> },
+  { path: '/gland', label: '模型路由', icon: <Cpu className="w-full h-full" /> },
   { path: '/llm', label: 'LLM', icon: <Cpu className="w-full h-full" /> },
   { path: '/voice', label: '语音', icon: <Mic className="w-full h-full" /> },
   { path: '/hermes', label: 'Hermes桥接', icon: <Globe className="w-full h-full" /> },
