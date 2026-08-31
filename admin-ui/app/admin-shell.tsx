@@ -47,6 +47,7 @@ const NAV = [
   { path: '/registry', label: '注册中心', icon: <Package className="w-full h-full" /> },
   { path: '/benchmark', label: '基准测试', icon: <Gauge className="w-full h-full" /> },
   { path: '/intelligence', label: '智能分析', icon: <Brain className="w-full h-full" /> },
+  { path: '/ai-engine', label: 'AI引擎', icon: <Cpu className="w-full h-full" /> },
   { path: '/learn', label: '学习', icon: <GraduationCap className="w-full h-full" /> },
   { path: '/mind', label: '心智', icon: <Sparkles className="w-full h-full" /> },
   { path: '/hippo', label: '海马体', icon: <Database className="w-full h-full" /> },
