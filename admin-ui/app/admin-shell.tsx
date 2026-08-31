@@ -83,6 +83,7 @@ const NAV = [
   { path: '/hermes', label: 'Hermes桥接', icon: <Globe className="w-full h-full" /> },
   { path: '/logs', label: '日志', icon: <ScrollText className="w-full h-full" /> },
   { path: '/timeline', label: '时间线', icon: <CalendarClock className="w-full h-full" /> },
+  { path: '/chat-test', label: 'RAG问答', icon: <MessageSquare className="w-full h-full" /> },
   { path: '/sessions', label: '会话', icon: <MessageSquare className="w-full h-full" /> },
   { path: '/nest', label: '租户', icon: <Home className="w-full h-full" /> },
   { path: '/permissions', label: '权限', icon: <Shield className="w-full h-full" /> },
