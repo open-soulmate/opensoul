@@ -317,6 +317,7 @@ export default function BrainPage() {
               const cfg = getTypeConfig(type);
               const Icon = cfg.icon;
               const pct = Math.round((count / maxCount) * 100);
+              const barColor = cfg.color.includes('blue') ? '#60a5fa' : cfg.color.includes('amber') ? '#fbbf24' : cfg.color.includes('emerald') ? '#34d399' : cfg.color.includes('purple') ? '#a78bfa' : cfg.color.includes('slate') ? '#94a3b8' : '#9ca3af';
               return (
                 <button
                   key={type}
@@ -330,8 +331,8 @@ export default function BrainPage() {
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${cfg.bg}`}
-                      style={{ width: `${pct}%`, backgroundColor: cfg.color.replace('text-', 'rgb(').replace('-400', ')').replace('blue', '96,165,250').replace('amber', '251,191,36').replace('emerald', '52,211,153').replace('purple', '167,139,250').replace('slate', '148,163,184').replace('gray', '156,163,175') }}
+                      className={`h-full rounded-full transition-all duration-500`}
+                      style={{ width: `${pct}%`, backgroundColor: barColor }}
                     />
                   </div>
                 </button>
