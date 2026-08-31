@@ -24,6 +24,7 @@ const NAV = [
   { path: '/kb-requests', label: '知识审批', icon: <Shield className="w-full h-full" /> },
   { path: '/knowledge-graph', label: '知识图谱', icon: <Network className="w-full h-full" /> },
   { path: '/brain', label: '知识大脑', icon: <Brain className="w-full h-full" /> },
+  { path: '/agent-nodes', label: '节点管理', icon: <Server className="w-full h-full" /> },
   { path: '/agents', label: 'Agent', icon: <Bot className="w-full h-full" /> },
   { path: '/collab', label: 'Agent协作', icon: <Users className="w-full h-full" /> },
   { path: '/ai-groups', label: 'AI群组', icon: <UsersRound className="w-full h-full" /> },
