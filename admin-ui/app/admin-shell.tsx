@@ -32,6 +32,7 @@ const NAV = [
   { path: '/monitoring', label: '监控', icon: <Activity className="w-full h-full" /> },
   { path: '/diagnostics', label: '诊断', icon: <Bug className="w-full h-full" /> },
   { path: '/soma', label: 'Soma感知', icon: <Eye className="w-full h-full" /> },
+  { path: '/sense', label: '感官感知', icon: <Eye className="w-full h-full" /> },
   { path: '/limb', label: 'RPA', icon: <Hand className="w-full h-full" /> },
   { path: '/events', label: '事件流', icon: <Radio className="w-full h-full" /> },
   { path: '/healer', label: '自愈', icon: <Heart className="w-full h-full" /> },
