@@ -5,7 +5,8 @@ import { apiFetch } from '@/lib/api';
 import {
   Search, ScrollText, RefreshCw, X, Filter, Download,
   Loader2, AlertCircle, Info, AlertTriangle, CheckCircle,
-  ChevronDown, ChevronUp, Terminal
+  ChevronDown, ChevronUp, Terminal, Wifi, WifiOff, Radio,
+  Zap, Eye, BarChart3,
 } from 'lucide-react';
 
 interface LogEntry {
@@ -25,9 +26,17 @@ interface EventSummary {
   recent_count: number;
 }
 
+interface StreamSummary {
+  buffer_size: number;
+  sse_clients: number;
+  organ_probes: number;
+  last_refresh: string;
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [summary, setSummary] = useState<EventSummary | null>(null);
+  const [streamSummary, setStreamSummary] = useState<StreamSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -36,6 +45,11 @@ export default function LogsPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [sseConnected, setSseConnected] = useState(false);
+  const [sseEvents, setSseEvents] = useState<LogEntry[]>([]);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const [useSse, setUseSse] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -53,23 +67,87 @@ export default function LogsPage() {
     try {
       const data = await apiFetch('/api/events/summary');
       setSummary(data);
-    } catch {
-      // silent
-    }
+    } catch {}
   }, []);
 
-  useEffect(() => { fetchLogs(); fetchSummary(); }, [fetchLogs, fetchSummary]);
+  const fetchStreamSummary = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/events/stream/summary');
+      setStreamSummary(data);
+    } catch {}
+  }, []);
 
+  useEffect(() => { fetchLogs(); fetchSummary(); fetchStreamSummary(); }, [fetchLogs, fetchSummary, fetchStreamSummary]);
+
+  // Polling auto-refresh
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || useSse) return;
     const iv = setInterval(() => { fetchLogs(); fetchSummary(); }, 5000);
     return () => clearInterval(iv);
-  }, [autoRefresh, fetchLogs, fetchSummary]);
+  }, [autoRefresh, useSse, fetchLogs, fetchSummary]);
 
-  const types = Array.from(new Set(logs.map((l) => l.type))).sort();
-  const organs = Array.from(new Set(logs.map((l) => l.organ))).sort();
+  // SSE connection
+  useEffect(() => {
+    if (!useSse) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+        setSseConnected(false);
+      }
+      return;
+    }
 
-  const filtered = logs.filter((l) => {
+    const token = localStorage.getItem('opensoul-token') || '';
+    const es = new EventSource(`/api/events/sse?token=${encodeURIComponent(token)}`);
+    eventSourceRef.current = es;
+
+    es.onopen = () => setSseConnected(true);
+    es.onerror = () => {
+      setSseConnected(false);
+      // Auto-reconnect handled by EventSource
+    };
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data);
+        const entry: LogEntry = {
+          id: event.id || `sse_${Date.now()}`,
+          type: event.type || 'event',
+          organ: event.organ || 'system',
+          emoji: event.emoji || '📡',
+          summary: event.summary || '',
+          timestamp: event.timestamp || Date.now() / 1000,
+          metadata: event.metadata,
+        };
+        setSseEvents((prev) => [entry, ...prev].slice(0, 500));
+      } catch {}
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+      setSseConnected(false);
+    };
+  }, [useSse]);
+
+  const handleRefreshStream = async () => {
+    setRefreshing(true);
+    try {
+      await apiFetch('/api/events/stream/refresh', { method: 'POST' });
+      await fetchLogs();
+      await fetchSummary();
+      await fetchStreamSummary();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const displayLogs = useSse ? sseEvents : logs;
+  const types = Array.from(new Set(displayLogs.map((l) => l.type))).sort();
+  const organs = Array.from(new Set(displayLogs.map((l) => l.organ))).sort();
+
+  const filtered = displayLogs.filter((l) => {
     if (typeFilter && l.type !== typeFilter) return false;
     if (organFilter && l.organ !== organFilter) return false;
     if (search) {
@@ -83,6 +161,15 @@ export default function LogsPage() {
     if (!ts) return '';
     const d = new Date(ts * 1000);
     return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  const formatRelative = (ts: number) => {
+    if (!ts) return '';
+    const diff = Date.now() / 1000 - ts;
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
+    return `${Math.floor(diff / 86400)}天前`;
   };
 
   const getTypeColor = (type: string) => {
@@ -114,26 +201,43 @@ export default function LogsPage() {
   return (
     <div className="space-y-4">
       {/* Summary stats */}
-      {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="rounded-lg border border-border bg-card p-3">
-            <div className="text-2xl font-bold">{summary.total_events}</div>
-            <div className="text-xs text-muted-foreground">总事件数</div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <ScrollText className="w-4 h-4 text-primary" />
+            <span className="text-xs text-muted-foreground">总事件</span>
           </div>
-          <div className="rounded-lg border border-border bg-card p-3">
-            <div className="text-2xl font-bold text-blue-500">{summary.recent_count}</div>
-            <div className="text-xs text-muted-foreground">最近事件</div>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-3">
-            <div className="text-2xl font-bold text-red-500">{(summary.by_type?.error || 0) + (summary.by_type?.alert || 0)}</div>
-            <div className="text-xs text-muted-foreground">错误/告警</div>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-3">
-            <div className="text-2xl font-bold">{Object.keys(summary.by_organ || {}).length}</div>
-            <div className="text-xs text-muted-foreground">活跃器官</div>
-          </div>
+          <div className="text-2xl font-bold mt-1">{summary?.total_events || displayLogs.length}</div>
         </div>
-      )}
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-blue-500" />
+            <span className="text-xs text-muted-foreground">最近事件</span>
+          </div>
+          <div className="text-2xl font-bold text-blue-500 mt-1">{summary?.recent_count || 0}</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <span className="text-xs text-muted-foreground">错误/告警</span>
+          </div>
+          <div className="text-2xl font-bold text-red-500 mt-1">{(summary?.by_type?.error || 0) + (summary?.by_type?.alert || 0)}</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <Eye className="w-4 h-4 text-purple-500" />
+            <span className="text-xs text-muted-foreground">活跃器官</span>
+          </div>
+          <div className="text-2xl font-bold mt-1">{Object.keys(summary?.by_organ || {}).length}</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-muted-foreground">SSE客户端</span>
+          </div>
+          <div className="text-2xl font-bold mt-1">{streamSummary?.sse_clients || 0}</div>
+        </div>
+      </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -141,7 +245,7 @@ export default function LogsPage() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <input
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50"
-            placeholder="搜索日志..."
+            placeholder="搜索日志内容、器官、类型..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -162,12 +266,25 @@ export default function LogsPage() {
           <option value="">全部器官</option>
           {organs.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-          <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} className="rounded" />
-          实时
-        </label>
-        <button onClick={() => { fetchLogs(); fetchSummary(); }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-muted border border-border rounded-md hover:bg-muted/80">
-          <RefreshCw className="w-3.5 h-3.5" />刷新
+        <button
+          onClick={() => setUseSse(!useSse)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-md transition-colors ${useSse ? 'bg-green-500/10 text-green-600 border-green-500/20' : 'bg-muted border-border hover:bg-muted/80'}`}
+        >
+          {useSse ? (
+            sseConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />
+          ) : (
+            <Radio className="w-3.5 h-3.5" />
+          )}
+          {useSse ? (sseConnected ? 'SSE实时' : 'SSE连接中...') : 'SSE模式'}
+        </button>
+        {!useSse && (
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} className="rounded" />
+            轮询(5s)
+          </label>
+        )}
+        <button onClick={handleRefreshStream} disabled={refreshing} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-muted border border-border rounded-md hover:bg-muted/80 disabled:opacity-50">
+          {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}刷新流
         </button>
         <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-muted border border-border rounded-md hover:bg-muted/80">
           <Download className="w-3.5 h-3.5" />导出CSV
@@ -198,7 +315,7 @@ export default function LogsPage() {
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${getTypeBg(log.type)} ${getTypeColor(log.type)}`}>{log.type}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{log.organ}</span>
-                    <span className="text-[10px] text-muted-foreground">{formatTime(log.timestamp)}</span>
+                    <span className="text-[10px] text-muted-foreground" title={formatTime(log.timestamp)}>{formatRelative(log.timestamp)}</span>
                   </div>
                   <p className="text-xs mt-0.5 break-words">{log.summary}</p>
                 </div>
@@ -224,7 +341,9 @@ export default function LogsPage() {
 
       {/* Footer */}
       <div className="text-[10px] text-muted-foreground text-center">
-        显示 {filtered.length}/{logs.length} 条日志 | 事件流: /api/events/stream
+        显示 {filtered.length}/{displayLogs.length} 条日志
+        {useSse && <span> | SSE实时模式</span>}
+        {streamSummary && <span> | 缓冲: {streamSummary.buffer_size} | 探针: {streamSummary.organ_probes}</span>}
       </div>
     </div>
   );
