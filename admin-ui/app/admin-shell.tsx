@@ -45,6 +45,7 @@ const NAV = [
   { path: '/vital', label: '生命体征', icon: <Heart className="w-full h-full" /> },
   { path: '/marrow', label: '骨髓', icon: <Database className="w-full h-full" /> },
   { path: '/nerve', label: '神经', icon: <Zap className="w-full h-full" /> },
+  { path: '/cortex', label: '皮层', icon: <Brain className="w-full h-full" /> },
   { path: '/entity', label: '实体', icon: <Layers className="w-full h-full" /> },
   { path: '/feedback', label: '反馈', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/link', label: '连接器', icon: <Link2 className="w-full h-full" /> },
