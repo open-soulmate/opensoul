@@ -45,6 +45,7 @@ const NAV = [
   { path: '/healer', label: '自愈', icon: <Heart className="w-full h-full" /> },
   { path: '/admin-actions', label: '运维操作', icon: <Wrench className="w-full h-full" /> },
   { path: '/workspace', label: '工作空间', icon: <FolderOpen className="w-full h-full" /> },
+  { path: '/git', label: 'Git', icon: <GitBranch className="w-full h-full" /> },
   { path: '/reflex', label: '条件反射', icon: <Zap className="w-full h-full" /> },
   { path: '/heredity', label: '遗传链', icon: <Dna className="w-full h-full" /> },
   { path: '/gene', label: '基因模板', icon: <Dna className="w-full h-full" /> },
