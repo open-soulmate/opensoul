@@ -28,6 +28,7 @@ const NAV = [
   { path: '/mcp', label: 'MCP', icon: <Plug className="w-full h-full" /> },
   { path: '/pipeline', label: '流水线', icon: <Workflow className="w-full h-full" /> },
   { path: '/workflow', label: '工作流', icon: <ListChecks className="w-full h-full" /> },
+  { path: '/will', label: '意志系统', icon: <Workflow className="w-full h-full" /> },
   { path: '/notifications', label: '通知', icon: <Bell className="w-full h-full" /> },
   { path: '/monitoring', label: '监控', icon: <Activity className="w-full h-full" /> },
   { path: '/diagnostics', label: '诊断', icon: <Bug className="w-full h-full" /> },
