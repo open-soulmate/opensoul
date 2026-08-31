@@ -43,6 +43,7 @@ const NAV = [
   { path: '/immune', label: '免疫', icon: <ShieldCheck className="w-full h-full" /> },
   { path: '/pulse', label: '脉搏', icon: <CircleDot className="w-full h-full" /> },
   { path: '/vital', label: '生命体征', icon: <Heart className="w-full h-full" /> },
+  { path: '/marrow', label: '骨髓', icon: <Database className="w-full h-full" /> },
   { path: '/entity', label: '实体', icon: <Layers className="w-full h-full" /> },
   { path: '/feedback', label: '反馈', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/link', label: '连接器', icon: <Link2 className="w-full h-full" /> },
