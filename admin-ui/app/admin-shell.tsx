@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -46,6 +46,7 @@ const NAV = [
   { path: '/marrow', label: '骨髓', icon: <Database className="w-full h-full" /> },
   { path: '/nerve', label: '神经', icon: <Zap className="w-full h-full" /> },
   { path: '/cortex', label: '皮层', icon: <Brain className="w-full h-full" /> },
+  { path: '/vein', label: '血管', icon: <Droplets className="w-full h-full" /> },
   { path: '/entity', label: '实体', icon: <Layers className="w-full h-full" /> },
   { path: '/feedback', label: '反馈', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/link', label: '连接器', icon: <Link2 className="w-full h-full" /> },
