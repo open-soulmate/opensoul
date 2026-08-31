@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search, Volume2 } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search, Volume2, Copy } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -18,6 +18,7 @@ const NAV = [
   { path: '/patterns', label: '模式发现', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/users', label: '用户', icon: <Users className="w-full h-full" /> },
   { path: '/knowledge', label: '知识库', icon: <BookOpen className="w-full h-full" /> },
+  { path: '/dedup', label: '知识去重', icon: <Copy className="w-full h-full" /> },
   { path: '/kb-requests', label: '知识审批', icon: <Shield className="w-full h-full" /> },
   { path: '/knowledge-graph', label: '知识图谱', icon: <Network className="w-full h-full" /> },
   { path: '/brain', label: '知识大脑', icon: <Brain className="w-full h-full" /> },
