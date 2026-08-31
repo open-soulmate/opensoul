@@ -15,6 +15,7 @@ const NAV = [
   { path: '/search', label: '搜索', icon: <Search className="w-full h-full" /> },
   { path: '/evolution', label: '进化流水线', icon: <GitBranch className="w-full h-full" /> },
   { path: '/traces', label: '执行轨迹', icon: <ScrollText className="w-full h-full" /> },
+  { path: '/trajectory', label: '轨迹管理', icon: <Activity className="w-full h-full" /> },
   { path: '/patterns', label: '模式发现', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/users', label: '用户', icon: <Users className="w-full h-full" /> },
   { path: '/knowledge', label: '知识库', icon: <BookOpen className="w-full h-full" /> },
