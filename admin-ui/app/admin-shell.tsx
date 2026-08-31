@@ -69,6 +69,7 @@ const NAV = [
   { path: '/vein', label: '血管', icon: <Droplets className="w-full h-full" /> },
   { path: '/entity', label: '实体', icon: <Layers className="w-full h-full" /> },
   { path: '/feedback', label: '反馈', icon: <Lightbulb className="w-full h-full" /> },
+  { path: '/connectors', label: '连接器管理', icon: <Plug className="w-full h-full" /> },
   { path: '/link', label: '连接器', icon: <Link2 className="w-full h-full" /> },
   { path: '/topology', label: '拓扑', icon: <NetworkIcon className="w-full h-full" /> },
   { path: '/gland', label: '模型路由', icon: <Cpu className="w-full h-full" /> },
