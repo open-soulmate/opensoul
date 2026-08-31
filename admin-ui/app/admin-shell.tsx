@@ -17,6 +17,7 @@ const NAV = [
   { path: '/patterns', label: '模式发现', icon: <Lightbulb className="w-full h-full" /> },
   { path: '/users', label: '用户', icon: <Users className="w-full h-full" /> },
   { path: '/knowledge', label: '知识库', icon: <BookOpen className="w-full h-full" /> },
+  { path: '/kb-requests', label: '知识审批', icon: <Shield className="w-full h-full" /> },
   { path: '/knowledge-graph', label: '知识图谱', icon: <Network className="w-full h-full" /> },
   { path: '/brain', label: '知识大脑', icon: <Brain className="w-full h-full" /> },
   { path: '/agents', label: 'Agent', icon: <Bot className="w-full h-full" /> },
