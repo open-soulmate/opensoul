@@ -29,6 +29,7 @@ const NAV = [
   { path: '/collab', label: 'Agent协作', icon: <Users className="w-full h-full" /> },
   { path: '/ai-groups', label: 'AI群组', icon: <UsersRound className="w-full h-full" /> },
   { path: '/plugins', label: '插件', icon: <Puzzle className="w-full h-full" /> },
+  { path: '/downloader', label: '下载管理', icon: <Download className="w-full h-full" /> },
   { path: '/marketplace', label: '市场', icon: <Store className="w-full h-full" /> },
   { path: '/skills', label: '技能', icon: <Zap className="w-full h-full" /> },
   { path: '/cron', label: '定时任务', icon: <Timer className="w-full h-full" /> },
