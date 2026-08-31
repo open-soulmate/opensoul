@@ -93,18 +93,19 @@ def _save_overrides_to_env():
 _load_overrides_from_env()
 
 
-def _get_config() -> dict:
+def _get_config(masked: bool = False) -> dict:
+    real_key = _llm_overrides.get("api_key", settings.llm_api_key)
     return {
         "base_url": _llm_overrides.get("base_url", settings.llm_base_url),
-        "api_key": "***" if _llm_overrides.get("api_key", settings.llm_api_key) else "",
+        "api_key": ("***" if masked and real_key else real_key) if real_key else "",
         "model": _llm_overrides.get("model", settings.llm_model),
     }
 
 
 @router.get("/config")
-async def get_config():
-    """Get current LLM configuration (API key masked)."""
-    return _get_config()
+async def get_config(masked: bool = False):
+    """Get current LLM configuration. Default: real key for admin UI."""
+    return _get_config(masked=masked)
 
 
 @router.post("/config")
