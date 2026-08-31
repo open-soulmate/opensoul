@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe, Wrench, Camera, Download, FlaskConical, Search } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -12,6 +12,7 @@ import { LoginPage } from '@/app/login-page';
 
 const NAV = [
   { path: '/', label: '总览', icon: <LayoutDashboard className="w-full h-full" /> },
+  { path: '/search', label: '搜索', icon: <Search className="w-full h-full" /> },
   { path: '/evolution', label: '进化流水线', icon: <GitBranch className="w-full h-full" /> },
   { path: '/traces', label: '执行轨迹', icon: <ScrollText className="w-full h-full" /> },
   { path: '/patterns', label: '模式发现', icon: <Lightbulb className="w-full h-full" /> },
