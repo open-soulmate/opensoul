@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppShell, LeftPanel, WorkspacePanel, useAppStore, cn } from '@opensoulmate/openface';
-import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye } from 'lucide-react';
+import { LayoutDashboard, Users, BookOpen, Shield, Settings, Server, Bot, MessageSquare, Puzzle, Zap, Timer, Plug, Bell, Activity, Cpu, Mic, ScrollText, Network, Workflow, Store, ListChecks, Gauge, CalendarClock, Brain, NetworkIcon, UsersRound, Package, Heart, Sparkles, Database, ShieldCheck, CircleDot, Layers, Lightbulb, Radio, Link2, Bug, Hand, Dna, GraduationCap, Home, GitBranch, Droplets, Eye, Globe } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { LoginPage } from '@/app/login-page';
@@ -58,6 +58,7 @@ const NAV = [
   { path: '/topology', label: '拓扑', icon: <NetworkIcon className="w-full h-full" /> },
   { path: '/llm', label: 'LLM', icon: <Cpu className="w-full h-full" /> },
   { path: '/voice', label: '语音', icon: <Mic className="w-full h-full" /> },
+  { path: '/hermes', label: 'Hermes桥接', icon: <Globe className="w-full h-full" /> },
   { path: '/logs', label: '日志', icon: <ScrollText className="w-full h-full" /> },
   { path: '/timeline', label: '时间线', icon: <CalendarClock className="w-full h-full" /> },
   { path: '/sessions', label: '会话', icon: <MessageSquare className="w-full h-full" /> },
