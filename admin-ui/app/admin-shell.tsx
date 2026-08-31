@@ -78,6 +78,7 @@ const NAV = [
   { path: '/export', label: '数据导出', icon: <Download className="w-full h-full" /> },
   { path: '/llm', label: 'LLM', icon: <Cpu className="w-full h-full" /> },
   { path: '/voice', label: '语音', icon: <Mic className="w-full h-full" /> },
+  { path: '/a2a', label: 'A2A协议', icon: <Globe className="w-full h-full" /> },
   { path: '/hermes', label: 'Hermes桥接', icon: <Globe className="w-full h-full" /> },
   { path: '/logs', label: '日志', icon: <ScrollText className="w-full h-full" /> },
   { path: '/timeline', label: '时间线', icon: <CalendarClock className="w-full h-full" /> },
