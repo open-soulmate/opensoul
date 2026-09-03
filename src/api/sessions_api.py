@@ -126,6 +126,43 @@ def _get_agent_sessions(limit: int = 100, offset: int = 0) -> list[dict]:
         adb.close()
 
 
+@router.post("")
+async def create_session(
+    body: dict,
+    user_id: UUID = Depends(get_current_user),
+):
+    """Create a new session in OpenSoul agent_sessions."""
+    adb = _get_agent_db()
+    if not adb:
+        raise HTTPException(status_code=500, detail="Database not available")
+    try:
+        session_id = body.get("id") or f"om-{int(datetime.now(UTC).timestamp())}"
+        agent_id = body.get("agent_id", "soulmate")
+        title = body.get("name", "New Chat")
+        now = datetime.now(UTC).timestamp()
+        adb.execute(
+            "INSERT OR IGNORE INTO agent_sessions (id, agent_id, title, created_at, last_activity_at, message_count) VALUES (?, ?, ?, ?, ?, 0)",
+            (session_id, agent_id, title, now, now),
+        )
+        adb.commit()
+        # 保存tags
+        tags = body.get("tags", [])
+        if tags:
+            _ensure_session_tags_table(adb)
+            for tag in tags:
+                adb.execute(
+                    "INSERT OR IGNORE INTO session_tags (session_id, tag_name) VALUES (?, ?)",
+                    (session_id, tag),
+                )
+            adb.commit()
+        return {"ok": True, "session_id": session_id}
+    except Exception as e:
+        logger.error("create_session error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        adb.close()
+
+
 @router.get("")
 async def list_sessions(
     limit: int = Query(default=50, ge=1, le=500),
