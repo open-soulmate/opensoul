@@ -6,11 +6,13 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.gene.templates import TemplateEngine
+from src.gene.skill_learner import SkillLearner
 
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
 engine = TemplateEngine()
+skill_learner = SkillLearner()
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -222,4 +224,72 @@ async def gene_health():
         "status": "ok",
         "component": "OpenGene",
         **engine.stats(),
+        "skills": skill_learner.get_stats(),
     }
+
+
+# ── Skill Learning ────────────────────────────────────────────
+
+
+class SkillExtractRequest(BaseModel):
+    task_description: str
+    execution_log: str
+    success: bool = True
+    metadata: dict = {}
+
+
+class SkillRecommendRequest(BaseModel):
+    task_description: str
+
+
+@router.post("/skill/extract")
+async def extract_skill(req: SkillExtractRequest):
+    """Extract a skill from execution log."""
+    import json
+    # Parse execution_log as JSON list of tool calls
+    try:
+        tool_calls = json.loads(req.execution_log)
+        if not isinstance(tool_calls, list):
+            tool_calls = []
+    except (json.JSONDecodeError, TypeError):
+        tool_calls = []
+
+    skill = skill_learner.extract_from_execution(
+        session_id=f"skill_{int(time.time() * 1000)}",
+        task_description=req.task_description,
+        tool_calls=tool_calls,
+        success=req.success,
+    )
+    if not skill:
+        raise HTTPException(400, "Failed to extract skill from log")
+    return {
+        "skill_id": skill.skill_id,
+        "name": skill.name,
+        "description": skill.description,
+        "success_rate": skill.success_rate,
+    }
+
+
+@router.post("/skill/recommend")
+async def recommend_skills(req: SkillRecommendRequest):
+    """Recommend skills for a task."""
+    skills = skill_learner.find_relevant(req.task_description)
+    return {
+        "skills": [
+            {
+                "skill_id": s.get("skill_id", ""),
+                "name": s.get("name", ""),
+                "description": s.get("description", ""),
+                "success_rate": s.get("success_rate", 0.0),
+                "usage_count": s.get("usage_count", 0),
+            }
+            for s in skills
+        ],
+        "count": len(skills),
+    }
+
+
+@router.get("/skill/{skill_id}/context")
+async def skill_context(skill_id: str, task: str = Query(default="")):
+    """Get skill context for prompt injection."""
+    return {"context": skill_learner.get_context_prompt(task)}
