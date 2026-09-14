@@ -56,6 +56,7 @@ from src.api.marketplace import router as marketplace_router
 from src.api.marrow import router as marrow_router
 from src.api.mcp import router as mcp_router
 from src.api.metrics_api import router as metrics_router
+from src.api.brain import router as brain_router
 from src.api.mind import router as mind_router
 from src.api.mirror import router as mirror_router
 from src.api.nerve import router as nerve_router
@@ -511,6 +512,7 @@ app.include_router(limb_rpa_router, prefix="/api/limb/rpa", tags=["Limb RPA"])
 app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
 app.include_router(vision_router, prefix="/api/vision", tags=["vision"])
 app.include_router(mind_router, prefix="/api/mind", tags=["mind"])
+app.include_router(brain_router, prefix="/api/brain", tags=["brain"])
 app.include_router(intelligence_router, prefix="/api/intelligence", tags=["intelligence"])
 app.include_router(trajectory_router, prefix="/api/trajectory", tags=["trajectory"])
 app.include_router(trajectory_api_router, prefix="/api/trajectory-v2", tags=["trajectory-v2"])
