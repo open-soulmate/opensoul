@@ -54,6 +54,45 @@ class FeedbackRequest(BaseModel):
 
 # ── API ────────────────────────────────────────────────
 
+@router.post("/evolve")
+async def evolve(tenant_id: str = "default", agent_id: str = "default"):
+    """自我进化：分析并自动优化策略"""
+    from src.heredity.self_evolution import SelfEvolution
+    evolution = SelfEvolution(db_pool, tenant_id, agent_id)
+    evolutions = await evolution.analyze_and_evolve()
+    return {"evolutions": evolutions, "count": len(evolutions)}
+
+
+@router.get("/metacognition")
+async def metacognition(tenant_id: str = "default", agent_id: str = "default"):
+    """元认知：审视决策过程"""
+    from src.mirror.metacognition import Metacognition
+    meta = Metacognition(db_pool, tenant_id, agent_id)
+    return {
+        "recent_decisions": await meta.reflect_recent(),
+        "blind_spots": await meta.get_blind_spots(),
+        "calibration": await meta.get_confidence_calibration(),
+    }
+
+
+@router.get("/agents")
+async def agents(tenant_id: str = "default"):
+    """多Agent协调：获取活跃Agent列表"""
+    from src.cortex.multi_agent_coord import MultiAgentCoordinator
+    coord = MultiAgentCoordinator(db_pool, tenant_id)
+    return {"agents": await coord.get_active_agents()}
+
+
+@router.post("/creativity")
+async def creativity(problem: str = "", constraints: str = "", count: int = 3):
+    """创造力引擎：生成创新方案"""
+    from src.cortex.creativity import CreativityEngine
+    engine = CreativityEngine()
+    constraint_list = constraints.split(",") if constraints else None
+    alternatives = await engine.generate_alternatives(problem, constraint_list, count)
+    return {"alternatives": alternatives}
+
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "component": "OpenSoulBrain", "instances": len(_brain_pool)}
@@ -108,6 +147,26 @@ async def verify(req: VerifyRequest):
         "fix": verification.fix,
         "elapsed_ms": elapsed_ms,
     }
+
+
+@router.post("/learn")
+async def learn(tenant_id: str = "default", agent_id: str = "default"):
+    """从经验中提取学习模式"""
+    brain = _get_brain(tenant_id, agent_id)
+    await brain._ensure_init()
+    from src.learn.long_term import LongTermLearning
+    learning = LongTermLearning(db_pool, tenant_id, agent_id)
+    await learning.extract_patterns()
+    return {"status": "learned", **await learning.get_stats()}
+
+
+@router.get("/recommendations")
+async def recommendations(tenant_id: str = "default", agent_id: str = "default", intent: str = ""):
+    """获取学习到的推荐"""
+    from src.learn.long_term import LongTermLearning
+    learning = LongTermLearning(db_pool, tenant_id, agent_id)
+    recs = await learning.get_recommendations(intent)
+    return {"recommendations": recs}
 
 
 @router.post("/feedback")
