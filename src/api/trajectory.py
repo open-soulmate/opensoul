@@ -6,8 +6,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.trajectory.store import EventType, TrajectoryEvent, trajectory_store
+from src.trajectory.session_fsm import SessionStateMachine, SessionEvent
 
 router = APIRouter()
+session_fsm = SessionStateMachine()
 
 
 # ── Request Schemas ──────────────────────────────────────────
@@ -312,3 +314,47 @@ async def event_type_analytics():
 async def token_analytics(days: int = Query(default=30, ge=1, le=365)):
     """Get token usage over time (daily breakdown)."""
     return await trajectory_store.get_token_analytics(days=days)
+
+
+# ── Session State Machine ────────────────────────────────────
+
+
+class FSMTransitionRequest(BaseModel):
+    session_id: str
+    event: str
+
+
+class FSMCreateRequest(BaseModel):
+    session_id: str
+
+
+@router.post("/fsm/create")
+async def create_fsm(req: FSMCreateRequest):
+    """Create a new session state machine."""
+    session_fsm.create_session(req.session_id)
+    return {"session_id": req.session_id, "state": "idle"}
+
+
+@router.post("/fsm/transition")
+async def fsm_transition(req: FSMTransitionRequest):
+    """Transition session state."""
+    try:
+        event = SessionEvent(req.event)
+    except ValueError:
+        raise HTTPException(400, f"Unknown event: {req.event}")
+    success, new_state = session_fsm.transition(req.session_id, event)
+    if not success:
+        raise HTTPException(400, f"Invalid transition: {req.event}")
+    return {"session_id": req.session_id, "state": new_state.value, "success": True}
+
+
+@router.get("/fsm/{session_id}/state")
+async def fsm_state(session_id: str):
+    """Get current session state."""
+    return session_fsm.get_state(session_id)
+
+
+@router.get("/fsm/{session_id}/history")
+async def fsm_history(session_id: str):
+    """Get session state transition history."""
+    return {"history": session_fsm.get_history(session_id)}
