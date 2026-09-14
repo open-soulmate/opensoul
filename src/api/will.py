@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.will.engine import WorkflowEngine
+from src.will.dag_planner import DAGPlanner
 from src.will.models import (
     NodeType,
     TriggerType,
@@ -14,6 +15,7 @@ from src.will.models import (
 
 router = APIRouter()
 engine = WorkflowEngine()
+dag_planner = DAGPlanner()
 
 
 # ── Request Schemas ────────────────────────────────────────────
@@ -384,3 +386,58 @@ def _execution_dict(exec: Any) -> dict:
         "error": exec.error,
         "trigger_type": exec.trigger_type,
     }
+
+
+# ── DAG Planning ──────────────────────────────────────────────
+
+
+class DAGPlanRequest(BaseModel):
+    goal: str
+    llm_response: str
+
+
+@router.post("/dag/plan")
+async def create_dag_plan(req: DAGPlanRequest):
+    """Create execution plan from LLM response."""
+    plan = dag_planner.create_from_llm_response(req.goal, req.llm_response)
+    if not plan:
+        raise HTTPException(400, "Failed to parse LLM response into plan")
+    return {
+        "plan_id": plan.plan_id,
+        "goal": plan.goal,
+        "total_steps": len(plan.steps),
+        "progress": plan.progress,
+        "mermaid": dag_planner.to_mermaid(plan.plan_id),
+    }
+
+
+@router.get("/dag/{plan_id}/status")
+async def dag_status(plan_id: str):
+    """Get plan status."""
+    plan = dag_planner.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return {
+        "plan_id": plan.plan_id,
+        "goal": plan.goal,
+        "progress": plan.progress,
+        "is_complete": plan.is_complete,
+        "total_steps": len(plan.steps),
+        "steps": [
+            {
+                "step_id": s.step_id,
+                "description": s.description,
+                "tool_name": s.tool_name,
+                "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
+                "depends_on": s.depends_on,
+                "error": s.error,
+            }
+            for s in plan.steps
+        ],
+    }
+
+
+@router.get("/dag/stats")
+async def dag_stats():
+    """Get DAG planner statistics."""
+    return dag_planner.get_stats()
