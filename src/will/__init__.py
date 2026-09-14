@@ -2,5 +2,16 @@
 
 from src.will.engine import WorkflowEngine
 from src.will.models import NodeType, Workflow, WorkflowEdge, WorkflowNode
+from src.will.dag_planner import DAGPlanner, ExecutionPlan, PlanStep, StepStatus
 
-__all__ = ["WorkflowEngine", "Workflow", "WorkflowNode", "WorkflowEdge", "NodeType"]
+__all__ = [
+    "WorkflowEngine",
+    "Workflow",
+    "WorkflowNode",
+    "WorkflowEdge",
+    "NodeType",
+    "DAGPlanner",
+    "ExecutionPlan",
+    "PlanStep",
+    "StepStatus",
+]

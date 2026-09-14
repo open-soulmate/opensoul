@@ -2,5 +2,6 @@
 
 from src.mind.emotion_decision import EmotionDrivenDecision
 from src.mind.user_memory import UserMemory
+from src.mind.preference_learner import LearnedPreference, PreferenceLearner
 
-__all__ = ["EmotionDrivenDecision", "UserMemory"]
+__all__ = ["EmotionDrivenDecision", "UserMemory", "LearnedPreference", "PreferenceLearner"]
