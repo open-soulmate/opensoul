@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from src.sense.asr import ASREngine
 from src.sense.multimodal import MultimodalAnalyzer
 from src.sense.ocr import HAS_TESSERACT, OCREngine
+from src.sense.environment import EnvironmentSensor
 
 router = APIRouter()
 
@@ -15,6 +16,7 @@ router = APIRouter()
 ocr_engine = OCREngine()
 asr_engine = ASREngine(model_size="base")
 multimodal = MultimodalAnalyzer()
+env_sensor = EnvironmentSensor()
 
 # Wire up LLM gateway for OCR fallback (lazy — resolved on first use)
 _llm_gateway = None
@@ -399,3 +401,36 @@ async def sense_stats():
             },
         },
     }
+
+
+# ── Environment Sensing ──────────────────────────────────────
+
+
+@router.get("/environment")
+async def get_environment():
+    """Get current environment info."""
+    info = env_sensor.collect()
+    return {
+        "os_type": info.os_type,
+        "os_version": info.os_version,
+        "hostname": info.hostname,
+        "python_version": info.python_version,
+        "cpu_count": info.cpu_count,
+        "memory_total_gb": info.memory_total_gb,
+        "memory_available_gb": info.memory_available_gb,
+        "disk_total_gb": info.disk_total_gb,
+        "disk_free_gb": info.disk_free_gb,
+        "working_directory": info.working_directory,
+    }
+
+
+@router.get("/environment/context")
+async def environment_context():
+    """Get environment context for system prompt injection."""
+    return {"context": env_sensor.get_context_prompt()}
+
+
+@router.get("/environment/constraints")
+async def environment_constraints():
+    """Check for resource constraints."""
+    return {"constraints": env_sensor.check_resource_constraints()}
