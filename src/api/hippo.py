@@ -15,6 +15,10 @@ router = APIRouter()
 store = MemoryStore(strategy=DecayStrategy.ACCESS_REINFORCED, half_life_hours=24.0)
 sessions = SessionManager()
 
+# Long-term memory singleton
+from src.hippo.long_term_memory import LongTermMemoryStore
+_lt_store = LongTermMemoryStore()
+
 
 # ── Request Schemas ────────────────────────────────────────
 
@@ -46,6 +50,29 @@ class DecayConfigRequest(BaseModel):
     forget_threshold: float | None = None
 
 
+class LongTermMemoryRequest(BaseModel):
+    tenant_id: str = "default"
+    agent_id: str = "default"
+    memory_type: str = "semantic"  # episodic/semantic/procedural/working
+    content: str
+    tags: list[str] = []
+    metadata: dict = {}
+
+
+class LongTermSearchRequest(BaseModel):
+    tenant_id: str = "default"
+    agent_id: str = "default"
+    query: str
+    memory_types: list[str] = []
+    limit: int = 10
+
+
+class ConsolidateRequest(BaseModel):
+    tenant_id: str = "default"
+    agent_id: str = "default"
+    max_age_hours: float = 24.0
+
+
 # ── Health ─────────────────────────────────────────────────
 
 
@@ -57,6 +84,7 @@ async def health():
         "component": "OpenHippo",
         "memory": store.get_stats(),
         "sessions": sessions.get_stats(),
+        "long_term_memory": _lt_store.get_stats(),
     }
 
 
@@ -320,6 +348,70 @@ async def run_lifecycle_check():
     """Run session lifecycle check (idle detection, expiry)."""
     result = sessions.run_lifecycle_check()
     return result
+
+
+# ── Long-term Memory ───────────────────────────────────────
+
+
+@router.post("/ltm/add")
+async def ltm_add(req: LongTermMemoryRequest):
+    """Add a long-term memory entry."""
+    mem = _lt_store.store(
+        content=req.content,
+        memory_type=req.memory_type,
+        importance=0.5,
+        tags=req.tags,
+        metadata=req.metadata,
+        source_session="",
+    )
+    return {"memory_id": mem.memory_id, "added": True}
+
+
+@router.post("/ltm/search")
+async def ltm_search(req: LongTermSearchRequest):
+    """Search long-term memories."""
+    results = _lt_store.retrieve(
+        query=req.query,
+        memory_type=req.memory_types[0] if req.memory_types else "",
+        limit=req.limit,
+    )
+    return {
+        "results": [
+            {
+                "memory_id": m.get("memory_id", ""),
+                "content": m.get("content", "")[:200],
+                "memory_type": m.get("memory_type", ""),
+                "importance": m.get("importance", 0.0),
+                "tags": m.get("tags", []),
+                "created_at": m.get("created_at", 0.0),
+            }
+            for m in results
+        ],
+        "count": len(results),
+    }
+
+
+@router.post("/ltm/consolidate")
+async def ltm_consolidate(req: ConsolidateRequest):
+    """Consolidate old memories (dedup + merge + decay)."""
+    result = _lt_store.consolidate()
+    return result
+
+
+@router.get("/ltm/stats")
+async def ltm_stats():
+    """Long-term memory statistics."""
+    return _lt_store.get_stats()
+
+
+@router.post("/ltm/context")
+async def ltm_context(req: LongTermSearchRequest):
+    """Get context-formatted memories for prompt injection."""
+    context = _lt_store.get_context_prompt(
+        query=req.query,
+        memory_type=req.memory_types[0] if req.memory_types else "",
+    )
+    return {"context": context}
 
 
 # ── Stats ──────────────────────────────────────────────────

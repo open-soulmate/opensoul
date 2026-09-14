@@ -163,17 +163,21 @@ class LongTermMemoryStore:
 
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(sql, params).fetchall()
-            except sqlite3.OperationalError:
-                # FTS query failed, fallback to LIKE
-                rows = conn.execute(
-                    """SELECT * FROM memories
-                       WHERE (content LIKE ? OR tags LIKE ?)
-                         AND consolidated = 0 AND merged_into = ''
-                       ORDER BY importance DESC, access_count DESC LIMIT ?""",
-                    (f"%{query}%", f"%{query}%", limit),
-                ).fetchall()
+            # Use LIKE directly for Chinese text (FTS5 unicode61 tokenizer is poor for CJK)
+            like_sql = """
+                SELECT * FROM memories
+                WHERE (content LIKE ? OR tags LIKE ?)
+                  AND consolidated = 0 AND merged_into = ''
+            """
+            like_params: list = [f"%{query}%", f"%{query}%"]
+            if memory_type:
+                like_sql += " AND memory_type = ?"
+                like_params.append(memory_type)
+            like_sql += " AND importance >= ?"
+            like_params.append(min_importance)
+            like_sql += " ORDER BY importance DESC, access_count DESC LIMIT ?"
+            like_params.append(limit)
+            rows = conn.execute(like_sql, like_params).fetchall()
 
         # Score and rank
         query_lower = query.lower()
