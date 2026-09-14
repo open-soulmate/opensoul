@@ -1,1 +1,5 @@
 """OpenGene — 基因系统：行业预制模板库、Agent配方、知识库模板、工作流模板。"""
+
+from src.gene.skill_learner import Skill, SkillLearner
+
+__all__ = ["Skill", "SkillLearner"]
