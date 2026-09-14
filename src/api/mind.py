@@ -5,12 +5,14 @@ from pydantic import BaseModel
 
 from src.mind.emotion import EmotionAnalyzer
 from src.mind.personality import PersonalityManager
+from src.mind.preference_learner import PreferenceLearner
 
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
 emotion_analyzer = EmotionAnalyzer()
 personality_mgr = PersonalityManager()
+preference_learner = PreferenceLearner()
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -218,6 +220,63 @@ async def mind_stats():
     }
 
 
+# ── Preference Learning ────────────────────────────────────
+
+
+class LearnPreferencesRequest(BaseModel):
+    tenant_id: str = "default"
+    user_id: str = "default"
+    messages: list[dict]
+
+
+@router.post("/preference/learn")
+async def learn_preferences(req: LearnPreferencesRequest):
+    """Learn user preferences from conversation messages."""
+    all_learned = []
+    for msg in req.messages:
+        content = msg.get("content", "")
+        if content:
+            learned = preference_learner.learn_from_message(content)
+            all_learned.extend(learned)
+    return {
+        "learned_count": len(all_learned),
+        "preferences": [
+            {
+                "category": p.category,
+                "value": p.value,
+                "confidence": p.confidence,
+                "source": p.source,
+            }
+            for p in all_learned
+        ],
+    }
+
+
+@router.get("/preference/list")
+async def list_preferences():
+    """List all learned preferences."""
+    prefs = preference_learner.get_preferences()
+    return {
+        "preferences": [
+            {
+                "category": p.get("category", ""),
+                "value": p.get("value", ""),
+                "confidence": p.get("confidence", 0.0),
+                "source": p.get("source", ""),
+                "usage_count": p.get("usage_count", 0),
+            }
+            for p in prefs
+        ],
+        "count": len(prefs),
+    }
+
+
+@router.get("/preference/context")
+async def preference_context():
+    """Get preferences formatted for system prompt injection."""
+    return {"context": preference_learner.get_context_prompt()}
+
+
 # ── Health ─────────────────────────────────────────────────
 
 
@@ -229,4 +288,5 @@ async def mind_health():
         "component": "OpenMind",
         "emotion": emotion_analyzer.stats(),
         "personality": personality_mgr.stats(),
+        "preferences": preference_learner.get_stats(),
     }
