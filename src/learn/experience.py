@@ -1,9 +1,9 @@
-"""Experience Memory — 成功/失败模式记录，关键词检索、老化衰减。"""
+"""Experience Memory — SQLite存储版本，多租户隔离。"""
 
 import json
 import logging
+import time
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from src.models.cognitive import Experience, Intent, TaskContext, Verification
@@ -12,39 +12,103 @@ logger = logging.getLogger(__name__)
 
 
 class ExperienceMemory:
-    """经验记忆：成功/失败模式，关键词检索、老化衰减"""
+    """经验记忆：SQLite存储，多租户隔离，支持语义检索、老化衰减。"""
 
-    def __init__(self, storage_path: str = ""):
-        self.storage_path = Path(storage_path) if storage_path else Path(
-            __import__("os").path.expanduser("~/.opensoul/experience.json")
+    def __init__(self, db_pool=None, tenant_id: str = "default", agent_id: str = "default"):
+        self.db = db_pool
+        self.tenant_id = tenant_id
+        self.agent_id = agent_id
+        self._initialized = False
+
+    async def _ensure_table(self):
+        if self._initialized:
+            return
+        if self.db:
+            await self.db.execute("""
+                CREATE TABLE IF NOT EXISTS experiences (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    intent_summary TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    error TEXT,
+                    fix TEXT,
+                    relevance_score REAL DEFAULT 1.0,
+                    created_at REAL NOT NULL,
+                    metadata TEXT DEFAULT '{}'
+                )
+            """)
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_exp_tenant_agent
+                ON experiences(tenant_id, agent_id)
+            """)
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_exp_outcome
+                ON experiences(tenant_id, agent_id, outcome)
+            """)
+        self._initialized = True
+
+    async def record(self, action: str, result: dict, verification: Verification, task_ctx: TaskContext):
+        """记录一次行动结果"""
+        await self._ensure_table()
+        if not self.db:
+            return
+
+        outcome = "success" if verification.success else "failure"
+        await self.db.execute(
+            """INSERT INTO experiences
+               (tenant_id, agent_id, action, intent_summary, outcome, error, fix, relevance_score, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                self.tenant_id, self.agent_id, action[:500],
+                task_ctx.intent.goal if task_ctx.intent else "unknown",
+                outcome, verification.error, verification.fix,
+                1.0, time.time(),
+            ),
         )
-        self.experiences: list[Experience] = []
-        self._load()
+        # 老化淘汰
+        await self._aging_prune()
 
-    def record(self, action: str, result: dict, verification: Verification, task_ctx: TaskContext):
-        exp = Experience(
-            action=action,
-            intent_summary=task_ctx.intent.goal if task_ctx.intent else "unknown",
-            outcome="success" if verification.success else "failure",
-            error=verification.error,
-            fix=verification.fix,
+    async def get_relevant_experience(self, intent: Intent) -> list[Experience]:
+        """获取和当前意图相关的历史经验"""
+        await self._ensure_table()
+        if not self.db:
+            return []
+
+        # 按意图类型匹配 + 时间衰减
+        rows = await self.db.fetch(
+            """SELECT action, intent_summary, outcome, error, fix, created_at, relevance_score
+               FROM experiences
+               WHERE tenant_id = ? AND agent_id = ?
+               ORDER BY created_at DESC
+               LIMIT 100""",
+            (self.tenant_id, self.agent_id),
         )
-        self.experiences.append(exp)
-        self._aging_prune()
-        self._save()
 
-    def get_relevant_experience(self, intent: Intent) -> list[Experience]:
-        relevant = []
-        for exp in self.experiences:
+        experiences = []
+        for row in rows:
+            exp = Experience(
+                action=row["action"],
+                intent_summary=row["intent_summary"],
+                outcome=row["outcome"],
+                error=row["error"],
+                fix=row["fix"],
+                timestamp=datetime.fromtimestamp(row["created_at"]),
+                relevance_score=row["relevance_score"],
+            )
             score = self._compute_relevance(exp, intent)
             if score > 0.2:
                 exp.relevance_score = score
-                relevant.append(exp)
-        relevant.sort(key=lambda e: e.relevance_score, reverse=True)
-        return relevant[:10]
+                experiences.append(exp)
 
-    def get_similar_failures(self, intent: Intent) -> list[Experience]:
-        return [e for e in self.get_relevant_experience(intent) if e.outcome == "failure"]
+        experiences.sort(key=lambda e: e.relevance_score, reverse=True)
+        return experiences[:10]
+
+    async def get_similar_failures(self, intent: Intent) -> list[Experience]:
+        """获取类似操作的失败经验"""
+        all_exp = await self.get_relevant_experience(intent)
+        return [e for e in all_exp if e.outcome == "failure"]
 
     def _compute_relevance(self, exp: Experience, intent: Intent) -> float:
         score = 0.0
@@ -61,35 +125,31 @@ class ExperienceMemory:
             score += 0.15
         return min(1.0, score)
 
-    def _aging_prune(self):
-        now = datetime.now()
-        self.experiences = [e for e in self.experiences if (now - e.timestamp).days < 90]
-        if len(self.experiences) > 1000:
-            self.experiences.sort(key=lambda e: e.relevance_score, reverse=True)
-            self.experiences = self.experiences[:1000]
-
-    def _load(self):
-        if not self.storage_path.exists():
+    async def _aging_prune(self):
+        """老化淘汰：移除90天前的经验"""
+        if not self.db:
             return
-        try:
-            data = json.loads(self.storage_path.read_text())
-            self.experiences = [Experience.from_dict(d) for d in data]
-        except Exception as e:
-            logger.warning("加载经验失败: %s", e)
+        cutoff = time.time() - 90 * 86400
+        await self.db.execute(
+            "DELETE FROM experiences WHERE tenant_id = ? AND agent_id = ? AND created_at < ?",
+            (self.tenant_id, self.agent_id, cutoff),
+        )
 
-    def _save(self):
-        try:
-            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-            self.storage_path.write_text(
-                json.dumps([e.to_dict() for e in self.experiences], indent=2, ensure_ascii=False)
-            )
-        except Exception as e:
-            logger.error("保存经验失败: %s", e)
+    async def get_stats(self) -> dict:
+        await self._ensure_table()
+        if not self.db:
+            return {"total": 0, "success_count": 0, "failure_count": 0}
 
-    def get_stats(self) -> dict:
-        now = datetime.now()
+        total = await self.db.fetchval(
+            "SELECT COUNT(*) FROM experiences WHERE tenant_id = ? AND agent_id = ?",
+            (self.tenant_id, self.agent_id),
+        )
+        success = await self.db.fetchval(
+            "SELECT COUNT(*) FROM experiences WHERE tenant_id = ? AND agent_id = ? AND outcome = 'success'",
+            (self.tenant_id, self.agent_id),
+        )
         return {
-            "total": len(self.experiences),
-            "success_count": sum(1 for e in self.experiences if e.outcome == "success"),
-            "failure_count": sum(1 for e in self.experiences if e.outcome == "failure"),
+            "total": total,
+            "success_count": success,
+            "failure_count": total - success,
         }
