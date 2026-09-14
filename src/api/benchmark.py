@@ -6,8 +6,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.benchmark.engine import BENCHMARK_TARGETS, benchmark_engine
+from src.benchmark.evaluator import CapabilityEvaluator, EvaluationDimension
 
 router = APIRouter()
+capability_evaluator = CapabilityEvaluator()
 
 
 class BenchmarkRunRequest(BaseModel):
@@ -16,12 +18,25 @@ class BenchmarkRunRequest(BaseModel):
     concurrency: int = 5
 
 
+class EvaluateRequest(BaseModel):
+    accuracy: float = 0.5
+    efficiency: float = 0.5
+    completeness: float = 0.5
+    safety: float = 0.5
+    helpfulness: float = 0.5
+    details: dict = {}
+
+
 # ── Health ──────────────────────────────────────────────────
 
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "component": "OpenBenchmark"}
+    return {
+        "status": "ok",
+        "component": "OpenBenchmark",
+        "capability_evaluations": capability_evaluator.get_stats().get("total_evaluations", 0),
+    }
 
 
 # ── Stats ───────────────────────────────────────────────────
@@ -148,3 +163,40 @@ async def delete_history(organ: str = Query(default="", description="Delete by o
     """Delete benchmark history."""
     deleted = benchmark_engine.delete_history(organ=organ)
     return {"deleted": deleted, "organ": organ or "all"}
+
+
+# ── Capability Evaluation ────────────────────────────────────
+
+
+@router.post("/capability/evaluate")
+async def evaluate_capability(req: EvaluateRequest):
+    """Evaluate agent capability across 5 dimensions."""
+    dimension_scores = {
+        "accuracy": req.accuracy,
+        "efficiency": req.efficiency,
+        "completeness": req.completeness,
+        "safety": req.safety,
+        "helpfulness": req.helpfulness,
+    }
+    result = capability_evaluator.record(
+        session_id=f"eval_{int(time.time() * 1000)}",
+        task_type="general",
+        dimension_scores=dimension_scores,
+    )
+    return {
+        "eval_id": result.eval_id,
+        "overall_score": result.overall_score,
+        "dimensions": result.dimensions,
+    }
+
+
+@router.get("/capability/report")
+async def capability_report():
+    """Get capability evaluation report."""
+    return capability_evaluator.get_stats()
+
+
+@router.get("/capability/trends")
+async def capability_trends(days: int = Query(default=7)):
+    """Get trend data."""
+    return {"trend": capability_evaluator.get_trend(days)}
