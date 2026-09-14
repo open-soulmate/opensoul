@@ -9,12 +9,14 @@ from pydantic import BaseModel
 
 from src.vision.chart_generator import ChartGenerator
 from src.vision.mindmap import MindMapGenerator
+from src.vision.dag_visualizer import DAGVisualizer
 
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
 charts = ChartGenerator()
 mindmaps = MindMapGenerator()
+dag_viz = DAGVisualizer()
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -304,4 +306,44 @@ async def vision_health():
         "status": "ok",
         "component": "OpenVision",
         **charts.stats(),
+        "dag": dag_viz.get_stats(),
     }
+
+
+# ── DAG Visualization ─────────────────────────────────────────
+
+
+class DAGCreateRequest(BaseModel):
+    plan_id: str
+    goal: str
+    steps: list[dict]
+
+
+@router.post("/dag/create")
+async def create_dag(req: DAGCreateRequest):
+    """Create a DAG layout from plan steps."""
+    layout = dag_viz.create_from_plan(req.plan_id, req.goal, req.steps)
+    return {
+        "plan_id": req.plan_id,
+        "node_count": len(layout.nodes),
+        "edge_count": len(layout.edges),
+        "mermaid": dag_viz.to_mermaid(req.plan_id),
+    }
+
+
+@router.get("/dag/{plan_id}/mermaid")
+async def dag_mermaid(plan_id: str):
+    """Get Mermaid diagram."""
+    return {"mermaid": dag_viz.to_mermaid(plan_id)}
+
+
+@router.get("/dag/{plan_id}/ascii")
+async def dag_ascii(plan_id: str):
+    """Get ASCII tree."""
+    return {"ascii": dag_viz.to_ascii(plan_id)}
+
+
+@router.get("/dag/{plan_id}/react-flow")
+async def dag_react_flow(plan_id: str):
+    """Get React Flow JSON."""
+    return dag_viz.to_react_flow(plan_id)
