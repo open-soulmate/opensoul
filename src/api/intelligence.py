@@ -8,11 +8,13 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from src.intelligence.analyzer import InsightType, Severity, SystemIntelligence
+from src.intelligence.intent import IntentClassifier, INTENT_PATTERNS
 
 router = APIRouter()
 
 # ── Singletons ─────────────────────────────────────────────
 intelligence = SystemIntelligence()
+intent_classifier = IntentClassifier()
 
 
 class MetricsRecordRequest(BaseModel):
@@ -22,6 +24,10 @@ class MetricsRecordRequest(BaseModel):
     request_count: int = 0
     error_count: int = 0
     custom: dict = {}
+
+
+class IntentClassifyRequest(BaseModel):
+    text: str
 
 
 # ── Health ─────────────────────────────────────────────────
@@ -35,6 +41,7 @@ async def health():
         "component": "OpenIntelligence",
         "tracked_components": len(intelligence._component_metrics),
         "total_insights": len(intelligence._insights),
+        "intent_patterns": len(INTENT_PATTERNS),
     }
 
 
@@ -236,3 +243,26 @@ async def record_metrics(req: MetricsRecordRequest):
         },
     )
     return {"status": "ok", "component": req.component}
+
+
+# ── Intent Classification ──────────────────────────────────
+
+
+@router.post("/intent/classify")
+async def classify_intent(req: IntentClassifyRequest):
+    """Classify user intent from text."""
+    result = intent_classifier.classify(req.text)
+    return {
+        "intent": result.intent.value,
+        "confidence": result.confidence,
+        "sub_intents": [s for s in result.sub_intents],
+        "keywords": result.keywords,
+        "suggested_tools": result.suggested_tools,
+        "routing_strategy": result.routing_strategy,
+    }
+
+
+@router.get("/intent/stats")
+async def intent_stats():
+    """Get intent classification statistics."""
+    return intent_classifier.get_stats()
