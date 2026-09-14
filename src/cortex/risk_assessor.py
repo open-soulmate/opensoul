@@ -24,7 +24,7 @@ class RiskAssessor:
             all_risks.append(Risk("多文件改动", "medium", f"同时修改{len(intent.target_files)}个文件"))
 
         if self.experience:
-            similar_failures = self.experience.get_similar_failures(intent)
+            similar_failures = await self.experience.get_similar_failures(intent)
             if similar_failures:
                 level = "high" if len(similar_failures) >= 3 else "medium"
                 all_risks.append(Risk("历史失败经验", level, f"类似操作曾失败{len(similar_failures)}次"))
