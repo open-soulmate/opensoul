@@ -40,13 +40,32 @@ def _redact_outbound(text: str) -> str:
 
 async def _compress_if_needed(context: str, budget_chars: int = 12000) -> str:
     """P0-1: 上下文压缩 — 超预算时用ContextCompressor压缩（goose 9段式+kilocode切分）。
-    ContextCompressor.compress()签名是messages列表，对RAG文本场景用单条user message包装。
+    ContextCompressor.compress()签名是messages列表+context_limit，需llm_fn。
     失败时截断降级。"""
     if len(context) <= budget_chars:
         return context
     try:
+        import httpx as _httpx
+        from src.core.config import settings as _settings
         from src.cortex.context_compression import ContextCompressor
-        compressor = ContextCompressor()
+
+        async def _llm_fn(prompt: str) -> str:
+            api_key = _settings.llm_api_key or ""
+            headers = {"Content-Type": "application/json"}
+            if api_key.startswith("tp-"):
+                headers["api-key"] = api_key
+            else:
+                headers["Authorization"] = f"Bearer {api_key}"
+            async with _httpx.AsyncClient(timeout=60) as c:
+                resp = await c.post(
+                    f"{_settings.llm_base_url}/chat/completions",
+                    headers=headers,
+                    json={"model": _settings.llm_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
+                )
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"]
+
+        compressor = ContextCompressor(llm_fn=_llm_fn)
         messages = [{"role": "user", "content": context}]
         result = await compressor.compress(messages, context_limit=budget_chars // 3)
         if hasattr(result, "summary") and result.summary:
