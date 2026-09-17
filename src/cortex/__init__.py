@@ -1,4 +1,5 @@
 from src.cortex.chain_of_thought import ChainOfThought
+from src.cortex.context_compression import ContextCompressor, StructuredSummary
 from src.cortex.graphrag import GraphRAGEngine
 from src.cortex.multi_agent import MultiAgent
 from src.cortex.project_memory import ProjectMemory
@@ -18,4 +19,6 @@ __all__ = [
     "ProjectMemory",
     "RiskAssessor",
     "Reflector",
+    "ContextCompressor",
+    "StructuredSummary",
 ]
