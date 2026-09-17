@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 import threading
 import time
+import logging
+
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -233,6 +235,20 @@ class IntrusionDetector:
                     sus.blocked = False
 
         # ── Pattern matching ────────────────────────────────────────
+        # Mask API keys in body before pattern matching — keys can contain 0x, --, /* etc.
+        # that falsely trigger SQL injection / hex encoding patterns.
+        import json as _json
+        try:
+            _parsed = _json.loads(body)
+            if isinstance(_parsed, dict):
+                for _k in ("api_key", "apiKey", "token", "secret", "key"):
+                    if _k in _parsed and isinstance(_parsed[_k], str):
+                        _parsed[_k] = "***"
+                body = _json.dumps(_parsed)
+                combined = f"{path} {query} {body}"
+        except (ValueError, TypeError):
+            pass
+
         for pattern, desc in self.SQLI_PATTERNS:
             if re.search(pattern, combined):
                 threats.append(self._make_threat(
@@ -305,6 +321,14 @@ class IntrusionDetector:
                     AttackType.RATE_ANOMALY, ThreatLevel.HIGH,
                     f"Rate anomaly: {recent} requests in {self.RATE_WINDOW}s (threshold: {self.RATE_THRESHOLD})",
                 ))
+
+        # Debug: log detected threats
+        if threats:
+            logging.getLogger(__name__).debug(
+                "WAF threats: ip=%s path=%s threats=%s",
+                ip, path,
+                [(t.attack_type.value, t.threat_level.value, str(t)[:50]) for t in threats],
+            )
 
         # ── Update suspicion scores ─────────────────────────────────
         if threats:

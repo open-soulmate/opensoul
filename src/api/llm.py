@@ -138,6 +138,14 @@ async def test_connection(body: LLMTestRequest | None = None):
     base_url = (body.base_url if body and body.base_url else None) or _llm_overrides.get("base_url", settings.llm_base_url)
     model = (body.model if body and body.model else None) or _llm_overrides.get("model", settings.llm_model)
 
+    import logging
+    logging.getLogger("llm-test").warning(
+        "TEST REQUEST: body=%s, resolved: base_url=%s, model=%s, key_len=%d, key_source=%s",
+        body.model_dump() if body else None,
+        base_url, model, len(api_key) if api_key else 0,
+        "body" if (body and body.api_key) else "override/env"
+    )
+
     if not api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
 
@@ -148,7 +156,10 @@ async def test_connection(body: LLMTestRequest | None = None):
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers={
+                    "Content-Type": "application/json",
+                    **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+                },
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": "Say 'pong' and nothing else."}],
@@ -183,7 +194,10 @@ async def completions(req: LLMRequest):
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Content-Type": "application/json",
+                **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+            },
             json={
                 "model": model,
                 "messages": req.messages,

@@ -66,7 +66,10 @@ Answer:"""
         async with client.stream(
             "POST",
             f"{settings.llm_base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Content-Type": "application/json",
+                **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+            },
             json={
                 "model": settings.llm_model,
                 "messages": [{"role": "user", "content": prompt}],
