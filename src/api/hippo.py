@@ -414,6 +414,104 @@ async def ltm_context(req: LongTermSearchRequest):
     return {"context": context}
 
 
+# ── Long-term Memory CRUD + Audit (Khoj + mem0 pattern) ────
+
+class LTMUpdateRequest(BaseModel):
+    content: str | None = None
+    memory_type: str | None = None
+    importance: float | None = None
+    tags: list[str] | None = None
+    metadata: dict | None = None
+    reason: str = "user_edit"
+
+
+class LTMDeleteRequest(BaseModel):
+    reason: str = "user_delete"
+    hard_delete: bool = False
+
+
+# NOTE: /ltm/list and /ltm/audit/* MUST be registered BEFORE /ltm/{memory_id}
+# to avoid FastAPI matching "list"/"audit" as a memory_id path parameter.
+
+
+@router.get("/ltm/list")
+async def ltm_list(
+    memory_type: str = Query(default=""),
+    include_deleted: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """List all long-term memories (Khoj CRUD: user can see what AI remembers)."""
+    results = _lt_store.list_memories(
+        memory_type=memory_type,
+        include_deleted=include_deleted,
+        limit=limit,
+        offset=offset,
+    )
+    return {"memories": results, "count": len(results)}
+
+
+@router.get("/ltm/audit/history")
+async def ltm_audit_history(
+    memory_id: str = Query(default=""),
+    event: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Get memory audit trail history (mem0 pattern)."""
+    history = _lt_store.get_history(
+        memory_id=memory_id,
+        event=event,
+        limit=limit,
+    )
+    return {"history": history, "count": len(history)}
+
+
+@router.get("/ltm/audit/stats")
+async def ltm_audit_stats():
+    """Get audit trail statistics."""
+    return _lt_store.get_audit_stats()
+
+
+@router.get("/ltm/{memory_id}")
+async def ltm_get(memory_id: str):
+    """Get a specific long-term memory by ID."""
+    memories = _lt_store.list_memories(include_deleted=True, limit=10000)
+    for m in memories:
+        if m["memory_id"] == memory_id:
+            return m
+    raise HTTPException(444, f"Long-term memory {memory_id} not found")
+
+
+@router.patch("/ltm/{memory_id}")
+async def ltm_update(memory_id: str, req: LTMUpdateRequest):
+    """Update a long-term memory with audit trail (Khoj CRUD + mem0 audit)."""
+    result = _lt_store.update_memory(
+        memory_id=memory_id,
+        content=req.content,
+        memory_type=req.memory_type,
+        importance=req.importance,
+        tags=req.tags,
+        metadata=req.metadata,
+        reason=req.reason,
+    )
+    if result is None:
+        raise HTTPException(444, f"Long-term memory {memory_id} not found")
+    return {"memory_id": memory_id, "updated": True, "memory": result}
+
+
+@router.delete("/ltm/{memory_id}")
+async def ltm_delete(memory_id: str, req: LTMDeleteRequest = LTMDeleteRequest()):
+    """Delete a long-term memory with audit trail."""
+    success = _lt_store.delete_memory(
+        memory_id=memory_id,
+        reason=req.reason,
+        hard_delete=req.hard_delete,
+    )
+    if not success:
+        raise HTTPException(444, f"Long-term memory {memory_id} not found")
+    return {"deleted": True, "memory_id": memory_id, "hard_delete": req.hard_delete}
+
+
 # ── Stats ──────────────────────────────────────────────────
 
 

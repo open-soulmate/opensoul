@@ -13,6 +13,7 @@ from src.hippo.session import Session, SessionManager, SessionStatus
 from src.hippo.long_term_memory import (
     LongTermMemory,
     LongTermMemoryStore,
+    MemoryAuditEntry,
     _normalize_dict_floats,
 )
 
@@ -21,6 +22,7 @@ __all__ = [
     "DecayStrategy",
     "Memory",
     "MemoryStore",
+    "MemoryAuditEntry",
     "Session",
     "SessionManager",
     "SessionStatus",

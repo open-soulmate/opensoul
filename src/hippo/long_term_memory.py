@@ -40,6 +40,25 @@ class LongTermMemory:
     source_session: str = ""
 
 
+@dataclass
+class MemoryAuditEntry:
+    """Audit trail entry for memory operations (mem0 pattern).
+
+    Every store/update/delete writes an audit record so that
+    "this memory was changed by whom, because of what, from what to what"
+    is fully traceable. Schema mirrors mem0's history table:
+    memory_id / old / new / event / is_deleted.
+    """
+    audit_id: str
+    memory_id: str
+    event: str  # ADD / UPDATE / DELETE / MERGE / DECAY
+    old_value: str = ""  # JSON snapshot before change (empty for ADD)
+    new_value: str = ""  # JSON snapshot after change (empty for DELETE)
+    is_deleted: bool = False
+    reason: str = ""  # human-readable: "user_edit", "consolidation_merge", etc.
+    created_at: float = field(default_factory=time.time)
+
+
 def _normalize_dict_floats(
     d: dict[str, float], target_min: float = 0.0, target_max: float = 1.0
 ) -> dict[str, float]:
@@ -108,6 +127,27 @@ class LongTermMemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_mem_consolidated
                 ON memories(consolidated, merged_into)
             """)
+            # Audit trail table (mem0 pattern: memory_id / old / new / event / is_deleted)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_audit (
+                    audit_id TEXT PRIMARY KEY,
+                    memory_id TEXT NOT NULL,
+                    event TEXT NOT NULL,
+                    old_value TEXT DEFAULT '',
+                    new_value TEXT DEFAULT '',
+                    is_deleted INTEGER DEFAULT 0,
+                    reason TEXT DEFAULT '',
+                    created_at REAL NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_audit_memory
+                ON memory_audit(memory_id, created_at)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_audit_event
+                ON memory_audit(event, created_at)
+            """)
             # FTS5 full-text search
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
@@ -155,7 +195,286 @@ class LongTermMemoryStore:
             conn.commit()
 
         logger.debug(f"Stored LTM: {memory_type} importance={importance:.2f}")
+        # Write ADD audit record (mem0 pattern)
+        self._write_audit(
+            memory_id=memory_id,
+            event="ADD",
+            old_value="",
+            new_value=json.dumps({
+                "content": content[:200],
+                "memory_type": memory_type,
+                "importance": importance,
+            }, ensure_ascii=False),
+            reason="store",
+        )
         return mem
+
+    def _write_audit(
+        self,
+        memory_id: str,
+        event: str,
+        old_value: str = "",
+        new_value: str = "",
+        reason: str = "",
+        is_deleted: bool = False,
+    ):
+        """Write an audit trail record (mem0 history pattern)."""
+        audit_id = f"aud_{hashlib.sha256(f'{memory_id}:{event}:{time.time()}'.encode()).hexdigest()[:12]}"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """INSERT INTO memory_audit
+                   (audit_id, memory_id, event, old_value, new_value, is_deleted, reason, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (audit_id, memory_id, event, old_value, new_value,
+                 1 if is_deleted else 0, reason, time.time()),
+            )
+            conn.commit()
+
+    def update_memory(
+        self,
+        memory_id: str,
+        content: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        importance: Optional[float] = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[dict] = None,
+        reason: str = "user_edit",
+    ) -> Optional[dict]:
+        """Update a long-term memory with full audit trail (Khoj CRUD + mem0 audit).
+
+        Only updates fields that are explicitly provided (sparse edit pattern).
+        Writes an UPDATE audit record with old/new snapshots.
+        Returns the updated memory dict, or None if not found.
+        """
+        # Fetch current state
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM memories WHERE memory_id = ?", (memory_id,)
+            ).fetchone()
+        if not row:
+            return None
+
+        old_snapshot = {
+            "content": row["content"],
+            "memory_type": row["memory_type"],
+            "importance": row["importance"],
+            "tags": row["tags"],
+        }
+
+        # Build update SQL for provided fields only
+        updates = []
+        params = []
+        new_snapshot = dict(old_snapshot)
+
+        if content is not None:
+            updates.append("content = ?")
+            params.append(content)
+            new_snapshot["content"] = content
+        if memory_type is not None:
+            updates.append("memory_type = ?")
+            params.append(memory_type)
+            new_snapshot["memory_type"] = memory_type
+        if importance is not None:
+            updates.append("importance = ?")
+            params.append(importance)
+            new_snapshot["importance"] = importance
+        if tags is not None:
+            tags_json = json.dumps(tags, ensure_ascii=False)
+            updates.append("tags = ?")
+            params.append(tags_json)
+            new_snapshot["tags"] = tags_json
+        if metadata is not None:
+            updates.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False))
+
+        if not updates:
+            return dict(row)  # Nothing to update
+
+        with sqlite3.connect(self.db_path) as conn:
+            # Update main table
+            sql = f"UPDATE memories SET {', '.join(updates)} WHERE memory_id = ?"
+            params.append(memory_id)
+            conn.execute(sql, params)
+
+            # Update FTS index if content or tags changed
+            if content is not None or tags is not None:
+                conn.execute(
+                    "DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,)
+                )
+                new_content = content if content is not None else row["content"]
+                new_tags = tags if tags is not None else json.loads(row["tags"])
+                conn.execute(
+                    "INSERT INTO memories_fts (memory_id, content, tags) VALUES (?, ?, ?)",
+                    (memory_id, new_content, json.dumps(new_tags)),
+                )
+
+            # Fetch updated row
+            conn.row_factory = sqlite3.Row
+            updated = conn.execute(
+                "SELECT * FROM memories WHERE memory_id = ?", (memory_id,)
+            ).fetchone()
+            conn.commit()
+
+        # Write UPDATE audit record
+        self._write_audit(
+            memory_id=memory_id,
+            event="UPDATE",
+            old_value=json.dumps(old_snapshot, ensure_ascii=False),
+            new_value=json.dumps(new_snapshot, ensure_ascii=False),
+            reason=reason,
+        )
+
+        result = dict(updated)
+        result["tags"] = json.loads(result.get("tags", "[]"))
+        result["metadata"] = json.loads(result.get("metadata", "{}"))
+        return result
+
+    def delete_memory(
+        self,
+        memory_id: str,
+        reason: str = "user_delete",
+        hard_delete: bool = False,
+    ) -> bool:
+        """Delete a long-term memory with audit trail.
+
+        Soft delete (default): marks consolidated=1 so it stops appearing in
+        retrieval but data remains for audit. Hard delete: removes the row
+        entirely (audit trail preserved separately).
+        """
+        # Check existence + fetch snapshot for audit
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM memories WHERE memory_id = ?", (memory_id,)
+            ).fetchone()
+        if not row:
+            return False
+
+        snapshot = {
+            "content": row["content"],
+            "memory_type": row["memory_type"],
+            "importance": row["importance"],
+        }
+
+        with sqlite3.connect(self.db_path) as conn:
+            if hard_delete:
+                conn.execute("DELETE FROM memories WHERE memory_id = ?", (memory_id,))
+                conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,))
+            else:
+                # Soft delete: mark as consolidated so retrieval skips it
+                conn.execute(
+                    "UPDATE memories SET consolidated = 1 WHERE memory_id = ?",
+                    (memory_id,),
+                )
+                conn.execute(
+                    "DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,)
+                )
+            conn.commit()
+
+        # Write DELETE audit record
+        self._write_audit(
+            memory_id=memory_id,
+            event="DELETE",
+            old_value=json.dumps(snapshot, ensure_ascii=False),
+            new_value="",
+            reason=reason,
+            is_deleted=True,
+        )
+        return True
+
+    def list_memories(
+        self,
+        memory_type: str = "",
+        include_deleted: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """List all long-term memories (Khoj CRUD: user can see what AI remembers).
+
+        Args:
+            memory_type: Filter by type (episodic/semantic/procedural/working).
+            include_deleted: If True, also show soft-deleted (consolidated) memories.
+            limit: Max results.
+            offset: Pagination offset.
+        """
+        sql = "SELECT * FROM memories WHERE 1=1"
+        params: list = []
+        if memory_type:
+            sql += " AND memory_type = ?"
+            params.append(memory_type)
+        if not include_deleted:
+            sql += " AND consolidated = 0 AND merged_into = ''"
+        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql, params).fetchall()
+
+        results = []
+        for row in rows:
+            d = dict(row)
+            d["tags"] = json.loads(d.get("tags", "[]"))
+            d["metadata"] = json.loads(d.get("metadata", "{}"))
+            d["is_deleted"] = bool(d.get("consolidated", 0))
+            results.append(d)
+        return results
+
+    def get_history(
+        self,
+        memory_id: str = "",
+        event: str = "",
+        limit: int = 50,
+    ) -> list[dict]:
+        """Get audit trail history (mem0 pattern).
+
+        Args:
+            memory_id: Filter by specific memory. Empty = all memories.
+            event: Filter by event type (ADD/UPDATE/DELETE/MERGE/DECAY).
+            limit: Max results.
+        """
+        sql = "SELECT * FROM memory_audit WHERE 1=1"
+        params: list = []
+        if memory_id:
+            sql += " AND memory_id = ?"
+            params.append(memory_id)
+        if event:
+            sql += " AND event = ?"
+            params.append(event)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql, params).fetchall()
+
+        return [dict(r) for r in rows]
+
+    def get_audit_stats(self) -> dict:
+        """Get audit trail statistics."""
+        with sqlite3.connect(self.db_path) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM memory_audit").fetchone()[0]
+            by_event = conn.execute(
+                "SELECT event, COUNT(*) FROM memory_audit GROUP BY event"
+            ).fetchall()
+            deleted = conn.execute(
+                "SELECT COUNT(*) FROM memory_audit WHERE is_deleted = 1"
+            ).fetchone()[0]
+            recent = conn.execute(
+                """SELECT memory_id, event, reason, created_at
+                   FROM memory_audit ORDER BY created_at DESC LIMIT 5"""
+            ).fetchall()
+
+        return {
+            "total_audit_records": total,
+            "by_event": {e[0]: e[1] for e in by_event},
+            "deleted_count": deleted,
+            "recent": [
+                {"memory_id": r[0], "event": r[1], "reason": r[2], "created_at": r[3]}
+                for r in recent
+            ],
+        }
 
     def retrieve(
         self,
@@ -427,6 +746,7 @@ class LongTermMemoryStore:
             ).fetchall()
 
             seen: dict[str, str] = {}
+            merge_audit_records: list[tuple[str, str, float, float]] = []
             for row in rows:
                 content_hash = hashlib.sha256(row["content"][:100].encode()).hexdigest()
                 if content_hash in seen:
@@ -446,6 +766,10 @@ class LongTermMemoryStore:
                         (primary_id, row["memory_id"]),
                     )
                     stats["merged"] += 1
+                    merge_audit_records.append((
+                        row["memory_id"], primary_id,
+                        row["importance"], row["access_count"],
+                    ))
                 else:
                     seen[content_hash] = row["memory_id"]
 
@@ -468,6 +792,19 @@ class LongTermMemoryStore:
             stats["archived"] = cursor.rowcount or 0
 
             conn.commit()
+
+        # Write MERGE audit records (mem0 pattern)
+        for merged_id, primary_id, old_importance, old_access in merge_audit_records:
+            self._write_audit(
+                memory_id=merged_id,
+                event="MERGE",
+                old_value=json.dumps({
+                    "importance": old_importance,
+                    "access_count": old_access,
+                }),
+                new_value=json.dumps({"merged_into": primary_id}),
+                reason="consolidation_dedup",
+            )
 
         logger.info(f"Memory consolidation: {stats}")
         return stats
