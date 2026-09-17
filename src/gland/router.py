@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import enum
 import logging
 import time
@@ -163,6 +164,42 @@ class ModelRouter:
         p._consecutive_failures = 0
         p._cooldown_until = 0.0
 
+    # ── per-provider retry (kilocode retry.ts policy) ────────────
+
+    # Max attempts against ONE provider before giving up and letting the
+    # router fail over to the next candidate.
+    RETRY_MAX_ATTEMPTS = 3
+
+    async def _with_retry(self, provider: ProviderConfig, fn):
+        """Run a single-provider HTTP call with the cortex retry policy.
+
+        Retryable errors (429/5xx/timeouts/connection resets) are retried
+        in place — honoring the server's Retry-After header when present —
+        so one transient blip no longer burns a failure mark and triggers
+        failover. Non-retryable errors (401/400/404/...) raise immediately
+        so the next provider is tried at once.
+        """
+        from src.cortex.llm_retry import retry_delay_for
+
+        attempt = 0
+        while True:
+            try:
+                return await fn()
+            except Exception as exc:
+                delay = retry_delay_for(exc, attempt)
+                if delay is None or attempt + 1 >= self.RETRY_MAX_ATTEMPTS:
+                    raise
+                attempt += 1
+                logger.warning(
+                    "Provider=%s attempt %d/%d failed (%s), retrying in %.1fs",
+                    provider.name,
+                    attempt,
+                    self.RETRY_MAX_ATTEMPTS,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
     # ── API calls ────────────────────────────────────────────────
 
     async def chat(
@@ -195,15 +232,23 @@ class ModelRouter:
                 logger.debug("Skipping provider=%s: no API key", provider.name)
                 continue
 
+            # Locals below are narrowed to str by the guards above; binding
+            # them keeps the closure types clean (narrowing doesn't cross
+            # into lambda bodies).
+            call_key: str = api_key
+            call_model: str = resolved_model
             try:
-                result = await self._call_chat(
+                result = await self._with_retry(
                     provider,
-                    api_key,
-                    resolved_model,
-                    messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=stream,
+                    lambda: self._call_chat(
+                        provider,
+                        call_key,
+                        call_model,
+                        messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stream=stream,
+                    ),
                 )
                 self._mark_success(provider)
 
@@ -246,8 +291,15 @@ class ModelRouter:
             if not api_key:
                 continue
 
+            call_key: str = api_key  # narrowed by the guards above
+            call_model: str = resolved_model
             try:
-                result = await self._call_embedding(provider, api_key, resolved_model, texts)
+                result = await self._with_retry(
+                    provider,
+                    lambda: self._call_embedding(
+                        provider, call_key, call_model, texts
+                    ),
+                )
                 self._mark_success(provider)
 
                 # Rough token estimate for embeddings: 1 token per 4 chars
