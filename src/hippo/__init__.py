@@ -10,7 +10,11 @@ Modules:
 from src.hippo.decay import DecayEngine, DecayStrategy
 from src.hippo.memory_store import Memory, MemoryStore
 from src.hippo.session import Session, SessionManager, SessionStatus
-from src.hippo.long_term_memory import LongTermMemory, LongTermMemoryStore
+from src.hippo.long_term_memory import (
+    LongTermMemory,
+    LongTermMemoryStore,
+    _normalize_dict_floats,
+)
 
 __all__ = [
     "DecayEngine",
@@ -22,4 +26,5 @@ __all__ = [
     "SessionStatus",
     "LongTermMemory",
     "LongTermMemoryStore",
+    "_normalize_dict_floats",
 ]

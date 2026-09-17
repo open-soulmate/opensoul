@@ -40,6 +40,28 @@ class LongTermMemory:
     source_session: str = ""
 
 
+def _normalize_dict_floats(
+    d: dict[str, float], target_min: float = 0.0, target_max: float = 1.0
+) -> dict[str, float]:
+    """Normalize float values in a dict to [target_min, target_max].
+
+    Ported from generative-agents retrieve.py normalize_dict_floats().
+    If all values are identical (range=0), every value maps to midpoint.
+    """
+    if not d:
+        return d
+    min_val = min(d.values())
+    max_val = max(d.values())
+    range_val = max_val - min_val
+    if range_val == 0:
+        mid = (target_max - target_min) / 2
+        return {k: mid for k in d}
+    return {
+        k: ((v - min_val) * (target_max - target_min) / range_val + target_min)
+        for k, v in d.items()
+    }
+
+
 class LongTermMemoryStore:
     """SQLite-backed long-term memory store with FTS5 search.
 
@@ -226,14 +248,142 @@ class LongTermMemoryStore:
 
         return results
 
+    def three_factor_retrieve(
+        self,
+        query: str,
+        memory_type: str = "",
+        min_importance: float = 0.0,
+        limit: int = 10,
+        recency_decay: float = 0.99,
+        recency_weight: float = 1.0,
+        relevance_weight: float = 1.0,
+        importance_weight: float = 1.0,
+    ) -> list[dict]:
+        """Retrieve memories using three-factor scoring (generative-agents pattern).
+
+        Three factors, each normalized to [0,1] then combined with weights:
+        - Recency: exponential decay on hours since last access
+          (recency_decay ^ hours_since_access, capped at 1.0)
+        - Importance: stored importance value directly
+        - Relevance: Jaccard token similarity between query and content
+
+        Reference: gen-agents/reverie/backend_server/persona/cognitive_modules/retrieve.py
+        (new_retrieve, lines 199-271) — normalize each factor to [0,1], then
+        weighted sum. Paper suggests gw=[1,1,1] as decent default; all three
+        factors equal-weighted here.
+
+        The existing retrieve() uses a fixed-weight formula without recency;
+        this method adds time-awareness so recently accessed memories surface
+        preferentially alongside important and relevant ones.
+        """
+        # Phase 1: candidate gathering — same LIKE-based search as retrieve()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            like_sql = """
+                SELECT * FROM memories
+                WHERE (content LIKE ? OR tags LIKE ?)
+                  AND consolidated = 0 AND merged_into = ''
+            """
+            like_params: list = [f"%{query}%", f"%{query}%"]
+            if memory_type:
+                like_sql += " AND memory_type = ?"
+                like_params.append(memory_type)
+            like_sql += " AND importance >= ?"
+            like_params.append(min_importance)
+            like_sql += " ORDER BY last_accessed_at ASC LIMIT ?"
+            like_params.append(limit * 3)
+            rows = conn.execute(like_sql, like_params).fetchall()
+
+        if not rows:
+            return []
+
+        now = time.time()
+        query_lower = query.lower()
+        query_tokens = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+
+        # Phase 2: compute three raw factor scores per memory
+        recency_raw: dict[str, float] = {}
+        importance_raw: dict[str, float] = {}
+        relevance_raw: dict[str, float] = {}
+        memory_data: dict[str, dict] = {}
+
+        for row in rows:
+            d = dict(row)
+            d["tags"] = json.loads(d.get("tags", "[]"))
+            d["metadata"] = json.loads(d.get("metadata", "{}"))
+            mid = d["memory_id"]
+            memory_data[mid] = d
+
+            # Recency: 0.99 ^ hours_since_last_access (recent → closer to 1.0)
+            idle_hours = max(0.0, (now - d["last_accessed_at"]) / 3600.0)
+            recency_raw[mid] = recency_decay ** idle_hours
+
+            # Importance: stored value, already in [0, 1]
+            importance_raw[mid] = d["importance"]
+
+            # Relevance: Jaccard token overlap
+            content_lower = d["content"].lower()
+            content_tokens = set(re.findall(r'[\w\u4e00-\u9fff]+', content_lower))
+            if query_tokens and content_tokens:
+                relevance_raw[mid] = (
+                    len(query_tokens & content_tokens) / len(query_tokens | content_tokens)
+                )
+            else:
+                relevance_raw[mid] = 0.0
+
+        # Phase 3: normalize each factor to [0, 1]
+        recency_norm = _normalize_dict_floats(recency_raw)
+        importance_norm = _normalize_dict_floats(importance_raw)
+        relevance_norm = _normalize_dict_floats(relevance_raw)
+
+        # Phase 4: weighted combination
+        scored: list[dict] = []
+        for mid, d in memory_data.items():
+            score = (
+                recency_weight * recency_norm[mid]
+                + relevance_weight * relevance_norm[mid]
+                + importance_weight * importance_norm[mid]
+            ) / (recency_weight + relevance_weight + importance_weight)
+            d["three_factor_score"] = round(score, 4)
+            d["recency_raw"] = round(recency_raw[mid], 6)
+            d["relevance_raw"] = round(relevance_raw[mid], 4)
+            scored.append(d)
+
+        scored.sort(key=lambda x: x["three_factor_score"], reverse=True)
+        results = scored[:limit]
+
+        # Update access counts for retrieved memories
+        if results:
+            ids = [r["memory_id"] for r in results]
+            with sqlite3.connect(self.db_path) as conn:
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"""UPDATE memories SET
+                        access_count = access_count + 1,
+                        last_accessed_at = ?
+                        WHERE memory_id IN ({placeholders})""",
+                    [time.time()] + ids,
+                )
+                conn.commit()
+
+        return results
+
     def get_context_prompt(
         self,
         query: str,
         token_budget: int = 500,
         memory_type: str = "",
+        use_three_factor: bool = True,
     ) -> str:
-        """Generate memory context for injection into system prompt."""
-        memories = self.retrieve(query, memory_type=memory_type, limit=5)
+        """Generate memory context for injection into system prompt.
+
+        By default uses three_factor_retrieve() (recency+importance+relevance);
+        set use_three_factor=False to fall back to the legacy retrieve() scoring.
+        """
+        if use_three_factor:
+            memories = self.three_factor_retrieve(query, memory_type=memory_type, limit=5)
+        else:
+            memories = self.retrieve(query, memory_type=memory_type, limit=5)
         if not memories:
             return ""
 
