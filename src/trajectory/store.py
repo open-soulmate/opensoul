@@ -25,6 +25,7 @@ class EventType(StrEnum):
     TOOL_RESULT = "tool_result"
     AGENT_DISPATCH = "agent_dispatch"
     AGENT_RESULT = "agent_result"
+    SPAN = "span"
     ERROR = "error"
     CHECKPOINT = "checkpoint"
     BRANCH = "branch"
@@ -46,6 +47,7 @@ class TrajectoryEvent:
     duration_ms: float = 0.0
     status: str = "ok"
     created_at: str = ""
+    end_at: str | None = None
 
     def __post_init__(self):
         if not self.id:
@@ -94,6 +96,73 @@ class TrajectorySession:
         return d
 
 
+class ScoreDataType(StrEnum):
+    """langfuse Score data types."""
+
+    NUMERIC = "numeric"
+    CATEGORICAL = "categorical"
+    BOOLEAN = "boolean"
+
+
+# langfuse Score sources: API (programmatic) / EVAL (LLM judge or code eval) /
+# ANNOTATION (human). Normalized to lowercase snake_case here.
+SCORE_SOURCES = ("api", "llm_judge", "code_eval", "human")
+
+
+@dataclass
+class TrajectoryScore:
+    """A quality score attached to a session or a single trace event.
+
+    Mirrors the langfuse Score entity — the third layer of the
+    Trace → Observation → Score observability model. Scores are how
+    "did this run get better" becomes a queryable metric instead of a
+    feeling (SUMMARY.md P0-5 评估闭环的存储前提).
+    """
+
+    id: str = ""
+    session_id: str = ""
+    trace_id: str | None = None
+    name: str = ""
+    value: float = 0.0
+    string_value: str | None = None
+    data_type: str = ScoreDataType.NUMERIC.value
+    comment: str = ""
+    source: str = "api"
+    created_at: str = ""
+
+    def __post_init__(self):
+        if not self.id:
+            self.id = str(uuid.uuid4())
+        if not self.created_at:
+            self.created_at = datetime.now(UTC).isoformat()
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def gen_ai_attributes(
+    system: str,
+    model: str,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    finish_reason: str | None = None,
+) -> dict:
+    """Build OpenTelemetry GenAI semantic-convention attributes.
+
+    SUMMARY.md §2 signal 5: OTel GenAI semconv was officially adopted —
+    trajectory metadata should speak `gen_ai.*` so it can be exported to
+    any OTel backend without translation.
+    """
+    attrs: dict = {"gen_ai.system": system, "gen_ai.request.model": model}
+    if input_tokens is not None:
+        attrs["gen_ai.usage.input_tokens"] = input_tokens
+    if output_tokens is not None:
+        attrs["gen_ai.usage.output_tokens"] = output_tokens
+    if finish_reason is not None:
+        attrs["gen_ai.response.finish_reasons"] = [finish_reason]
+    return attrs
+
+
 class TrajectoryStore:
     """Persistent storage for trajectory sessions and events."""
 
@@ -132,6 +201,33 @@ class TrajectoryStore:
         await db_pool.execute("""
             CREATE INDEX IF NOT EXISTS idx_traj_events_session
             ON trajectory_events(session_id, created_at)
+        """)
+        # Migration: span-level end timestamp (langfuse Observation layer).
+        # SQLite has no ADD COLUMN IF NOT EXISTS — a duplicate-column error on
+        # re-run means the migration already applied and is safe to swallow.
+        try:
+            await db_pool.execute("ALTER TABLE trajectory_events ADD COLUMN end_at TEXT")
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
+        await db_pool.execute("""
+            CREATE TABLE IF NOT EXISTS trajectory_scores (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                trace_id TEXT,
+                name TEXT NOT NULL,
+                value REAL NOT NULL DEFAULT 0,
+                string_value TEXT,
+                data_type TEXT NOT NULL DEFAULT 'numeric',
+                comment TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT 'api',
+                created_at TEXT NOT NULL
+            )
+        """)
+        await db_pool.execute("""
+            CREATE INDEX IF NOT EXISTS idx_traj_scores_session
+            ON trajectory_scores(session_id, name)
         """)
 
     # ── Session CRUD ─────────────────────────────────────────
@@ -210,6 +306,8 @@ class TrajectoryStore:
         )
 
     async def delete_session(self, session_id: str):
+        await self.ensure_tables()
+        await db_pool.execute("DELETE FROM trajectory_scores WHERE session_id = ?", session_id)
         await db_pool.execute("DELETE FROM trajectory_events WHERE session_id = ?", session_id)
         await db_pool.execute("DELETE FROM trajectory_sessions WHERE id = ?", session_id)
 
@@ -227,8 +325,8 @@ class TrajectoryStore:
         await db_pool.execute(
             """INSERT INTO trajectory_events
                (id, session_id, parent_event_id, event_type, agent_id,
-                content, metadata_json, token_usage, duration_ms, status, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                content, metadata_json, token_usage, duration_ms, status, created_at, end_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             event.id,
             event.session_id,
             event.parent_event_id,
@@ -240,6 +338,7 @@ class TrajectoryStore:
             event.duration_ms,
             event.status,
             event.created_at,
+            event.end_at,
         )
         # Update session counters
         await db_pool.execute(
@@ -291,6 +390,226 @@ class TrajectoryStore:
             *params,
         )
         return [self._row_to_event(r) for r in rows]
+
+    # ── Spans (langfuse Observation layer) ───────────────────
+
+    async def end_event(
+        self,
+        event_id: str,
+        status: str = "ok",
+        token_usage: int | None = None,
+    ) -> TrajectoryEvent | None:
+        """Close a span-style event: stamp ``end_at`` and derive duration.
+
+        langfuse Observation semantics — an observation without an end is
+        still "open". Duration is computed here from created_at→now rather
+        than trusted from the caller, so every span's duration comes from
+        one clock. ``token_usage`` folds back into the session total.
+        """
+        await self.ensure_tables()
+        row = await db_pool.fetchrow("SELECT * FROM trajectory_events WHERE id = ?", event_id)
+        if not row:
+            return None
+        ev = self._row_to_event(row)
+        now = datetime.now(UTC)
+        end_at = now.isoformat()
+        duration = 0.0
+        try:
+            started = datetime.fromisoformat(ev.created_at)
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=UTC)
+            duration = max((now - started).total_seconds() * 1000.0, 0.0)
+        except ValueError:
+            # Unparseable created_at — leave duration at 0 rather than fail
+            # the close (mirrors deepseek "spill failure must not turn a
+            # successful call into an error").
+            pass
+        new_tokens = ev.token_usage if token_usage is None else token_usage
+        await db_pool.execute(
+            """UPDATE trajectory_events
+               SET end_at = ?, duration_ms = ?, status = ?, token_usage = ?
+               WHERE id = ?""",
+            end_at,
+            duration,
+            status,
+            new_tokens,
+            event_id,
+        )
+        if token_usage is not None and token_usage != ev.token_usage:
+            await db_pool.execute(
+                """UPDATE trajectory_sessions
+                   SET total_tokens = total_tokens + ?
+                   WHERE id = ?""",
+                token_usage - ev.token_usage,
+                ev.session_id,
+            )
+        ev.end_at = end_at
+        ev.duration_ms = duration
+        ev.status = status
+        ev.token_usage = new_tokens
+        return ev
+
+    async def get_trace_tree(self, session_id: str, limit: int = 500) -> dict:
+        """Build the nested observation tree for a session.
+
+        langfuse Trace→Observation model: ``parent_event_id`` links become
+        parent/child edges, each node carries subtree rollups (events /
+        tokens / duration — the Warp subtree-rollup pattern). Corrupt
+        lineage must not hang the reader: dangling parents are promoted to
+        roots and cycles are cut by treating the cycle member as a root.
+        """
+        await self.ensure_tables()
+        events = await self.get_events(session_id, limit=limit)
+        nodes: dict[str, dict] = {}
+        order: list[str] = []
+        for ev in events:
+            node = ev.to_dict()
+            node["children"] = []
+            nodes[ev.id] = node
+            order.append(ev.id)
+
+        roots: list[dict] = []
+        for eid in order:
+            node = nodes[eid]
+            parent_id = node.get("parent_event_id")
+            if not parent_id or parent_id == eid or parent_id not in nodes:
+                roots.append(node)
+                continue
+            # Cycle guard: walk the ancestor chain with a seen-set. If we
+            # revisit a node the lineage is corrupt — promote to root.
+            seen = {eid}
+            cur: str | None = parent_id
+            cyclic = False
+            while cur:
+                if cur in seen:
+                    cyclic = True
+                    break
+                seen.add(cur)
+                parent_node = nodes.get(cur)
+                cur = parent_node.get("parent_event_id") if parent_node else None
+            if cyclic:
+                roots.append(node)
+            else:
+                nodes[parent_id]["children"].append(node)
+
+        max_depth = 0
+
+        def rollup(node: dict, depth: int) -> None:
+            nonlocal max_depth
+            max_depth = max(max_depth, depth)
+            node["depth"] = depth
+            subtree_tokens = node["token_usage"]
+            subtree_duration = node["duration_ms"]
+            subtree_events = 1
+            for child in node["children"]:
+                rollup(child, depth + 1)
+                subtree_tokens += child["subtree_tokens"]
+                subtree_duration += child["subtree_duration_ms"]
+                subtree_events += child["subtree_events"]
+            node["subtree_tokens"] = subtree_tokens
+            node["subtree_duration_ms"] = round(subtree_duration, 1)
+            node["subtree_events"] = subtree_events
+
+        for root in roots:
+            rollup(root, 0)
+
+        return {
+            "session_id": session_id,
+            "roots": roots,
+            "total_events": len(events),
+            "max_depth": max_depth,
+        }
+
+    # ── Scores (langfuse Score layer) ────────────────────────
+
+    async def add_score(self, score: TrajectoryScore) -> TrajectoryScore:
+        """Persist a quality score against a session (optionally one event)."""
+        await self.ensure_tables()
+        if not score.session_id:
+            raise ValueError("score.session_id is required")
+        if not score.name:
+            raise ValueError("score.name is required")
+        if score.data_type not in {t.value for t in ScoreDataType}:
+            raise ValueError(f"score.data_type must be one of {[t.value for t in ScoreDataType]}")
+        if score.source not in SCORE_SOURCES:
+            raise ValueError(f"score.source must be one of {list(SCORE_SOURCES)}")
+        await db_pool.execute(
+            """INSERT INTO trajectory_scores
+               (id, session_id, trace_id, name, value, string_value,
+                data_type, comment, source, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            score.id,
+            score.session_id,
+            score.trace_id,
+            score.name,
+            score.value,
+            score.string_value,
+            score.data_type,
+            score.comment,
+            score.source,
+            score.created_at,
+        )
+        return score
+
+    async def get_scores(
+        self,
+        session_id: str = "",
+        name: str = "",
+        source: str = "",
+        limit: int = 100,
+    ) -> list[TrajectoryScore]:
+        await self.ensure_tables()
+        clauses = []
+        params: list[Any] = []
+        if session_id:
+            clauses.append("session_id = ?")
+            params.append(session_id)
+        if name:
+            clauses.append("name = ?")
+            params.append(name)
+        if source:
+            clauses.append("source = ?")
+            params.append(source)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        rows = await db_pool.fetch(
+            f"SELECT * FROM trajectory_scores{where} ORDER BY created_at DESC LIMIT ?",
+            *params,
+        )
+        return [self._row_to_score(r) for r in rows]
+
+    async def get_score_summary(self, session_id: str = "") -> dict:
+        """Aggregate scores per name — the "is it getting better" query."""
+        await self.ensure_tables()
+        where = " WHERE session_id = ?" if session_id else ""
+        params: tuple = (session_id,) if session_id else ()
+        rows = await db_pool.fetch(
+            f"""SELECT name,
+                       COUNT(*) as cnt,
+                       AVG(value) as avg_value,
+                       MIN(value) as min_value,
+                       MAX(value) as max_value,
+                       SUM(CASE WHEN source = 'llm_judge' THEN 1 ELSE 0 END) as judge_count,
+                       SUM(CASE WHEN source = 'human' THEN 1 ELSE 0 END) as human_count
+                FROM trajectory_scores{where}
+                GROUP BY name
+                ORDER BY name""",
+            *params,
+        )
+        scores = []
+        for row in rows:
+            scores.append(
+                {
+                    "name": row["name"],
+                    "count": row["cnt"] or 0,
+                    "avg_value": round(row["avg_value"] or 0, 3),
+                    "min_value": row["min_value"] or 0,
+                    "max_value": row["max_value"] or 0,
+                    "llm_judge_count": row["judge_count"] or 0,
+                    "human_count": row["human_count"] or 0,
+                }
+            )
+        return {"scores": scores, "total_score_names": len(scores)}
 
     # ── Fork (Branch) ────────────────────────────────────────
 
@@ -565,6 +884,22 @@ class TrajectoryStore:
             token_usage=d.get("token_usage", 0),
             duration_ms=d.get("duration_ms", 0),
             status=d.get("status", "ok"),
+            created_at=d.get("created_at", ""),
+            end_at=d.get("end_at"),
+        )
+
+    def _row_to_score(self, row) -> TrajectoryScore:
+        d = dict(row)
+        return TrajectoryScore(
+            id=d["id"],
+            session_id=d.get("session_id", ""),
+            trace_id=d.get("trace_id"),
+            name=d.get("name", ""),
+            value=d.get("value", 0.0),
+            string_value=d.get("string_value"),
+            data_type=d.get("data_type", "numeric"),
+            comment=d.get("comment", ""),
+            source=d.get("source", "api"),
             created_at=d.get("created_at", ""),
         )
 

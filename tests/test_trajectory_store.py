@@ -41,7 +41,7 @@ class TestEventType:
         assert EventType.CUSTOM == "custom"
 
     def test_count(self):
-        assert len(EventType) == 13
+        assert len(EventType) == 14
 
 
 class TestTrajectoryEvent:
@@ -178,7 +178,8 @@ class TestTrajectoryStore:
         pool = _mock_db_pool()
         with patch("src.trajectory.store.db_pool", pool):
             await self.store.ensure_tables()
-            assert pool.execute.call_count == 3  # 2 tables + 1 index
+            # 2 tables + 2 indexes + end_at migration ALTER + scores table
+            assert pool.execute.call_count == 6
 
     @pytest.mark.asyncio
     async def test_create_session(self):
@@ -194,7 +195,7 @@ class TestTrajectoryStore:
             assert session.tags == ["tag1"]
             assert session.status == "running"
             # create_session calls ensure_tables (3 calls) + INSERT (1 call)
-            assert pool.execute.call_count == 4
+            assert pool.execute.call_count == 7
 
     @pytest.mark.asyncio
     async def test_add_event(self):
@@ -215,7 +216,7 @@ class TestTrajectoryStore:
             assert result.token_usage == 10
             assert result.duration_ms == 50.0
             # add_event calls ensure_tables (3) + INSERT + UPDATE
-            assert pool.execute.call_count == 5
+            assert pool.execute.call_count == 8
 
     @pytest.mark.asyncio
     async def test_list_sessions(self):
@@ -324,5 +325,5 @@ class TestTrajectoryStore:
         pool = _mock_db_pool()
         with patch("src.trajectory.store.db_pool", pool):
             await self.store.delete_session("s1")
-            # delete_session: DELETE events + DELETE session
-            assert pool.execute.call_count == 2
+            # delete_session: ensure_tables (6) + DELETE scores/events/session
+            assert pool.execute.call_count == 9

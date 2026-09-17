@@ -5,7 +5,12 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.trajectory.store import EventType, TrajectoryEvent, trajectory_store
+from src.trajectory.store import (
+    EventType,
+    TrajectoryEvent,
+    TrajectoryScore,
+    trajectory_store,
+)
 from src.trajectory.session_fsm import SessionStateMachine, SessionEvent
 
 router = APIRouter()
@@ -278,6 +283,97 @@ async def replay_session(session_id: str, from_event: str = Query(default="")):
         ],
         "total_steps": len(events),
     }
+
+
+# ── Spans (langfuse Observation layer) ───────────────────────
+
+
+class EventEndRequest(BaseModel):
+    status: str = "ok"
+    token_usage: int | None = None
+
+
+@router.post("/events/{event_id}/end")
+async def end_event(event_id: str, req: EventEndRequest | None = None):
+    """Close a span-style event — stamps end_at and derives duration_ms."""
+    status = req.status if req else "ok"
+    token_usage = req.token_usage if req else None
+    event = await trajectory_store.end_event(event_id, status=status, token_usage=token_usage)
+    if not event:
+        raise HTTPException(404, "Event not found")
+    return event.to_dict()
+
+
+@router.get("/sessions/{session_id}/trace")
+async def get_trace_tree(session_id: str, limit: int = Query(default=500, ge=1, le=2000)):
+    """Get the nested observation tree (Trace→Observation model) with
+    per-subtree event/token/duration rollups."""
+    session = await trajectory_store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return await trajectory_store.get_trace_tree(session_id, limit=limit)
+
+
+# ── Scores (langfuse Score layer) ────────────────────────────
+
+
+class ScoreCreateRequest(BaseModel):
+    name: str
+    value: float = 0.0
+    string_value: str | None = None
+    data_type: str = "numeric"
+    comment: str = ""
+    source: str = "api"
+    trace_id: str | None = None
+
+
+@router.post("/sessions/{session_id}/scores")
+async def add_score(session_id: str, req: ScoreCreateRequest):
+    """Attach a quality score to a session (LLM judge / code eval / human)."""
+    session = await trajectory_store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    score = TrajectoryScore(
+        session_id=session_id,
+        trace_id=req.trace_id,
+        name=req.name,
+        value=req.value,
+        string_value=req.string_value,
+        data_type=req.data_type,
+        comment=req.comment,
+        source=req.source,
+    )
+    try:
+        await trajectory_store.add_score(score)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return score.to_dict()
+
+
+@router.get("/sessions/{session_id}/scores")
+async def list_scores(
+    session_id: str,
+    name: str = Query(default=""),
+    source: str = Query(default=""),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """List scores attached to a session."""
+    session = await trajectory_store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    scores = await trajectory_store.get_scores(
+        session_id=session_id, name=name, source=source, limit=limit
+    )
+    return {"session_id": session_id, "scores": [s.to_dict() for s in scores]}
+
+
+@router.get("/sessions/{session_id}/scores/summary")
+async def score_summary(session_id: str):
+    """Aggregate scores per name — the 'is it getting better' query."""
+    session = await trajectory_store.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return await trajectory_store.get_score_summary(session_id=session_id)
 
 
 # ── Event Types ──────────────────────────────────────────────
