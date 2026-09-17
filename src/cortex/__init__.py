@@ -1,6 +1,12 @@
 from src.cortex.chain_of_thought import ChainOfThought
 from src.cortex.context_compression import ContextCompressor, StructuredSummary
 from src.cortex.graphrag import GraphRAGEngine
+from src.cortex.loop_guard import (
+    DetectionType,
+    LoopDetectionResult,
+    LoopGuard,
+    LoopSeverity,
+)
 from src.cortex.multi_agent import MultiAgent
 from src.cortex.project_memory import ProjectMemory
 from src.cortex.quality import QualityScorer
@@ -21,4 +27,8 @@ __all__ = [
     "Reflector",
     "ContextCompressor",
     "StructuredSummary",
+    "LoopGuard",
+    "LoopDetectionResult",
+    "LoopSeverity",
+    "DetectionType",
 ]
