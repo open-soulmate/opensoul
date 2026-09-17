@@ -1,4 +1,5 @@
 import json
+import logging
 from uuid import UUID
 
 import httpx
@@ -9,7 +10,66 @@ from pydantic import BaseModel
 from src.config import settings
 from src.services.search import semantic_search
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _get_memory_context(query: str) -> str:
+    """P0-6: 从hippo长期记忆检索三因子上下文（recency+importance+relevance）。失败时静默降级。"""
+    try:
+        from src.hippo.long_term_memory import LongTermMemoryStore
+        store = LongTermMemoryStore()
+        return store.get_context_prompt(query=query, token_budget=300)
+    except Exception as exc:
+        logger.debug("hippo memory context unavailable: %s", exc)
+        return ""
+
+
+def _redact_outbound(text: str) -> str:
+    """P0-4: 出站脱敏，防止API key/token泄漏到LLM provider。失败时原样返回。"""
+    try:
+        from src.immune.moderator import ContentModerator
+        mod = ContentModerator()
+        result = mod.moderate(text)
+        return result.redacted_text if result.findings else text
+    except Exception as exc:
+        logger.debug("outbound redaction unavailable: %s", exc)
+        return text
+
+
+async def _compress_if_needed(context: str, budget_chars: int = 12000) -> str:
+    """P0-1: 上下文压缩 — 超预算时用ContextCompressor压缩（goose 9段式+kilocode切分）。
+    ContextCompressor.compress()签名是messages列表，对RAG文本场景用单条user message包装。
+    失败时截断降级。"""
+    if len(context) <= budget_chars:
+        return context
+    try:
+        from src.cortex.context_compression import ContextCompressor
+        compressor = ContextCompressor()
+        messages = [{"role": "user", "content": context}]
+        result = await compressor.compress(messages, context_limit=budget_chars // 3)
+        if hasattr(result, "summary") and result.summary:
+            return result.summary
+        if hasattr(result, "compressed_messages") and result.compressed_messages:
+            return "\n".join(m.get("content", "") for m in result.compressed_messages)
+        return context[:budget_chars] + "\n...[compressed]"
+    except Exception as exc:
+        logger.debug("context compression unavailable, truncating: %s", exc)
+        return context[:budget_chars] + "\n...[context truncated]"
+
+
+def _check_loop(response_text: str) -> dict | None:
+    """P0-7附属: 循环/重复检测guard。检测到循环返回警告信息，否则None。"""
+    try:
+        from src.cortex.loop_guard import LoopGuard
+        guard = LoopGuard()
+        result = guard.check(text_response=response_text)
+        if result and result.is_looping:
+            return {"type": "loop_warning", "severity": str(result.severity)}
+    except Exception as exc:
+        logger.debug("loop guard unavailable: %s", exc)
+    return None
 
 
 @router.get("/health")
@@ -41,19 +101,26 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
         context_parts.append(f"[{i + 1}] {r.get('chunk', '')}")
         sources.append({"id": r.get("id"), "score": r.get("score")})
 
-    context = "\n\n".join(context_parts)
+    # P0-1: 压缩过长上下文
+    context = await _compress_if_needed("\n\n".join(context_parts))
+
+    # P0-6: 注入hippo三因子记忆上下文
+    memory_ctx = _get_memory_context(question)
 
     # Send sources first
     yield f"data: {json.dumps({'type': 'sources', 'content': sources})}\n\n"
 
     prompt = f"""Based on the following context, answer the question. If the context doesn't contain enough information, say so.
-
+{memory_ctx}
 Context:
 {context}
 
 Question: {question}
 
 Answer:"""
+
+    # P0-4: 出站脱敏
+    prompt = _redact_outbound(prompt)
 
     api_key = settings.llm_api_key
     if not api_key:
@@ -122,15 +189,23 @@ async def chat(req: ChatRequest, user_id: UUID):
         context_parts.append(f"[{i + 1}] {r.get('chunk', '')}")
         sources.append({"id": r.get("id"), "score": r.get("score")})
 
-    context = "\n\n".join(context_parts)
-    prompt = f"""Based on the following context, answer the question. If the context doesn't contain enough information, say so.
+    # P0-1: 压缩过长上下文
+    context = await _compress_if_needed("\n\n".join(context_parts))
 
+    # P0-6: 注入hippo三因子记忆上下文
+    memory_ctx = _get_memory_context(req.question)
+
+    prompt = f"""Based on the following context, answer the question. If the context doesn't contain enough information, say so.
+{memory_ctx}
 Context:
 {context}
 
 Question: {req.question}
 
 Answer:"""
+
+    # P0-4: 出站脱敏
+    prompt = _redact_outbound(prompt)
 
     api_key = settings.llm_api_key
     if not api_key:
@@ -139,7 +214,10 @@ Answer:"""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{settings.llm_base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Content-Type": "application/json",
+                **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+            },
             json={
                 "model": settings.llm_model,
                 "messages": [{"role": "user", "content": prompt}],
@@ -149,5 +227,10 @@ Answer:"""
         )
         resp.raise_for_status()
         answer = resp.json()["choices"][0]["message"]["content"]
+
+    # 循环检测guard
+    loop_warning = _check_loop(answer)
+    if loop_warning:
+        return {"answer": answer, "sources": sources, "warning": loop_warning}
 
     return {"answer": answer, "sources": sources}
