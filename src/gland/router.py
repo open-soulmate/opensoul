@@ -13,6 +13,33 @@ from src.gland.token_meter import TokenMeter
 logger = logging.getLogger(__name__)
 
 
+def _outbound_redactor():
+    """Lazy singleton ContentModerator for outbound LLM redaction.
+
+    Fail-safe: any import/compile failure disables redaction (logged once)
+    instead of breaking every LLM call.
+    """
+    global _REDACTOR, _REDACTOR_INIT
+    if not _REDACTOR_INIT:
+        _REDACTOR_INIT = True
+        try:
+            from src.immune.moderator import ContentModerator
+
+            _REDACTOR = ContentModerator()
+        except Exception as exc:
+            logger.warning("Outbound secret redaction disabled: %s", exc)
+            _REDACTOR = None
+    return _REDACTOR
+
+
+_REDACTOR = None
+_REDACTOR_INIT = False
+# Minimum risk level redacted before text leaves the machine toward an LLM
+# provider. "critical" = API keys/tokens/passwords only; set to "low" to also
+# redact PII (phone/id/email/IP). Configurable per-deployment.
+OUTBOUND_REDACT_MIN_RISK = "critical"
+
+
 class TaskType(enum.StrEnum):
     CHAT = "chat"
     COMPLETION = "completion"
@@ -252,6 +279,26 @@ class ModelRouter:
         max_tokens: int,
         stream: bool,
     ) -> dict:
+        # Outbound secret guard (Warp blocklist pattern): redact API keys /
+        # tokens in message content before it leaves the machine toward the
+        # provider. Fail-safe — redaction errors never block the LLM call.
+        try:
+            redactor = _outbound_redactor()
+            if redactor is not None:
+                messages, findings = redactor.redact_messages(
+                    messages, min_risk=OUTBOUND_REDACT_MIN_RISK
+                )
+                if findings:
+                    types = sorted({f["type"] for f in findings})
+                    logger.warning(
+                        "Redacted %d secret(s) before provider=%s: %s",
+                        len(findings),
+                        provider.name,
+                        ", ".join(types),
+                    )
+        except Exception as exc:
+            logger.debug("Outbound redaction skipped: %s", exc)
+
         client = self._http_client or httpx.AsyncClient(timeout=60)
         resp = await client.post(
             f"{provider.base_url}/chat/completions",
