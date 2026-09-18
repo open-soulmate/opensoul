@@ -195,7 +195,15 @@ async def lifespan(app: FastAPI):
     app.state.vital_checker = checker
     app.state.vital_alert_mgr = alert_mgr
     await collector.start()
-    await alert_mgr.start()
+ await alert_mgr.start()
+
+ # job queue worker池显式启动 — dream周期生产者提交的hippo.dream等job
+ # 必须由主进程worker执行（此前worker池从未在主进程启动,job积压pending）
+ from src.will.job_handlers import register_default_handlers
+ from src.will.job_queue import get_job_queue
+ jq = get_job_queue()
+ register_default_handlers(jq)
+ await jq.start()
 
     # Intelligence auto-collect background task
     intel_task = asyncio.create_task(_intelligence_auto_collect())
