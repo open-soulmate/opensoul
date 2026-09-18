@@ -2,7 +2,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.config import settings
-from src.gland.router import ModelRouter, TaskType
+from src.gland.router import (
+    AllProvidersFailedError,
+    ModelRouter,
+    NoProviderError,
+    TaskType,
+)
 
 router = APIRouter()
 
@@ -98,6 +103,7 @@ async def gland_health():
         },
         "keys": {"total": total_keys},
         "token_meter": gateway.token_meter.summary(),
+        "last_chain_trace": gateway.get_chain_trace(),
     }
 
 
@@ -156,15 +162,24 @@ async def chat(req: ChatRequest):
     except ValueError:
         task = TaskType.CHAT
 
-    result = await gateway.chat(
-        messages=req.messages,
-        model=req.model,
-        task=task,
-        temperature=req.temperature,
-        max_tokens=req.max_tokens,
-        user_id=req.user_id,
-    )
-    return result
+    try:
+        result = await gateway.chat(
+            messages=req.messages,
+            model=req.model,
+            task=task,
+            temperature=req.temperature,
+            max_tokens=req.max_tokens,
+            user_id=req.user_id,
+        )
+        return result
+    except AllProvidersFailedError as exc:
+        # CowAgent: the exhaustion message must reach the caller — it lists
+        # every {provider, model, pass, error} tried, not a generic 500.
+        raise HTTPException(
+            status_code=502, detail={"error": str(exc), "tried": exc.tried}
+        )
+    except NoProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.post("/embed")
@@ -178,15 +193,24 @@ async def embed(req: EmbedRequest):
             user_id=req.user_id,
         )
         return {"embeddings": embeddings, "count": len(embeddings)}
+    except AllProvidersFailedError as exc:
+        raise HTTPException(
+            status_code=502, detail={"error": str(exc), "tried": exc.tried}
+        )
+    except NoProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.get("/providers")
 async def list_providers():
-    """List all registered providers with health status."""
+    """List all registered providers with health status + last chain trace."""
     _ensure_bootstrapped()
-    return {"providers": gateway.list_providers()}
+    return {
+        "providers": gateway.list_providers(),
+        "last_chain_trace": gateway.get_chain_trace(),
+    }
 
 
 @router.post("/providers")
@@ -249,4 +273,5 @@ async def gland_stats():
         **gateway.token_meter.summary(),
         "providers": gateway.list_providers(),
         "keys": gateway.key_manager.status(),
+        "last_chain_trace": gateway.get_chain_trace(),
     }

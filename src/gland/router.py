@@ -41,6 +41,28 @@ _REDACTOR_INIT = False
 OUTBOUND_REDACT_MIN_RISK = "critical"
 
 
+def _is_rate_limited(exc: BaseException) -> bool:
+    """HTTP 429 — the provider is overloaded, not broken."""
+    import httpx
+
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Error class that plausibly recovers on its own (429/5xx/transport).
+
+    Used to decide whether the CowAgent wrap-around pass is worthwhile:
+    permanent errors (401/404/400) will still be permanent a second later.
+    """
+    import httpx
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        from src.cortex.llm_retry import is_retryable_status
+
+        return is_retryable_status(exc.response.status_code)
+    return isinstance(exc, httpx.TransportError)
+
+
 class TaskType(enum.StrEnum):
     CHAT = "chat"
     COMPLETION = "completion"
@@ -73,6 +95,11 @@ class ModelRouter:
         self.key_manager = KeyManager()
         self.token_meter = TokenMeter()
         self._http_client: httpx.AsyncClient | None = None
+        # CowAgent chain trace: ordered {provider, model, pass, outcome/error}
+        # log of the most recent chat()/embed() failover walk. Exposed via
+        # get_chain_trace() and /api/gland endpoints — the chain walk must be
+        # inspectable ("我都不知道他们在干嘛").
+        self._last_chain_trace: list[dict] = []
 
     # ── lifecycle ────────────────────────────────────────────────
 
@@ -121,6 +148,10 @@ class ModelRouter:
             )
         return out
 
+    def get_chain_trace(self) -> list[dict]:
+        """Return the failover-chain trace of the most recent request."""
+        return list(self._last_chain_trace)
+
     # ── smart routing ────────────────────────────────────────────
 
     def _resolve_model(
@@ -167,10 +198,11 @@ class ModelRouter:
     # ── per-provider retry (kilocode retry.ts policy) ────────────
 
     # Max attempts against ONE provider before giving up and letting the
-    # router fail over to the next candidate.
-    RETRY_MAX_ATTEMPTS = 3
+    # router fail over to the next candidate. Annotated as int: tests and
+    # deployments override per-instance (e.g. router.RETRY_MAX_ATTEMPTS = 2).
+    RETRY_MAX_ATTEMPTS: int = 3
 
-    async def _with_retry(self, provider: ProviderConfig, fn):
+    async def _with_retry(self, provider: ProviderConfig, fn, *, has_backup: bool = False):
         """Run a single-provider HTTP call with the cortex retry policy.
 
         Retryable errors (429/5xx/timeouts/connection resets) are retried
@@ -178,6 +210,11 @@ class ModelRouter:
         so one transient blip no longer burns a failure mark and triggers
         failover. Non-retryable errors (401/400/404/...) raise immediately
         so the next provider is tried at once.
+
+        CowAgent rate-limit fast-switch (38-CowAgent-source-supplement3 #12):
+        when the provider is rate-limited (429) AND a backup link remains in
+        the chain, raise immediately instead of waiting — "限流有备胎立即切换".
+        With no backup ("没备胎干等"), the normal in-place retry applies.
         """
         from src.cortex.llm_retry import retry_delay_for
 
@@ -186,6 +223,13 @@ class ModelRouter:
             try:
                 return await fn()
             except Exception as exc:
+                if has_backup and _is_rate_limited(exc):
+                    logger.info(
+                        "Provider=%s rate-limited with backup available — "
+                        "switching immediately (CowAgent fast-switch)",
+                        provider.name,
+                    )
+                    raise
                 delay = retry_delay_for(exc, attempt)
                 if delay is None or attempt + 1 >= self.RETRY_MAX_ATTEMPTS:
                     raise
@@ -200,6 +244,118 @@ class ModelRouter:
                 )
                 await asyncio.sleep(delay)
 
+    # ── CowAgent ordered fallback chain ─────────────────────────
+
+    def _build_links(
+        self, candidates: list[ProviderConfig], task: TaskType, model: str | None
+    ) -> list[tuple[ProviderConfig, str, str]]:
+        """Build the ordered {provider, model, api_key} chain.
+
+        Keyless providers (e.g. local Ollama) stay in the chain with an
+        empty key — _call_chat/_call_embedding omit the Authorization
+        header in that case. A provider that rejects keyless calls will
+        401 and the chain moves on (fail-safe, no worse than skipping).
+        """
+        links: list[tuple[ProviderConfig, str, str]] = []
+        for provider in candidates:
+            resolved_model = self._resolve_model(provider, task, model)
+            if not resolved_model:
+                logger.debug(
+                    "Skipping provider=%s: no model for task=%s", provider.name, task.value
+                )
+                continue
+            api_key = self.key_manager.next_key(provider.name) or ""
+            links.append((provider, resolved_model, api_key))
+        return links
+
+    async def _walk_chain(self, links, tried: list[dict], invoke):
+        """Walk the CowAgent ordered fallback chain.
+
+        Pass 1 — each link in priority order; within a link the kilocode
+        retry policy applies, except rate-limits when a backup link remains
+        (fast-switch). Each link failure is recorded in *tried*.
+
+        Pass 2 (wrap-around) — only when the chain has ≥2 links and pass-1
+        saw at least one transient error: "瞬时限流已恢复不该废掉整个turn".
+        Single attempt per link, no in-place retry — a fast re-probe.
+
+        On exhaustion raises AllProvidersFailedError listing every tried
+        {provider, model, pass, error} (CowAgent: 链耗尽时报错列出所有试过的模型).
+
+        Returns ``(result, provider, model)`` of the successful link.
+        """
+        last_error: Exception | None = None
+        transient_seen = False
+
+        # ── pass 1: ordered walk with per-link retry ─────────────
+        for i, (provider, call_model, call_key) in enumerate(links):
+            has_backup = i < len(links) - 1
+            try:
+                result = await self._with_retry(
+                    provider,
+                    lambda p=provider, k=call_key, m=call_model: invoke(p, k, m),
+                    has_backup=has_backup,
+                )
+                self._mark_success(provider)
+                tried.append(
+                    {"provider": provider.name, "model": call_model, "pass": 1, "outcome": "success"}
+                )
+                return result, provider, call_model
+            except Exception as exc:
+                self._mark_failure(provider)
+                tried.append(
+                    {"provider": provider.name, "model": call_model, "pass": 1, "error": str(exc)}
+                )
+                last_error = exc
+                if _is_transient_error(exc):
+                    transient_seen = True
+                logger.warning(
+                    "Chain pass 1: provider=%s model=%s failed: %s", provider.name, call_model, exc
+                )
+
+        # ── pass 2: wrap-around re-probe (CowAgent) ──────────────
+        if len(links) >= 2 and transient_seen:
+            logger.info(
+                "Chain exhausted with transient errors — wrap-around pass 2 (%d links)",
+                len(links),
+            )
+            for provider, call_model, call_key in links:
+                try:
+                    result = await invoke(provider, call_key, call_model)
+                    self._mark_success(provider)
+                    tried.append(
+                        {
+                            "provider": provider.name,
+                            "model": call_model,
+                            "pass": 2,
+                            "outcome": "success",
+                        }
+                    )
+                    return result, provider, call_model
+                except Exception as exc:
+                    self._mark_failure(provider)
+                    tried.append(
+                        {"provider": provider.name, "model": call_model, "pass": 2, "error": str(exc)}
+                    )
+                    last_error = exc
+                    logger.warning(
+                        "Chain pass 2: provider=%s model=%s failed: %s",
+                        provider.name,
+                        call_model,
+                        exc,
+                    )
+
+        # ── chain exhausted: enumerate everything tried ───────────
+        tried_desc = "; ".join(
+            f"{t['provider']}/{t['model']} (pass {t['pass']}): "
+            f"{t.get('error', t.get('outcome', '?'))}"
+            for t in tried
+        )
+        raise AllProvidersFailedError(
+            f"All providers failed after {len(tried)} chain attempt(s). Tried: {tried_desc}",
+            tried=tried,
+        ) from last_error
+
     # ── API calls ────────────────────────────────────────────────
 
     async def chat(
@@ -213,61 +369,40 @@ class ModelRouter:
         user_id: str | None = None,
         stream: bool = False,
     ) -> dict:
-        """Route a chat/completion request through the best available provider with failover."""
+        """Route a chat request through the CowAgent ordered fallback chain."""
         candidates = self._candidate_providers(task)
         if not candidates:
             raise NoProviderError(f"No provider available for task={task.value}")
 
-        last_error: Exception | None = None
-        for provider in candidates:
-            resolved_model = self._resolve_model(provider, task, model)
-            if not resolved_model:
-                logger.debug(
-                    "Skipping provider=%s: no model for task=%s", provider.name, task.value
-                )
-                continue
+        links = self._build_links(candidates, task, model)
+        if not links:
+            raise NoProviderError(f"No provider with a usable model for task={task.value}")
 
-            api_key = self.key_manager.next_key(provider.name)
-            if not api_key:
-                logger.debug("Skipping provider=%s: no API key", provider.name)
-                continue
+        async def _invoke(provider: ProviderConfig, api_key: str, model_name: str) -> dict:
+            return await self._call_chat(
+                provider,
+                api_key,
+                model_name,
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+            )
 
-            # Locals below are narrowed to str by the guards above; binding
-            # them keeps the closure types clean (narrowing doesn't cross
-            # into lambda bodies).
-            call_key: str = api_key
-            call_model: str = resolved_model
-            try:
-                result = await self._with_retry(
-                    provider,
-                    lambda: self._call_chat(
-                        provider,
-                        call_key,
-                        call_model,
-                        messages,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        stream=stream,
-                    ),
-                )
-                self._mark_success(provider)
+        tried: list[dict] = []
+        self._last_chain_trace = tried
+        result, succ_provider, succ_model = await self._walk_chain(links, tried, _invoke)
 
-                # Record token usage
-                usage = result.get("usage", {})
-                self.token_meter.record(
-                    provider=provider.name,
-                    model=resolved_model,
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                    user_id=user_id,
-                )
-                return result
-            except Exception as exc:
-                last_error = exc
-                self._mark_failure(provider)
-                logger.warning("Provider=%s failed: %s, trying next...", provider.name, exc)
-
-        raise AllProvidersFailedError(f"All providers failed for task={task.value}") from last_error
+        # Record token usage on the winning link.
+        usage = result.get("usage", {})
+        self.token_meter.record(
+            provider=succ_provider.name,
+            model=succ_model,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            user_id=user_id,
+        )
+        return result
 
     async def embed(
         self,
@@ -276,48 +411,40 @@ class ModelRouter:
         model: str | None = None,
         user_id: str | None = None,
     ) -> list[list[float]]:
-        """Route an embedding request through the best available provider."""
+        """Route an embedding request through the CowAgent ordered fallback chain."""
         candidates = self._candidate_providers(TaskType.EMBEDDING)
         if not candidates:
             raise NoProviderError("No provider available for embedding")
 
-        last_error: Exception | None = None
+        # Embedding model resolution differs from chat: explicit model arg
+        # wins, else the provider's "embedding" mapping.
+        links: list[tuple[ProviderConfig, str, str]] = []
         for provider in candidates:
             resolved_model = model or provider.models.get("embedding")
             if not resolved_model:
                 continue
+            api_key = self.key_manager.next_key(provider.name) or ""
+            links.append((provider, resolved_model, api_key))
+        if not links:
+            raise NoProviderError("No provider with a usable embedding model")
 
-            api_key = self.key_manager.next_key(provider.name)
-            if not api_key:
-                continue
+        async def _invoke(provider: ProviderConfig, api_key: str, model_name: str):
+            return await self._call_embedding(provider, api_key, model_name, texts)
 
-            call_key: str = api_key  # narrowed by the guards above
-            call_model: str = resolved_model
-            try:
-                result = await self._with_retry(
-                    provider,
-                    lambda: self._call_embedding(
-                        provider, call_key, call_model, texts
-                    ),
-                )
-                self._mark_success(provider)
+        tried: list[dict] = []
+        self._last_chain_trace = tried
+        result, succ_provider, succ_model = await self._walk_chain(links, tried, _invoke)
 
-                # Rough token estimate for embeddings: 1 token per 4 chars
-                est_tokens = sum(len(t) // 4 for t in texts)
-                self.token_meter.record(
-                    provider=provider.name,
-                    model=resolved_model,
-                    prompt_tokens=est_tokens,
-                    completion_tokens=0,
-                    user_id=user_id,
-                )
-                return result
-            except Exception as exc:
-                last_error = exc
-                self._mark_failure(provider)
-                logger.warning("Embedding provider=%s failed: %s", provider.name, exc)
-
-        raise AllProvidersFailedError("All providers failed for embedding") from last_error
+        # Rough token estimate for embeddings: 1 token per 4 chars
+        est_tokens = sum(len(t) // 4 for t in texts)
+        self.token_meter.record(
+            provider=succ_provider.name,
+            model=succ_model,
+            prompt_tokens=est_tokens,
+            completion_tokens=0,
+            user_id=user_id,
+        )
+        return result
 
     # ── HTTP layer ───────────────────────────────────────────────
 
@@ -352,9 +479,11 @@ class ModelRouter:
             logger.debug("Outbound redaction skipped: %s", exc)
 
         client = self._http_client or httpx.AsyncClient(timeout=60)
+        # Keyless providers (local Ollama) get no Authorization header.
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         resp = await client.post(
             f"{provider.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=headers,
             json={
                 "model": model,
                 "messages": messages,
@@ -374,9 +503,11 @@ class ModelRouter:
         texts: list[str],
     ) -> list[list[float]]:
         client = self._http_client or httpx.AsyncClient(timeout=60)
+        # Keyless providers (local Ollama) get no Authorization header.
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         resp = await client.post(
             f"{provider.base_url}/embeddings",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=headers,
             json={"model": model, "input": texts},
         )
         resp.raise_for_status()
@@ -426,4 +557,12 @@ class NoProviderError(Exception):
 
 
 class AllProvidersFailedError(Exception):
-    """Every candidate provider failed."""
+    """Every candidate provider failed.
+
+    ``tried`` carries the full CowAgent chain trace (provider/model/pass/
+    error per attempt) so callers and logs can see exactly what was tried.
+    """
+
+    def __init__(self, message: str, tried: list[dict] | None = None) -> None:
+        super().__init__(message)
+        self.tried: list[dict] = tried or []

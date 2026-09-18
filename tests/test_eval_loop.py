@@ -48,7 +48,16 @@ def _mk_dataset(store, n=3, expected="42"):
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run *coro* to completion on a fresh event loop.
+
+    Uses asyncio.run() instead of get_event_loop().run_until_complete():
+    pytest-asyncio closes and unsets the thread-local loop after async
+    tests in earlier modules, so get_event_loop() raises RuntimeError in
+    combined test runs (module-order-dependent isolation bug — this helper
+    broke when run after any @pytest.mark.asyncio module). asyncio.run()
+    creates a fresh loop per call, immune to prior-module loop state.
+    """
+    return asyncio.run(coro)
 
 
 # ── EvalStore: datasets / cases / deterministic sampling ──────────────
