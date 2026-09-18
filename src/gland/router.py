@@ -163,7 +163,11 @@ class ModelRouter:
         return provider.models.get(task.value) or provider.models.get("chat")
 
     def _candidate_providers(self, task: TaskType) -> list[ProviderConfig]:
-        """Return providers that can handle *task*, sorted by priority, excluding unhealthy ones."""
+        """Return providers that can handle *task*, sorted by route-policy mode + priority.
+
+        模型路由4按钮接线：cost模式本地provider优先，intelligence模式在线优先，
+        balance/auto按priority（auto细粒度决策在chat层route_policy.resolve_target）。
+        """
         candidates = []
         for p in self.providers.values():
             if not p.enabled:
@@ -173,7 +177,22 @@ class ModelRouter:
             # Provider must have at least a model mapping for this task or a generic "chat" fallback
             if task.value in p.models or "chat" in p.models:
                 candidates.append(p)
-        candidates.sort(key=lambda c: c.priority)
+
+        def _is_local(p: ProviderConfig) -> bool:
+            return "localhost" in p.base_url or "127.0.0.1" in p.base_url
+
+        mode = None
+        try:
+            from src.gland.route_policy import get_mode
+            mode = get_mode()
+        except Exception:
+            pass
+        if mode == "cost":
+            candidates.sort(key=lambda c: (not _is_local(c), c.priority))
+        elif mode == "intelligence":
+            candidates.sort(key=lambda c: (_is_local(c), c.priority))
+        else:
+            candidates.sort(key=lambda c: c.priority)
         return candidates
 
     def _is_cooling_down(self, p: ProviderConfig) -> bool:

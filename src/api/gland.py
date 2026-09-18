@@ -42,7 +42,7 @@ def _ensure_bootstrapped() -> None:
     gateway.add_provider(
         name="ollama",
         base_url=ollama_url,
-        models={"chat": "llama3.2", "embedding": "nomic-embed-text"},
+        models={"chat": "deepseek-r1:latest", "embedding": "nomic-embed-text"},
         priority=10,
     )
 

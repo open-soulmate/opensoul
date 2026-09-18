@@ -16,6 +16,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _llm_headers(api_key: str) -> dict:
+    """统一LLM请求头：tp-前缀(token-plan)用api-key头，其余Bearer，空key不带鉴权(local)"""
+    headers = {"Content-Type": "application/json"}
+    if api_key and api_key.startswith("tp-"):
+        headers["api-key"] = api_key
+    elif api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _route_llm_targets(message: str):
+    """模型路由4按钮接线：route_policy决策 → 调用尝试序列(主+备) + routing元数据。
+    route_policy不可用时静默回退settings静态配置，不阻断chat。"""
+    try:
+        from src.gland.route_policy import resolve_target
+        d = resolve_target(message)
+        attempts = [d["target"]]
+        if d.get("backup_target"):
+            attempts.append(d["backup_target"])
+        meta = {k: d.get(k) for k in ("mode", "prefer", "reason", "complexity") if d.get(k) is not None}
+        return attempts, meta
+    except Exception as exc:
+        logger.debug("route_policy unavailable, fallback to settings: %s", exc)
+        return (
+            [{"provider": "settings", "base_url": settings.llm_base_url,
+              "model": settings.llm_model, "api_key": settings.llm_api_key}],
+            {"mode": "fallback-settings"},
+        )
+
+
 def _get_memory_context(query: str) -> str:
     """P0-6: 从hippo长期记忆检索三因子上下文（recency+importance+relevance）。失败时静默降级。"""
     try:
@@ -51,20 +81,24 @@ async def _compress_if_needed(context: str, budget_chars: int = 12000) -> str:
         from src.cortex.context_compression import ContextCompressor
 
         async def _llm_fn(prompt: str) -> str:
-            api_key = _settings.llm_api_key or ""
-            headers = {"Content-Type": "application/json"}
-            if api_key.startswith("tp-"):
-                headers["api-key"] = api_key
-            else:
-                headers["Authorization"] = f"Bearer {api_key}"
-            async with _httpx.AsyncClient(timeout=60) as c:
-                resp = await c.post(
-                    f"{_settings.llm_base_url}/chat/completions",
-                    headers=headers,
-                    json={"model": _settings.llm_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
-                )
-                resp.raise_for_status()
-                return resp.json()["choices"][0]["message"]["content"]
+            attempts, _meta = _route_llm_targets(prompt)
+            last_exc: Exception | None = None
+            for t in attempts:
+                if t.get("provider") == "online" and not t.get("api_key"):
+                    continue
+                try:
+                    async with _httpx.AsyncClient(timeout=60) as c:
+                        resp = await c.post(
+                            f"{t['base_url']}/chat/completions",
+                            headers=_llm_headers(t.get("api_key", "")),
+                            json={"model": t["model"], "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
+                        )
+                        resp.raise_for_status()
+                        return resp.json()["choices"][0]["message"]["content"]
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+            raise RuntimeError(f"all routed LLM targets failed: {last_exc}")
 
         compressor = ContextCompressor(llm_fn=_llm_fn)
         messages = [{"role": "user", "content": context}]
@@ -117,43 +151,46 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
 
     if not results:
         yield f"data: {json.dumps({'type': 'info', 'content': 'RAG检索不可用，直接使用LLM回答。'})}\n\n"
-        # 降级：不返回error，继续走LLM路径
-        # 构建最小prompt
-        from src.core.config import settings as _s
-        api_key = _s.llm_api_key or ""
+        # 降级：不返回error，继续走LLM路径（模型路由接线：按mode选target+备target重试）
         prompt = question
-        try:
-            async with httpx.AsyncClient() as client:
-                headers = {"Content-Type": "application/json"}
-                if api_key.startswith("tp-"):
-                    headers["api-key"] = api_key
-                else:
-                    headers["Authorization"] = f"Bearer {api_key}"
-                async with client.stream(
-                    "POST", f"{_s.llm_base_url}/chat/completions",
-                    headers=headers,
-                    json={"model": _s.llm_model,
-                          "messages": [{"role": "user", "content": prompt}],
-                          "temperature": 0.3, "stream": True},
-                    timeout=60,
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data = line[6:]
-                        if data.strip() == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content")
-                            if content:
-                                yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
-                        except json.JSONDecodeError:
-                            continue
-        except Exception as llm_exc:
-            yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {llm_exc}'})}\n\n"
+        attempts, _meta = _route_llm_targets(question)
+        last_exc: Exception | None = None
+        streamed_ok = False
+        for t in attempts:
+            if t.get("provider") == "online" and not t.get("api_key"):
+                continue
+            try:
+                async with httpx.AsyncClient() as client:
+                    async with client.stream(
+                        "POST", f"{t['base_url']}/chat/completions",
+                        headers=_llm_headers(t.get("api_key", "")),
+                        json={"model": t["model"],
+                              "messages": [{"role": "user", "content": prompt}],
+                              "temperature": 0.3, "stream": True},
+                        timeout=60,
+                    ) as resp:
+                        resp.raise_for_status()
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data = line[6:]
+                            if data.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                content = delta.get("content")
+                                if content:
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                            except json.JSONDecodeError:
+                                continue
+                streamed_ok = True
+                break
+            except Exception as exc:
+                last_exc = exc
+                continue
+        if not streamed_ok:
+            yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
         yield "data: [DONE]\n\n"
         return
 
@@ -185,45 +222,50 @@ Answer:"""
     # P0-4: 出站脱敏
     prompt = _redact_outbound(prompt)
 
-    api_key = settings.llm_api_key
-    if not api_key:
-        yield f"data: {json.dumps({'type': 'error', 'content': 'LLM API key not configured.'})}\n\n"
-        yield "data: [DONE]\n\n"
-        return
+    # 模型路由接线：按mode选LLM target，主target失败自动切备target
+    attempts, routing_meta = _route_llm_targets(question)
+    last_exc: Exception | None = None
+    streamed_ok = False
+    for t in attempts:
+        if t.get("provider") == "online" and not t.get("api_key"):
+            continue
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{t['base_url']}/chat/completions",
+                    headers=_llm_headers(t.get("api_key", "")),
+                    json={
+                        "model": t["model"],
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3,
+                        "stream": True,
+                    },
+                    timeout=120,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content")
+                            if content:
+                                yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                        except json.JSONDecodeError:
+                            continue
+            streamed_ok = True
+            break
+        except Exception as exc:
+            last_exc = exc
+            continue
 
-    # Stream from LLM
-    async with httpx.AsyncClient() as client:
-        async with client.stream(
-            "POST",
-            f"{settings.llm_base_url}/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
-            },
-            json={
-                "model": settings.llm_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-                "stream": True,
-            },
-            timeout=120,
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:]
-                if data.strip() == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content")
-                    if content:
-                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
-                except json.JSONDecodeError:
-                    continue
-
+    if not streamed_ok:
+        yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
     yield "data: [DONE]\n\n"
 
 
@@ -276,30 +318,41 @@ Answer:"""
     # P0-4: 出站脱敏
     prompt = _redact_outbound(prompt)
 
-    api_key = settings.llm_api_key
-    if not api_key:
-        return {"answer": "LLM API key not configured.", "sources": sources}
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{settings.llm_base_url}/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
-            },
-            json={
-                "model": settings.llm_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-            },
-            timeout=120,
-        )
-        resp.raise_for_status()
-        answer = resp.json()["choices"][0]["message"]["content"]
+    # 模型路由接线：按mode选LLM target，失败自动切备target
+    attempts, routing_meta = _route_llm_targets(req.question)
+    answer = None
+    last_exc: Exception | None = None
+    used_target = None
+    for t in attempts:
+        if t.get("provider") == "online" and not t.get("api_key"):
+            continue
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{t['base_url']}/chat/completions",
+                    headers=_llm_headers(t.get("api_key", "")),
+                    json={
+                        "model": t["model"],
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3,
+                    },
+                    timeout=120,
+                )
+                resp.raise_for_status()
+                answer = resp.json()["choices"][0]["message"]["content"]
+                used_target = {"provider": t.get("provider"), "model": t.get("model")}
+                break
+        except Exception as exc:
+            last_exc = exc
+            continue
+    if answer is None:
+        return {"answer": f"LLM不可用: {last_exc}", "sources": sources,
+                "routing": {**routing_meta, "error": str(last_exc)}}
 
     # 循环检测guard
     loop_warning = _check_loop(answer)
+    result = {"answer": answer, "sources": sources,
+              "routing": {**routing_meta, "used": used_target}}
     if loop_warning:
-        return {"answer": answer, "sources": sources, "warning": loop_warning}
-
-    return {"answer": answer, "sources": sources}
+        result["warning"] = loop_warning
+    return result
