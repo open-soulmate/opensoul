@@ -261,10 +261,16 @@ async def lifespan(app: FastAPI):
 
     bootstrap_task = asyncio.create_task(_auto_bootstrap())
 
+    # Dream记忆蒸馏周期生产者（集成修复#2：hippo.dream此前无调度，全系统仅执行1次）
+    # 消息源=opensoul.db agent_messages真实聊天，24h一轮，幂等键按日期防重复
+    from src.will.dream_producer import dream_producer_loop
+    dream_task = asyncio.create_task(dream_producer_loop())
+
     yield
 
     # Shutdown
     bootstrap_task.cancel()
+    dream_task.cancel()
     intel_task.cancel()
     metrics_task.cancel()
     try:

@@ -508,6 +508,16 @@ async def job_submit(req: JobSubmitRequest):
     }
 
 
+@router.post("/jobs/purge")
+async def job_purge(status: str = "", name_pattern: str = "", older_than_days: int = 0):
+    """清理作业历史 — 集成修复#4: test_job/stress_test等测试噪声积压清理。"""
+    from src.will.job_queue import get_job_queue
+    purged = get_job_queue().purge(
+        status=status, name_pattern=name_pattern, older_than_days=older_than_days
+    )
+    return {"purged": purged}
+
+
 @router.get("/jobs/{job_id}")
 async def job_status(job_id: str):
     """Get job status and result."""

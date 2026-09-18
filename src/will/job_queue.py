@@ -303,6 +303,27 @@ class JobQueue:
             return True
         return False
 
+    def purge(self, status: str = "", name_pattern: str = "",
+              older_than_days: int = 0) -> int:
+        """清理作业历史 — 集成修复#4: 测试噪声积压(test_job failed×20等)。"""
+        where: list[str] = []
+        params: list = []
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        if name_pattern:
+            where.append("name LIKE ?")
+            params.append(f"%{name_pattern}%")
+        if older_than_days > 0:
+            where.append("created_at < ?")
+            params.append(time.time() - older_than_days * 86400)
+        sql = "DELETE FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
+        with self._conn() as conn:
+            cur = conn.execute(sql, params)
+        purged = cur.rowcount or 0
+        logger.info("JobQueue.purge: %d条 (status=%s pattern=%s)", purged, status, name_pattern)
+        return purged
+
     def get_stats(self) -> dict:
         """队列统计（SQLite为真源 + 进程内实时字段）"""
         counts: dict[str, int] = {}
