@@ -104,7 +104,7 @@ class ModelRouter:
     # ── lifecycle ────────────────────────────────────────────────
 
     async def startup(self) -> None:
-        self._http_client = httpx.AsyncClient(timeout=60)
+        self._http_client = httpx.AsyncClient(timeout=180)
         self.key_manager.load_from_env()
 
     async def shutdown(self) -> None:
@@ -497,7 +497,7 @@ class ModelRouter:
         except Exception as exc:
             logger.debug("Outbound redaction skipped: %s", exc)
 
-        client = self._http_client or httpx.AsyncClient(timeout=60)
+        client = self._http_client or httpx.AsyncClient(timeout=180)
         # Keyless providers (local Ollama) get no Authorization header.
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         resp = await client.post(
