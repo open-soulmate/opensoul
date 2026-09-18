@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from src.heredity.evolution_loop import EvolutionEngine
 from src.heredity.migration import MigrationEngine
 from src.heredity.version_registry import VersionRegistry
 
@@ -11,6 +12,7 @@ router = APIRouter()
 # ── Singletons ─────────────────────────────────────────────
 registry = VersionRegistry()
 engine = MigrationEngine()
+evolution_engine = EvolutionEngine()  # P0-7 自进化闭环：声明→审批→落盘→回滚→记账
 
 # ── Seed with all known components ─────────────────────────
 SEED_COMPONENTS = [
@@ -85,6 +87,43 @@ class MigrationScriptRequest(BaseModel):
     transform: str = ""
 
 
+# ── Evolution Loop Schemas（P0-7 自进化闭环） ───────────────
+
+
+class DeclareIntentRequest(BaseModel):
+    kind: str
+    title: str
+    rationale: str = ""
+    confidence: float = 0.5
+    evidence_refs: list[str] = []
+    proposed_change: dict = {}
+    proposer: str = "agent"
+
+
+class ReviewRequest(BaseModel):
+    decision: str  # approve / reject
+    reviewer: str
+    comment: str = ""
+
+
+class ApplyRequest(BaseModel):
+    actor: str = "system"
+    base_dir: str = ""
+
+
+class RollbackRequest(BaseModel):
+    actor: str = "system"
+    reason: str = ""
+
+
+class TriggerEvalRequest(BaseModel):
+    idle_seconds: float = 0.0
+    context_pressure: float = 0.0
+    budget_remaining: float = 1.0
+    recent_errors: list[str] = []
+    auto_propose: bool = False
+
+
 # ── Stats ──────────────────────────────────────────────────
 
 
@@ -96,6 +135,7 @@ async def heredity_stats():
         "component": "OpenHeredity",
         "registry": registry.get_stats(),
         "migrations": engine.get_stats(),
+        "evolution": evolution_engine.get_stats(),
     }
 
 
@@ -110,6 +150,7 @@ async def health():
         "component": "OpenHeredity",
         "registry": registry.get_stats(),
         "migrations": engine.get_stats(),
+        "evolution": evolution_engine.get_stats(),
     }
 
 
@@ -361,3 +402,102 @@ async def bump_platform(bump_type: str = Query(default="patch")):
         raise HTTPException(400, "bump_type must be major, minor, or patch")
     new_version = registry.bump_platform_version(bump_type)
     return {"platform_version": new_version, "bump_type": bump_type}
+
+
+# ── Evolution Loop（P0-7 自进化闭环：声明→审批→落盘→回滚→记账） ──
+
+
+@router.post("/evolution/intents")
+async def declare_evolution_intent(req: DeclareIntentRequest):
+    """声明一条进化意图（LobeChat范式：只声明不执行，pending等审批）。"""
+    try:
+        result = evolution_engine.declare_intent(
+            kind=req.kind,
+            title=req.title,
+            rationale=req.rationale,
+            confidence=req.confidence,
+            evidence_refs=req.evidence_refs,
+            proposed_change=req.proposed_change,
+            proposer=req.proposer,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/evolution/proposals")
+async def list_evolution_proposals(
+    status: str = Query(default=""), limit: int = Query(default=50, ge=1, le=500)
+):
+    """列出进化提案（按状态过滤）。"""
+    proposals = evolution_engine.store.list_proposals(status=status, limit=limit)
+    return {"proposals": proposals, "total": len(proposals)}
+
+
+@router.get("/evolution/proposals/{proposal_id}")
+async def get_evolution_proposal(proposal_id: str):
+    """查看单条提案及其完整审计轨迹。"""
+    proposal = evolution_engine.store.get_proposal(proposal_id)
+    if not proposal:
+        raise HTTPException(404, f"proposal {proposal_id} not found")
+    return {
+        "proposal": proposal.to_dict(),
+        "history": evolution_engine.store.get_ledger(proposal_id=proposal_id),
+    }
+
+
+@router.post("/evolution/proposals/{proposal_id}/review")
+async def review_evolution_proposal(proposal_id: str, req: ReviewRequest):
+    """审批提案（审批人≠发起人；approve后才允许apply）。"""
+    try:
+        return evolution_engine.review(
+            proposal_id, req.decision, req.reviewer, comment=req.comment
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/evolution/proposals/{proposal_id}/apply")
+async def apply_evolution_proposal(proposal_id: str, req: ApplyRequest):
+    """落盘：稀疏锚点替换，改动前先快照，保护区fail-closed。"""
+    try:
+        return evolution_engine.apply(
+            proposal_id, actor=req.actor, base_dir=req.base_dir
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/evolution/proposals/{proposal_id}/rollback")
+async def rollback_evolution_proposal(proposal_id: str, req: RollbackRequest):
+    """回滚：从快照恢复，账本记ROLLED_BACK。"""
+    try:
+        return evolution_engine.rollback(proposal_id, actor=req.actor, reason=req.reason)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/evolution/triggers/evaluate")
+async def evaluate_evolution_triggers(req: TriggerEvalRequest):
+    """评估进化触发器（CowAgent idle触发 + agno错误风暴熔断）。"""
+    return evolution_engine.evaluate_triggers(
+        idle_seconds=req.idle_seconds,
+        context_pressure=req.context_pressure,
+        budget_remaining=req.budget_remaining,
+        recent_errors=req.recent_errors,
+        auto_propose=req.auto_propose,
+    )
+
+
+@router.get("/evolution/ledger")
+async def get_evolution_ledger(
+    proposal_id: str = Query(default=""), limit: int = Query(default=100, ge=1, le=1000)
+):
+    """审计账本：DECLARED→APPROVED→APPLIED→ROLLED_BACK全程可追溯。"""
+    return {"ledger": evolution_engine.store.get_ledger(proposal_id=proposal_id, limit=limit)}
+
+
+@router.get("/evolution/stats")
+async def evolution_stats():
+    """进化管线统计（提案状态分布/账本事件/熔断状态）。"""
+    return evolution_engine.get_stats()

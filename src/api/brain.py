@@ -266,12 +266,54 @@ async def recommendations(tenant_id: str = "default", agent_id: str = "default",
 
 @router.post("/evolve")
 async def evolve(tenant_id: str = "default", agent_id: str = "default"):
-    """自我进化"""
+    """自我进化 — 分析结果转入进化闭环管线（声明式提案，审批后才落盘）。
+
+    P0-7接线：SelfEvolution.analyze_and_evolve() 的每条发现不再只写日志，
+    而是作为声明式提案进入 /api/heredity/evolution/* 审批管线
+    （LobeChat范式：声明≠执行，reviewer审批人≠发起人）。
+    """
+    from src.heredity.evolution_loop import EvolutionEngine
     from src.heredity.self_evolution import SelfEvolution
     from src.database.postgres import db_pool
-    evolution = SelfEvolution(db_pool, tenant_id, agent_id)
-    evolutions = await evolution.analyze_and_evolve()
-    return {"evolutions": evolutions, "count": len(evolutions)}
+
+    KIND_MAP = {
+        "failure_avoidance": "failure_avoidance",
+        "strategy_adjustment": "policy_adjustment",
+        "style_adjustment": "prompt_strategy",
+    }
+
+    evolutions = []
+    analysis_error = ""
+    try:
+        evolution = SelfEvolution(db_pool, tenant_id, agent_id)
+        evolutions = await evolution.analyze_and_evolve()
+    except Exception as e:  # 分析失败不阻断管线观测
+        analysis_error = str(e)
+
+    engine = EvolutionEngine()
+    declared = []
+    for evo in evolutions:
+        kind = KIND_MAP.get(evo.get("type", ""), "policy_adjustment")
+        result = engine.declare_intent(
+            kind=kind,
+            title=str(evo.get("action") or evo.get("reason") or "auto evolution")[:200],
+            rationale=str(evo.get("reason", "")),
+            confidence=0.4,
+            evidence_refs=[f"evolution_log:{evo.get('type', 'unknown')}"],
+            proposer=f"self_evolution:{agent_id}",
+        )
+        declared.append({
+            "proposal_id": result.get("proposal_id"),
+            "status": result.get("status"),
+            "reject_reason": result.get("reject_reason", ""),
+            "duplicate": result.get("duplicate", False),
+        })
+    return {
+        "evolutions": evolutions,
+        "analysis_error": analysis_error,
+        "declared_proposals": declared,
+        "pipeline": engine.get_stats(),
+    }
 
 
 @router.get("/metacognition")
