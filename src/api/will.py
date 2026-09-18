@@ -453,11 +453,22 @@ async def dag_stats():
 
 # ── P0-8 后台作业队列（agno job_queue模式）──
 
+# 运行时接线（2026-09-19 cron轮，"写了≠接线了"修复）：handler注册在模块
+# 加载时完成（幂等，GET端点零副作用）；worker池懒启动——首次/jobs/submit
+# 时start()（agno "executor上线才claim任务"）。此前c1feb676只落了队列基础
+# 设施+API，register_handler/start调用点为0，提交的作业永远pending。
+from src.will.job_queue import get_job_queue as _get_job_queue
+from src.will.job_handlers import register_default_handlers as _register_job_handlers
+
+_register_job_handlers(_get_job_queue())
+
+
 class JobSubmitRequest(BaseModel):
     name: str
     params: dict = {}
     timeout_s: int = 300
     max_retries: int = 2
+    idempotency_key: str = ""  # agno §5.2：同key pending/running不重复执行
 
 
 @router.post("/seed-system")
@@ -471,17 +482,30 @@ async def seed_system():
 @router.get("/jobs/health")
 async def job_queue_health():
     """Job queue health check."""
-    from src.will.job_queue import get_job_queue
-    return {"status": "ok", "component": "JobQueue", **get_job_queue().get_stats()}
+    return {"status": "ok", "component": "JobQueue", **_get_job_queue().get_stats()}
 
 
 @router.post("/jobs/submit")
 async def job_submit(req: JobSubmitRequest):
-    """Submit a background job. Returns job_id immediately."""
-    from src.will.job_queue import get_job_queue
-    jq = get_job_queue()
-    job_id = await jq.submit(req.name, req.params, req.timeout_s, req.max_retries)
-    return {"job_id": job_id, "status": "submitted"}
+    """Submit a background job. Returns job_id immediately.
+
+    接线语义：首次提交懒启动worker池（start()幂等）；未注册handler的作业
+    落FAILED("No handler for job type")——失败可见（mem0 §1.1），不静默吞。
+    """
+    jq = _get_job_queue()
+    _register_job_handlers(jq)  # 幂等兜底（模块加载时已注册）
+    await jq.start()
+    existing = jq.find_by_idempotency_key(req.idempotency_key)
+    job_id = await jq.submit(
+        req.name, req.params, req.timeout_s, req.max_retries,
+        idempotency_key=req.idempotency_key,
+    )
+    return {
+        "job_id": job_id,
+        "status": "submitted",
+        "deduped": bool(existing) and existing == job_id,
+        "workers": jq.get_stats()["workers"],
+    }
 
 
 @router.get("/jobs/{job_id}")

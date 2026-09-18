@@ -8,6 +8,15 @@
 - 超时控制 + 失败重试
 
 参照: agno job_queue/store.py 300行 + langfuse BullMQ + kilocode BackgroundJob
+
+运行时接线（2026-09-19 cron轮，"写了≠接线了"修复）：
+- handler注册表：src/will/job_handlers.py（api/will.py模块加载时注册）
+- worker池懒启动：首次submit时start()（agno "executor上线才claim任务"）
+- idempotency_key去重：同key的pending/running作业不重复创建（agno §5.2幂等键）
+- stale回收：进程重启后DB里的pending/running作业由新进程重排队
+  （agno原版靠heartbeat lease回收；本部署单进程，重启即全部回收，
+    差异在此注明，不假装有分布式租约）
+- list_jobs/get/get_stats以SQLite为真源：重启后monitoring面板仍可见历史
 """
 import asyncio
 import json
@@ -104,23 +113,111 @@ class JobQueue:
                     finished_at REAL DEFAULT 0,
                     timeout_s INTEGER DEFAULT 300,
                     retries INTEGER DEFAULT 0,
-                    max_retries INTEGER DEFAULT 2
+                    max_retries INTEGER DEFAULT 2,
+                    idempotency_key TEXT DEFAULT ''
                 )
             """)
+            # 幂等键列迁移（既有库补列；重复列错误按消息匹配安全吞掉）
+            try:
+                conn.execute("ALTER TABLE jobs ADD COLUMN idempotency_key TEXT DEFAULT ''")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jobs_idem ON jobs(idempotency_key, status)"
+            )
 
     def register_handler(self, name: str, handler: Callable[..., Awaitable[Any]]):
         """注册作业处理器"""
         self._handlers[name] = handler
+
+    def find_by_idempotency_key(self, idempotency_key: str) -> Optional[str]:
+        """按幂等键查pending/running作业id（API层duplicate回执用，agno §5.2）"""
+        if not idempotency_key:
+            return None
+        try:
+            with self._conn() as conn:
+                row = conn.execute(
+                    "SELECT id FROM jobs WHERE idempotency_key = ? AND status IN ('pending','running') LIMIT 1",
+                    (idempotency_key,),
+                ).fetchone()
+            return row["id"] if row else None
+        except Exception as e:
+            logger.error(f"find_by_idempotency_key failed: {e}")
+            return None
 
     async def start(self):
         """启动worker池"""
         if self._running:
             return
         self._running = True
+        # stale回收：上一个进程遗留的pending/running作业重新排队
+        await self._recover_from_db()
         for i in range(self._max_workers):
             task = asyncio.create_task(self._worker_loop(f"worker-{i}"))
             self._workers.append(task)
         logger.info(f"JobQueue started: {self._max_workers} workers")
+
+    async def _recover_from_db(self):
+        """重启恢复：DB为真源——pending重新排队，running视为死进程遗留（agno stale回收简化版）。
+
+        同时把DB历史行载入内存索引，get()/worker取作业在重启后不再失明。
+        """
+        try:
+            with self._conn() as conn:
+                rows = conn.execute("SELECT * FROM jobs").fetchall()
+        except Exception as e:
+            logger.error(f"job recovery read failed: {e}")
+            return
+        recovered = 0
+        for row in rows:
+            job_id = row["id"]
+            if job_id in self._jobs:
+                continue
+            job = self._row_to_job(row)
+            self._jobs[job_id] = job
+            if job.status == JobStatus.RUNNING:
+                # 死进程遗留：回pending重跑（retries保留，不静默重置计数）
+                job.status = JobStatus.PENDING
+                job.error = "stale recovery: previous process exited mid-run"
+                self._persist(job)
+            if job.status == JobStatus.PENDING:
+                await self._queue.put(job_id)
+                recovered += 1
+        if recovered:
+            logger.info(f"JobQueue recovery: re-queued {recovered} stale jobs")
+
+    @staticmethod
+    def _row_to_job(row: sqlite3.Row) -> Job:
+        """DB行 → Job对象（params/result宽容反序列化，坏JSON不炸恢复流程）"""
+        try:
+            params = json.loads(row["params"] or "{}")
+        except Exception:
+            params = {}
+        result: Any = row["result"]
+        if result:
+            try:
+                result = json.loads(result)
+            except Exception:
+                pass  # 保留原文，绝不因坏JSON丢结果
+        try:
+            status = JobStatus(str(row["status"]))
+        except Exception:
+            status = JobStatus.FAILED
+        return Job(
+            id=row["id"],
+            name=row["name"],
+            status=status,
+            params=params if isinstance(params, dict) else {},
+            result=result,
+            error=row["error"] or "",
+            created_at=row["created_at"] or 0,
+            started_at=row["started_at"] or 0,
+            finished_at=row["finished_at"] or 0,
+            timeout_s=row["timeout_s"] or 300,
+            retries=row["retries"] or 0,
+            max_retries=row["max_retries"] if row["max_retries"] is not None else 2,
+        )
 
     async def stop(self):
         """停止worker池"""
@@ -131,8 +228,22 @@ class JobQueue:
         logger.info("JobQueue stopped")
 
     async def submit(self, name: str, params: dict | None = None,
-                     timeout_s: int = 300, max_retries: int = 2) -> str:
-        """提交后台作业，立即返回job_id"""
+                     timeout_s: int = 300, max_retries: int = 2,
+                     idempotency_key: str = "") -> str:
+        """提交后台作业，立即返回job_id。
+
+        idempotency_key（agno §5.2）：同key已有pending/running作业时返回既有job_id，
+        不静默重复执行；已完成/失败的同key作业不拦新提交（重试是合法意图）。
+        """
+        if idempotency_key:
+            with self._conn() as conn:
+                existing = conn.execute(
+                    "SELECT id FROM jobs WHERE idempotency_key = ? AND status IN ('pending','running') LIMIT 1",
+                    (idempotency_key,),
+                ).fetchone()
+            if existing:
+                logger.info(f"Job submit deduped by idempotency_key={idempotency_key} -> {existing['id']}")
+                return existing["id"]
         job_id = f"job_{uuid.uuid4().hex[:12]}"
         job = Job(
             id=job_id,
@@ -142,7 +253,7 @@ class JobQueue:
             max_retries=max_retries,
         )
         self._jobs[job_id] = job
-        self._persist(job)
+        self._persist(job, idempotency_key=idempotency_key)
         await self._queue.put(job_id)
         logger.info(f"Job submitted: {job_id} ({name})")
         return job_id
@@ -156,18 +267,30 @@ class JobQueue:
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
             if row:
-                return dict(row)
+                job = self._row_to_job(row)
+                self._jobs[job_id] = job
+                return job.to_dict()
         return None
 
     def list_jobs(self, status: str = "", limit: int = 50) -> list[dict]:
-        """列出作业"""
+        """列出作业（SQLite为真源——重启后历史仍可见，monitoring面板依赖）"""
+        query = "SELECT * FROM jobs"
+        args: list[Any] = []
+        if status:
+            query += " WHERE status = ?"
+            args.append(status)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        args.append(limit)
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(query, args).fetchall()
+        except Exception as e:
+            logger.error(f"list_jobs db read failed: {e}")
+            return []
         jobs = []
-        for job in sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True):
-            if status and str(job.status) != status:
-                continue
-            jobs.append(job.to_dict())
-            if len(jobs) >= limit:
-                break
+        for row in rows:
+            job = self._jobs.get(row["id"])
+            jobs.append(job.to_dict() if job else self._row_to_job(row).to_dict())
         return jobs
 
     def cancel(self, job_id: str) -> bool:
@@ -181,17 +304,23 @@ class JobQueue:
         return False
 
     def get_stats(self) -> dict:
-        """队列统计"""
-        counts = {}
-        for job in self._jobs.values():
-            s = str(job.status)
-            counts[s] = counts.get(s, 0) + 1
+        """队列统计（SQLite为真源 + 进程内实时字段）"""
+        counts: dict[str, int] = {}
+        total = 0
+        try:
+            with self._conn() as conn:
+                for row in conn.execute("SELECT status, COUNT(*) AS c FROM jobs GROUP BY status"):
+                    counts[str(row["status"])] = int(row["c"])
+                    total += int(row["c"])
+        except Exception as e:
+            logger.error(f"get_stats db read failed: {e}")
         return {
-            "total": len(self._jobs),
+            "total": total,
             "by_status": counts,
             "queue_size": self._queue.qsize(),
             "workers": len(self._workers),
-            "handlers": list(self._handlers.keys()),
+            "handlers": sorted(self._handlers.keys()),
+            "running": self._running,
         }
 
     async def _worker_loop(self, worker_name: str):
@@ -231,6 +360,7 @@ class JobQueue:
                 if job.retries < job.max_retries:
                     job.retries += 1
                     job.status = JobStatus.PENDING
+                    self._persist(job)
                     await self._queue.put(job_id)
                     logger.warning(f"Job {job_id} retry {job.retries}/{job.max_retries}")
                     continue
@@ -240,6 +370,7 @@ class JobQueue:
                 if job.retries < job.max_retries:
                     job.retries += 1
                     job.status = JobStatus.PENDING
+                    self._persist(job)
                     await self._queue.put(job_id)
                     logger.warning(f"Job {job_id} retry {job.retries}/{job.max_retries}: {e}")
                     continue
@@ -248,20 +379,21 @@ class JobQueue:
             self._persist(job)
             logger.info(f"[{worker_name}] Job {job_id} ({job.name}): {job.status} in {job.duration_s}s")
 
-    def _persist(self, job: Job):
+    def _persist(self, job: Job, idempotency_key: str = ""):
         """持久化作业状态到SQLite"""
         try:
             with self._conn() as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO jobs 
-                    (id, name, status, params, result, error, created_at, started_at, finished_at, timeout_s, retries, max_retries)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, name, status, params, result, error, created_at, started_at, finished_at, timeout_s, retries, max_retries, idempotency_key)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT idempotency_key FROM jobs WHERE id = ?), ''))
                 """, (
                     job.id, job.name, str(job.status),
                     json.dumps(job.params, ensure_ascii=False),
                     json.dumps(job.result, ensure_ascii=False, default=str) if job.result is not None else None,
                     job.error, job.created_at, job.started_at, job.finished_at,
                     job.timeout_s, job.retries, job.max_retries,
+                    idempotency_key or None, job.id,
                 ))
         except Exception as e:
             logger.error(f"Failed to persist job {job.id}: {e}")

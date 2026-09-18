@@ -508,6 +508,7 @@ _dream_distiller = DreamDistiller(ltm_store=_lt_store)
 class DreamRequest(BaseModel):
     messages: list[dict] = []
     force: bool = False  # bypass echo blocker for manual triggers
+    background: bool = False  # P0-8接线：True→提交hippo.dream后台作业，立即返回job_id
 
 
 class RecallMarkRequest(BaseModel):
@@ -520,7 +521,27 @@ async def ltm_dream(req: DreamRequest):
 
     CowAgent 5-step prompt + nanobot archive-as-tool-call +
     kilocode memory echo blocker (unless force=True).
+    background=True → P0-8后台作业（will job_queue）：LLM长任务不阻塞请求方，
+    作业状态经 /api/will/jobs/{id} 与monitoring面板可见。
     """
+    if req.background:
+        from src.will.job_handlers import HANDLER_SPECS, register_default_handlers
+        from src.will.job_queue import get_job_queue
+
+        jq = get_job_queue()
+        register_default_handlers(jq)  # 幂等；跨模块不依赖api/will.py是否已加载
+        await jq.start()
+        job_id = await jq.submit(
+            "hippo.dream",
+            {"messages": req.messages, "force": req.force},
+        )
+        return {
+            "queued": True,
+            "job_id": job_id,
+            "queue": "will.job_queue",
+            "handler": "hippo.dream" if "hippo.dream" in HANDLER_SPECS else "",
+            "status_url": f"/api/will/jobs/{job_id}",
+        }
     result = await _dream_distiller.dream(
         messages=req.messages,
         force=req.force,
