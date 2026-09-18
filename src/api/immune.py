@@ -9,6 +9,7 @@ from src.immune.access_control import IPAccessControl
 from src.immune.audit import AuditAction, AuditLogger
 from src.immune.intrusion import IntrusionDetector
 from src.immune.moderator import ContentModerator
+from src.immune.permission_engine import PermissionMode, PermissionService
 from src.immune.rate_limiter import RateLimitConfig, RateLimiter
 from src.nerve.event_bridge import push_event
 
@@ -22,6 +23,7 @@ moderator = ContentModerator()
 ip_control = IPAccessControl()
 audit = AuditLogger()
 intrusion = IntrusionDetector()
+permission_service = PermissionService()  # P0-3 工具级权限引擎
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -432,6 +434,128 @@ async def unblock_ip_intrusion(ip: str):
 
 
 @router.get("/intrusion/stats")
-async def intrusion_stats():
+async def intrusion_stats() -> dict:
     """Get intrusion detection statistics."""
     return intrusion.stats()
+
+
+# ── P0-3 工具级权限引擎（AgentScope PermissionEngine × kilocode分层） ──
+
+class PermissionCheckRequest(BaseModel):
+    tool_name: str
+    arguments: dict = {}
+    session_id: str = ""
+    working_dir: str = ""
+
+
+class PermissionRuleRequest(BaseModel):
+    tool_name: str
+    rule_content: str | None = None
+    behavior: str = "allow"          # allow / deny / ask
+    source: str = "user"             # user / session
+    hard: bool = False
+    risk: str = "medium"
+
+
+class PermissionOutcomeRequest(BaseModel):
+    outcome: str                     # approved / denied / timeout
+    comment: str = ""
+
+
+class PermissionModeRequest(BaseModel):
+    mode: str                        # default / accept_edits / explore / bypass / dont_ask
+
+
+@router.post("/permission/check")
+async def permission_check(req: PermissionCheckRequest):
+    """工具调用前的权限判定 — 返回allow/deny/ask + provenance。
+
+    acp-proxy SoulMateAgent在执行每个tool_call前调用此端点；
+    deny/ask时决策带rule_source/rule_content（"为什么被拦"）。
+    """
+    decision = permission_service.check(
+        req.tool_name, req.arguments,
+        session_id=req.session_id, working_dir=req.working_dir,
+    )
+    if decision.behavior.value == "deny":
+        audit.log(AuditAction.CONTENT_BLOCKED,
+                  detail=f"permission deny: {req.tool_name} — {decision.decision_reason}",
+                  risk_level="high" if decision.rule_id else "medium")
+        push_event({
+            "organ": "immune",
+            "emoji": "🛡",
+            "type": "permission_denied",
+            "summary": f"⛔ 工具调用被权限引擎拦截: {req.tool_name} — {decision.decision_reason}",
+            "detail": {"tool": req.tool_name, "reason": decision.decision_reason,
+                       "rule_source": decision.rule_source, "mode": decision.mode},
+        })
+    return decision.to_dict()
+
+
+@router.get("/permission/rules")
+async def permission_rules(include_deleted: bool = Query(default=False),
+                           behavior: str = Query(default=""),
+                           tool_name: str = Query(default="")):
+    """列出权限规则（含builtin基线；hard=true的规则为硬否决）"""
+    return {"rules": permission_service.store.list_rules(
+        include_deleted=include_deleted, behavior=behavior, tool_name=tool_name)}
+
+
+@router.post("/permission/rules")
+async def permission_add_rule(req: PermissionRuleRequest):
+    """新增权限规则。hard规则=任何模式不可覆盖（删除需人工且被审计）"""
+    if req.behavior not in ("allow", "deny", "ask"):
+        raise HTTPException(400, f"Invalid behavior: {req.behavior}")
+    result = permission_service.store.add_rule(
+        req.tool_name, req.rule_content, req.behavior,
+        source=req.source, hard=req.hard, risk=req.risk)
+    return {"ok": True, **result}
+
+
+@router.delete("/permission/rules/{rule_id}")
+async def permission_delete_rule(rule_id: str):
+    """删除规则（软删，审计保留）"""
+    ok = permission_service.store.delete_rule(rule_id)
+    if not ok:
+        raise HTTPException(404, f"Rule not found: {rule_id}")
+    return {"ok": True, "rule_id": rule_id}
+
+
+@router.get("/permission/mode")
+async def permission_get_mode():
+    return {"mode": permission_service.store.get_mode()}
+
+
+@router.put("/permission/mode")
+async def permission_set_mode(req: PermissionModeRequest):
+    """设置权限模式。explore=只读（售前'先看不动'）；dont_ask=无人值守安全档"""
+    try:
+        permission_service.store.set_mode(req.mode)
+    except ValueError:
+        raise HTTPException(400, f"Invalid mode: {req.mode}. Valid: {[m.value for m in PermissionMode]}")
+    return {"ok": True, "mode": req.mode}
+
+
+@router.get("/permission/audit")
+async def permission_audit(limit: int = Query(default=50, ge=1, le=1000),
+                           behavior: str = Query(default=""),
+                           tool_name: str = Query(default=""),
+                           outcome: str = Query(default="")):
+    """决策审计轨迹 — 每次判定的behavior+provenance，ASK决策的人工结果回写"""
+    return {"entries": permission_service.store.audit_query(
+        limit=limit, behavior=behavior, tool_name=tool_name, outcome=outcome)}
+
+
+@router.post("/permission/approvals/{decision_id}")
+async def permission_record_outcome(decision_id: str, req: PermissionOutcomeRequest):
+    """人工审批结果回写（acp-proxy收到前端session/request_permission响应后调用）"""
+    ok = permission_service.store.record_outcome(decision_id, req.outcome, req.comment)
+    if not ok:
+        raise HTTPException(404, f"Decision not found or invalid outcome: {decision_id} / {req.outcome}")
+    return {"ok": True, "decision_id": decision_id, "outcome": req.outcome}
+
+
+@router.get("/permission/stats")
+async def permission_stats():
+    """权限引擎统计 — decisions总数/按行为分布/pending审批/规则数/当前模式"""
+    return permission_service.store.stats()
