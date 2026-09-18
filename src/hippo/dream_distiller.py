@@ -372,11 +372,29 @@ class DreamDistiller:
     async def _call_gland_llm(self, system_prompt: str, user_prompt: str) -> str:
         """Call LLM via gland router (default when no llm_call provided)."""
         try:
-            # 复用api/gland.py的gateway单例(providers已bootstrap)——
-            # 此前新建ModelRouter()导致providers为空→NoProviderError
-            from src.api.gland import _ensure_bootstrapped, gateway
-            _ensure_bootstrapped()
-            result = await gateway.chat(
+            # 每次调用创建fresh ModelRouter实例(绑定当前event loop)+显式注册providers。
+            # 不能复用api/gland.py gateway单例——其http_client在module import时创建，
+            # 跨event loop使用导致ollama 400 Bad Request。
+            from src.config import settings
+            from src.gland.router import ModelRouter
+            router = ModelRouter()
+            if settings.llm_base_url:
+                router.add_provider(
+                    name="openai",
+                    base_url=settings.llm_base_url,
+                    models={"chat": settings.llm_model},
+                    priority=0,
+                )
+                if settings.llm_api_key:
+                    router.key_manager.add_key("openai", settings.llm_api_key)
+            ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
+            router.add_provider(
+                name="ollama",
+                base_url=ollama_url,
+                models={"chat": "deepseek-r1:latest"},
+                priority=10,
+            )
+            result = await router.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
