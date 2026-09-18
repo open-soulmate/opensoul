@@ -191,8 +191,8 @@ def _path_of(tool_input: dict) -> str:
 
 def match_rule(rule_content: Optional[str], tool_name: str, tool_input: dict) -> bool:
     """规则匹配 — 按工具类型分流（AgentScope各tool.match_rule的Python复刻）"""
-    if not rule_content:
-        return True  # 空content = 工具级规则，匹配该工具一切调用
+    if not rule_content or rule_content == "*":
+        return True  # 空content或"*" = 工具级规则，匹配该工具一切调用
 
     if tool_name in SHELL_TOOLS or rule_content.startswith(("sudo ", "rm ", "curl ", "wget ")):
         cmd = _shell_command_of(tool_input)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from uuid import UUID
@@ -105,11 +106,54 @@ class ChatRequest(BaseModel):
 
 async def rag_stream(question: str, user_id: UUID, top_k: int):
     """Generate SSE streaming response for RAG query."""
-    # Retrieve relevant chunks
-    results = await semantic_search(question, user_id, limit=top_k)
+    # Retrieve relevant chunks (timeout 8s: RAG不可用时降级为空context)
+    try:
+        results = await asyncio.wait_for(
+            semantic_search(question, user_id, limit=top_k), timeout=8
+        )
+    except (asyncio.TimeoutError, Exception) as _rag_exc:
+        logger.warning("RAG unavailable (stream), degrading to LLM-only: %s", _rag_exc)
+        results = []
 
     if not results:
-        yield f"data: {json.dumps({'type': 'error', 'content': 'No relevant knowledge found.'})}\n\n"
+        yield f"data: {json.dumps({'type': 'info', 'content': 'RAG检索不可用，直接使用LLM回答。'})}\n\n"
+        # 降级：不返回error，继续走LLM路径
+        # 构建最小prompt
+        from src.core.config import settings as _s
+        api_key = _s.llm_api_key or ""
+        prompt = question
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"Content-Type": "application/json"}
+                if api_key.startswith("tp-"):
+                    headers["api-key"] = api_key
+                else:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                async with client.stream(
+                    "POST", f"{_s.llm_base_url}/chat/completions",
+                    headers=headers,
+                    json={"model": _s.llm_model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "temperature": 0.3, "stream": True},
+                    timeout=60,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content")
+                            if content:
+                                yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                        except json.JSONDecodeError:
+                            continue
+        except Exception as llm_exc:
+            yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {llm_exc}'})}\n\n"
         yield "data: [DONE]\n\n"
         return
 
@@ -198,7 +242,13 @@ async def chat(req: ChatRequest, user_id: UUID):
         )
 
     # Non-streaming fallback
-    results = await semantic_search(req.question, user_id, limit=req.top_k)
+    try:
+        results = await asyncio.wait_for(
+            semantic_search(req.question, user_id, limit=req.top_k), timeout=8
+        )
+    except (asyncio.TimeoutError, Exception) as _rag_exc:
+        logger.warning("RAG semantic_search unavailable (non-stream), degrading: %s", _rag_exc)
+        results = []
     if not results:
         return {"answer": "No relevant knowledge found.", "sources": []}
 
