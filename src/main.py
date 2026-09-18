@@ -52,6 +52,7 @@ from src.api.limb_rpa import router as limb_rpa_router
 from src.api.link import router as link_router
 from src.api.link_gateway import router as link_gateway_router
 from src.api.llm import router as llm_router
+from src.api.model_router import router as model_router_router
 from src.api.marketplace import router as marketplace_router
 from src.api.marrow import router as marrow_router
 from src.api.mcp import router as mcp_router
@@ -484,6 +485,7 @@ app.include_router(entity_router, prefix="/api/entity", tags=["entity"])
 app.include_router(tag_router, prefix="/api/tags", tags=["tags"])
 app.include_router(user_router, prefix="/api/user", tags=["user"])
 app.include_router(llm_router, prefix="/api/llm", tags=["llm"])
+app.include_router(model_router_router, prefix="/api/model-router", tags=["model-router"])
 app.include_router(agent_router, prefix="/api/agent", tags=["agent"])
 app.include_router(export_router, prefix="/api/export", tags=["export"])
 app.include_router(cortex_router, prefix="/api/cortex", tags=["cortex"])

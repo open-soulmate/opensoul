@@ -35,6 +35,38 @@ class LLMConfigUpdate(BaseModel):
     model: str | None = None
 
 
+class LLMModelsRequest(BaseModel):
+    base_url: str
+    api_key: str | None = None
+
+
+@router.post("/models")
+async def list_models(body: LLMModelsRequest):
+    """List available models from an OpenAI-compatible API endpoint."""
+    base_url = body.base_url.rstrip("/")
+    api_key = body.api_key or _llm_overrides.get("api_key", "") or settings.llm_api_key
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        if api_key.startswith("tp-"):
+            headers["api-key"] = api_key
+        else:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{base_url}/models", headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            models = [m["id"] for m in data.get("data", []) if isinstance(m, dict) and "id" in m]
+            models.sort()
+            return {"models": models}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Models API error: {e.response.status_code}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch models: {str(e)}")
+
+
 # In-memory config override, synced to .env on save.
 _llm_overrides: dict[str, str] = {}
 
@@ -177,7 +209,9 @@ async def test_connection(body: LLMTestRequest | None = None):
                 "reply": reply.strip(),
             }
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"LLM API error: {e.response.status_code}")
+        import logging
+        logging.getLogger("llm-test").warning("LLM API error %d: %s", e.response.status_code, e.response.text[:300])
+        raise HTTPException(status_code=502, detail=f"LLM API error: {e.response.status_code} — {e.response.text[:200]}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LLM connection failed: {str(e)}")
 
