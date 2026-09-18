@@ -293,7 +293,11 @@ def get_marketplace_db() -> sqlite3.Connection:
 
 @router.get("/skills/sources")
 async def list_skill_sources(user_id: UUID = Depends(get_current_user)):
-    """List all configured skill sources"""
+    """List all configured skill sources
+
+    含last_sync_error（mem0 §1.1失败必须可见：列表契约也带失败原因，
+    前端marketplace页无需额外请求即可看到"哪个源同步失败、为什么"）。
+    """
     db = get_marketplace_db()
     rows = db.execute("SELECT * FROM skill_sources ORDER BY builtin DESC, name").fetchall()
     sources = []
@@ -311,6 +315,7 @@ async def list_skill_sources(user_id: UUID = Depends(get_current_user)):
                 "sync_interval": r[8],
                 "last_sync": r[9],
                 "skill_count": r[10],
+                "last_sync_error": r[13] if len(r) > 13 else None,
             }
         )
     return {"sources": sources}
