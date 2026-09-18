@@ -187,8 +187,7 @@ class SkillLearner:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM learned_skills
-                   WHERE usage_count > 0
-                   ORDER BY success_count DESC, usage_count DESC
+                   ORDER BY usage_count DESC, success_count DESC
                    LIMIT ?""",
                 (limit * 3,),
             ).fetchall()

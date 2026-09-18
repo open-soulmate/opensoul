@@ -19,10 +19,23 @@ def _parse_frontmatter(md_path: Path) -> dict:
     text = md_path.read_text(encoding="utf-8", errors="ignore")
     meta = {}
     if text.startswith("---"):
-        for line in text[3:].split("---")[0].splitlines():
-            if ":" in line:
+        lines = text[3:].split("---")[0].splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if ":" in line and not line.startswith((" ", "\t")):
                 k, _, v = line.partition(":")
-                meta[k.strip()] = v.strip()
+                v = v.strip()
+                if v in ("|", ">"):  # 多行YAML block scalar
+                    block = []
+                    i += 1
+                    while i < len(lines) and lines[i].startswith((" ", "\t")):
+                        block.append(lines[i].strip())
+                        i += 1
+                    meta[k.strip()] = " ".join(block)
+                    continue
+                meta[k.strip()] = v
+            i += 1
     return meta
 
 
