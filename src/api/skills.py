@@ -38,6 +38,65 @@ AGENT_SKILL_DIRS = [
     ("continue", Path.home() / ".continue" / "skills"),
 ]
 
+# .agents/skills 跨agent技能目录标准（五方定案：goose/ChatDev2.0/FastGPT/OpenHands/Warp）
+# 全局 ~/.agents/skills/ + 项目级 <repo>/.agents/skills/ 双层结构
+AGENTS_STANDARD_DIRS = [
+    ("agents-global", Path.home() / ".agents" / "skills"),
+    ("agents-openmate", Path.home() / "openmate" / ".agents" / "skills"),
+    ("agents-opensoul", Path.home() / "opensoul" / ".agents" / "skills"),
+]
+
+# SKILL.md frontmatter必填字段（对齐OpenHands扩展规范）
+REQUIRED_SKILL_FIELDS = ("name", "description")
+
+
+def _validate_skill_dir(skill_dir: Path) -> list[dict]:
+    """校验skill目录结构（对齐agno SkillLoader.validate_skill_directory）
+
+    返回typed validation errors列表，空列表=合法
+    error types: missing_skill_md / missing_field / empty_description / not_directory
+    """
+    errors = []
+    if not skill_dir.is_dir():
+        return [{"type": "not_directory", "detail": str(skill_dir)}]
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.exists():
+        return [{"type": "missing_skill_md", "detail": f"{skill_dir}/SKILL.md不存在"}]
+    try:
+        info = _parse_skill_md(skill_md)
+    except Exception as e:
+        return [{"type": "parse_error", "detail": str(e)}]
+    for field in REQUIRED_SKILL_FIELDS:
+        if not info.get(field):
+            errors.append({"type": "missing_field", "detail": f"{skill_dir.name}: frontmatter缺{field}"})
+    return errors
+
+
+def _scan_standard_skills() -> tuple[list[dict], list[dict]]:
+    """扫描.agents/skills标准目录（五方定案）
+
+    返回 (skills, validation_report)
+    """
+    skills = []
+    validation = []
+    for source, base_dir in AGENTS_STANDARD_DIRS:
+        if not base_dir.exists():
+            continue
+        for d in sorted(base_dir.iterdir()):
+            if not d.is_dir():
+                continue
+            errs = _validate_skill_dir(d)
+            if errs:
+                validation.append({"skill": d.name, "path": str(d), "source": source, "errors": errs})
+                continue  # 不合法的不进skills列表，但记录在校验报告
+            info = _parse_skill_md(d / "SKILL.md")
+            info["installed"] = True  # .agents/skills内即为标准安装位
+            info["path"] = str(d)
+            info["source"] = source
+            info["standard"] = "agents"  # 标记五方定案标准
+            skills.append(info)
+    return skills, validation
+
 
 def _parse_skill_md(skill_md: Path) -> dict:
     """Parse SKILL.md frontmatter"""
@@ -47,6 +106,7 @@ def _parse_skill_md(skill_md: Path) -> dict:
     category = ""
     version = ""
     in_fm = False
+    triggers = ""
     for line in content.split("\n"):
         if line.strip() == "---":
             in_fm = not in_fm
@@ -60,11 +120,14 @@ def _parse_skill_md(skill_md: Path) -> dict:
                 category = line.split(":", 1)[1].strip().strip("\"'")
             elif line.startswith("version:"):
                 version = line.split(":", 1)[1].strip().strip("\"'")
+            elif line.startswith("triggers:"):
+                triggers = line.split(":", 1)[1].strip().strip("\"'[]")
     return {
         "name": name,
         "description": description[:200],
         "category": category or "general",
         "version": version,
+        "triggers": triggers,
     }
 
 
@@ -117,22 +180,67 @@ def _sync_to_shared(skill_path: Path, skill_name: str) -> bool:
 
 @router.get("")
 async def list_skills(user_id: UUID = Depends(get_current_user)):
-    """List all skills - shared + detected from agents"""
+    """List all skills - .agents/skills标准层 + shared + detected from agents"""
+    standard_skills, validation = _scan_standard_skills()
     shared = _scan_shared_skills()
-    shared_names = {s["name"] for s in shared}
+    seen = {s["name"] for s in standard_skills}
 
-    # Scan agent dirs for skills not yet in shared
+    # shared层：排除与标准层重名的
+    shared_dedup = []
+    for s in shared:
+        if s["name"] not in seen:
+            shared_dedup.append(s)
+            seen.add(s["name"])
+
+    # agent目录层：未在前两层的
     agent_skills = []
     for s in _scan_agent_skills():
-        if s["name"] not in shared_names:
+        if s["name"] not in seen:
             agent_skills.append(s)
-            shared_names.add(s["name"])  # dedupe
+            seen.add(s["name"])  # dedupe
 
     return {
-        "skills": shared + agent_skills,
-        "installed_count": len(shared),
+        "skills": standard_skills + shared_dedup + agent_skills,
+        "installed_count": len(standard_skills) + len(shared_dedup),
+        "standard_count": len(standard_skills),
         "shared_dir": str(SHARED_SKILLS_DIR),
+        "standard_dirs": [str(d) for _, d in AGENTS_STANDARD_DIRS],
+        "validation_errors": validation,
     }
+
+
+@router.get("/validate")
+async def validate_skills():
+    """校验所有skill目录（agno typed-error模式）— 免登录，供健康检查/监控用"""
+    report = {"valid": [], "invalid": [], "stats": {}}
+
+    # .agents/skills标准层
+    standard_skills, validation = _scan_standard_skills()
+    for s in standard_skills:
+        report["valid"].append({"name": s["name"], "source": s["source"], "standard": "agents"})
+    report["invalid"].extend(validation)
+
+    # shared + agent层也跑校验
+    for base_label, base_dirs in [("shared", [SHARED_SKILLS_DIR]), ("agent", [d for _, d in AGENT_SKILL_DIRS])]:
+        for base_dir in base_dirs:
+            if not base_dir.exists():
+                continue
+            for d in sorted(base_dir.iterdir()):
+                if not d.is_dir():
+                    continue
+                errs = _validate_skill_dir(d)
+                if errs:
+                    report["invalid"].append({"skill": d.name, "path": str(d), "source": base_label, "errors": errs})
+                else:
+                    info = _parse_skill_md(d / "SKILL.md")
+                    report["valid"].append({"name": info["name"], "source": base_label, "standard": ""})
+
+    report["stats"] = {
+        "valid_count": len(report["valid"]),
+        "invalid_count": len(report["invalid"]),
+        "agents_standard_count": len(standard_skills),
+    }
+    return report
 
 
 @router.post("/migrate")

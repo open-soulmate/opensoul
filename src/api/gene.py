@@ -220,11 +220,33 @@ async def gene_stats():
 @router.get("/health")
 async def gene_health():
     """OpenGene health check."""
+    # gene↔skills对齐：文件系统发现的skill（.agents/skills标准层+shared+agent目录）与学习型skill并列展示
+    discovered = {"discovered_count": 0, "standard_count": 0, "invalid_count": 0, "sources": {}}
+    try:
+        from src.api.skills import _scan_standard_skills, _scan_shared_skills, _scan_agent_skills
+        standard_skills, validation = _scan_standard_skills()
+        shared = _scan_shared_skills()
+        agent = _scan_agent_skills()
+        all_skills = standard_skills + shared + agent
+        discovered = {
+            "discovered_count": len(all_skills),
+            "standard_count": len(standard_skills),
+            "invalid_count": len(validation),
+            "sources": {
+                "agents_standard": len(standard_skills),
+                "shared": len(shared),
+                "agent_dirs": len(agent),
+            },
+        }
+    except Exception:
+        pass  # gene健康检查不因skills扫描失败而失败
+
+    learned = skill_learner.get_stats()
     return {
         "status": "ok",
         "component": "OpenGene",
         **engine.stats(),
-        "skills": skill_learner.get_stats(),
+        "skills": {**learned, "discovered": discovered},
     }
 
 
