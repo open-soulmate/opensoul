@@ -34,7 +34,11 @@ class MeiliStore:
         try:
             self.client.get_index(settings.meili_index)
         except MeilisearchApiError:
-            self.client.create_index(settings.meili_index, primary_key="id")
+            # meilisearch>=0.32 python客户端: primary_key改为options["primaryKey"]
+            try:
+                self.client.create_index(settings.meili_index, options={"primaryKey": "id"})
+            except TypeError:
+                self.client.create_index(settings.meili_index)
             index = self.client.index(settings.meili_index)
             index.update_searchable_attributes(["title", "content", "tags"])
             index.update_filterable_attributes(["tags", "user_id", "content_type", "created_at"])
