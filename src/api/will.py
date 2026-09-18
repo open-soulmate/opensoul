@@ -441,3 +441,53 @@ async def dag_status(plan_id: str):
 async def dag_stats():
     """Get DAG planner statistics."""
     return dag_planner.get_stats()
+
+
+# ── P0-8 后台作业队列（agno job_queue模式）──
+
+class JobSubmitRequest(BaseModel):
+    name: str
+    params: dict = {}
+    timeout_s: int = 300
+    max_retries: int = 2
+
+
+@router.get("/jobs/health")
+async def job_queue_health():
+    """Job queue health check."""
+    from src.will.job_queue import get_job_queue
+    return {"status": "ok", "component": "JobQueue", **get_job_queue().get_stats()}
+
+
+@router.post("/jobs/submit")
+async def job_submit(req: JobSubmitRequest):
+    """Submit a background job. Returns job_id immediately."""
+    from src.will.job_queue import get_job_queue
+    jq = get_job_queue()
+    job_id = await jq.submit(req.name, req.params, req.timeout_s, req.max_retries)
+    return {"job_id": job_id, "status": "submitted"}
+
+
+@router.get("/jobs/{job_id}")
+async def job_status(job_id: str):
+    """Get job status and result."""
+    from src.will.job_queue import get_job_queue
+    result = get_job_queue().get(job_id)
+    if not result:
+        raise HTTPException(404, "Job not found")
+    return result
+
+
+@router.get("/jobs")
+async def job_list(status: str = "", limit: int = 50):
+    """List jobs, optionally filtered by status."""
+    from src.will.job_queue import get_job_queue
+    return {"jobs": get_job_queue().list_jobs(status, limit)}
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def job_cancel(job_id: str):
+    """Cancel a pending job."""
+    from src.will.job_queue import get_job_queue
+    ok = get_job_queue().cancel(job_id)
+    return {"cancelled": ok}
