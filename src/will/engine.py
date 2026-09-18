@@ -12,8 +12,10 @@ Actions now make real calls:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -53,13 +55,50 @@ _BLOCKED_COMMANDS = frozenset(
 
 
 class WorkflowEngine:
-    """In-memory workflow execution engine with DAG traversal and real action execution."""
+    """Workflow execution engine with DAG traversal and real action execution.
+
+    P3-③: workflows持久化到JSON（data/will_workflows.json），重启不丢失。
+    """
+
+    _PERSIST_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "will_workflows.json"
 
     def __init__(self) -> None:
         self._workflows: dict[str, Workflow] = {}
         self._executions: dict[str, WorkflowExecution] = {}
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._max_execution_history = 1000
+        self._load()
+
+    # ── Persistence (P3-③) ─────────────────────────────────────
+
+    def _load(self) -> None:
+        """启动时从JSON加载workflows"""
+        try:
+            if self._PERSIST_PATH.exists():
+                data = json.loads(self._PERSIST_PATH.read_text(encoding="utf-8"))
+                for wdata in data.get("workflows", []):
+                    try:
+                        wf = Workflow(**wdata)
+                        self._workflows[wf.id] = wf
+                    except Exception:
+                        continue
+        except Exception:
+            pass  # 持久化文件损坏不阻塞启动
+
+    def _save(self) -> None:
+        """变更后写盘"""
+        try:
+            self._PERSIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "workflows": [
+                    w.model_dump(mode="json") for w in self._workflows.values()
+                ]
+            }
+            self._PERSIST_PATH.write_text(
+                json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+        except Exception:
+            pass  # 写盘失败不阻塞运行
 
     # ── Workflow CRUD ───────────────────────────────────────────
 
@@ -81,6 +120,7 @@ class WorkflowEngine:
             variables=variables or {},
         )
         self._workflows[wf_id] = wf
+        self._save()
         return wf
 
     def get_workflow(self, workflow_id: str) -> Workflow | None:
@@ -100,10 +140,14 @@ class WorkflowEngine:
             if hasattr(wf, key) and key not in ("id", "created_at"):
                 setattr(wf, key, value)
         wf.updated_at = datetime.now(UTC).isoformat()
+        self._save()
         return wf
 
     def delete_workflow(self, workflow_id: str) -> bool:
-        return self._workflows.pop(workflow_id, None) is not None
+        removed = self._workflows.pop(workflow_id, None) is not None
+        if removed:
+            self._save()
+        return removed
 
     # ── Node/Edge Management ────────────────────────────────────
 
@@ -127,6 +171,7 @@ class WorkflowEngine:
         )
         wf.nodes.append(node)
         wf.updated_at = datetime.now(UTC).isoformat()
+        self._save()
         return node
 
     def remove_node(self, workflow_id: str, node_id: str) -> bool:
@@ -139,6 +184,7 @@ class WorkflowEngine:
             e for e in wf.edges if e.source_node_id != node_id and e.target_node_id != node_id
         ]
         wf.updated_at = datetime.now(UTC).isoformat()
+        self._save()
         return len(wf.nodes) < before
 
     def add_edge(
@@ -163,6 +209,7 @@ class WorkflowEngine:
         )
         wf.edges.append(edge)
         wf.updated_at = datetime.now(UTC).isoformat()
+        self._save()
         return edge
 
     def remove_edge(self, workflow_id: str, edge_id: str) -> bool:

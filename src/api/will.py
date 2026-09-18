@@ -15,6 +15,14 @@ from src.will.models import (
 
 router = APIRouter()
 engine = WorkflowEngine()
+
+# P3-③ 启动自动seed：首次启动（持久化文件为空）时注册真实系统编排
+try:
+    if not engine.list_workflows():
+        from src.will.orchestration_seeder import seed_system_orchestrations
+        _seed_result = seed_system_orchestrations(engine)
+except Exception:
+    pass  # seed失败不阻塞服务启动
 dag_planner = DAGPlanner()
 
 
@@ -450,6 +458,14 @@ class JobSubmitRequest(BaseModel):
     params: dict = {}
     timeout_s: int = 300
     max_retries: int = 2
+
+
+@router.post("/seed-system")
+async def seed_system():
+    """P3-③: 注册真实系统编排为可视化workflow（幂等）"""
+    from src.will.orchestration_seeder import seed_system_orchestrations
+    result = seed_system_orchestrations(engine)
+    return {"ok": not result["errors"], **result}
 
 
 @router.get("/jobs/health")
