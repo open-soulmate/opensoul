@@ -351,6 +351,32 @@ async def run_lifecycle_check():
     return result
 
 
+# ── Session Import (P3-② 会话导入) ─────────────────────────
+
+
+class SessionImportRequest(BaseModel):
+    limit: int = 200
+    min_messages: int = 2
+    dry_run: bool = False
+
+
+@router.post("/sessions/import")
+async def import_sessions(req: SessionImportRequest):
+    """P3-②: 导入历史agent会话到海马长期记忆
+
+    数据源：agent_sessions/agent_messages（acp-proxy ws_chat写入）
+    dry_run=true时只统计不写入
+    """
+    from src.hippo.session_importer import SessionImporter
+    importer = SessionImporter(ltm_store=_lt_store)
+    result = importer.import_sessions(
+        limit=req.limit,
+        min_messages=req.min_messages,
+        dry_run=req.dry_run,
+    )
+    return {"ok": True, "component": "session_importer", **result}
+
+
 # ── Long-term Memory ───────────────────────────────────────
 
 
