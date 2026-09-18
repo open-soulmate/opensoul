@@ -5,6 +5,7 @@ OpenMate polls this endpoint to sync skills/agents.
 """
 
 import logging
+import shutil
 import sqlite3
 from pathlib import Path
 from uuid import UUID
@@ -12,7 +13,20 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from src.api.skills import SHARED_SKILLS_DIR
 from src.api.user import get_current_user
+from src.immune.registry_sync import (
+    RegistrySyncError,
+    download_skill_payload,
+    fetch_registry_index,
+    plan_registry_entries,
+)
+from src.immune.skill_guard import (
+    SkillSecurityError,
+    make_staging_dir,
+    promote_staging,
+    validate_skill_name,
+)
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "opensoul.db"
 
@@ -209,6 +223,18 @@ def init_marketplace_tables(db: sqlite3.Connection):
             UNIQUE(source_id, agent_id)
         )
     """)
+    # 迁移：sync失败可见（mem0 §1.1禁止静默假成功）+ registry供应链元数据（kilocode origin钉死）
+    for ddl in (
+        "ALTER TABLE skill_sources ADD COLUMN last_sync_error TEXT",
+        "ALTER TABLE marketplace_skills ADD COLUMN origin TEXT DEFAULT ''",
+        "ALTER TABLE marketplace_skills ADD COLUMN download_url TEXT DEFAULT ''",
+        "ALTER TABLE marketplace_skills ADD COLUMN security_status TEXT DEFAULT ''",
+    ):
+        try:
+            db.execute(ddl)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
     db.commit()
 
 
@@ -360,17 +386,160 @@ async def delete_skill_source(source_id: str, user_id: UUID = Depends(get_curren
 
 @router.post("/skills/sources/{source_id}/sync")
 async def sync_skill_source(source_id: str, user_id: UUID = Depends(get_current_user)):
-    """Manually trigger sync for a skill source"""
+    """Registry真实同步 — kilocode discovery.ts管线（替换"Simulate sync"占位）。
+
+    index.json真实拉取→逐skill安全计划（name安全段/registry内相对路径逃逸/
+    download_url origin钉死在index源）→accepted入库marketplace_skills（含origin
+    +security_status），rejected带typed reason随响应返回；
+    拉取失败→last_sync_error落库+success=False可见（mem0 §1.1：失败必须可见，
+    禁止只更新last_sync时间戳的静默假成功）。
+    """
     db = get_marketplace_db()
     existing = db.execute("SELECT * FROM skill_sources WHERE id = ?", (source_id,)).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Source not found")
+    src_type, src_url = existing[2], existing[3]
 
-    # Simulate sync - in production, fetch from source URL
-    # For now, just update last_sync time
-    db.execute("UPDATE skill_sources SET last_sync = datetime('now') WHERE id = ?", (source_id,))
+    try:
+        index = fetch_registry_index(src_url, src_type)
+    except RegistrySyncError as e:
+        db.execute(
+            "UPDATE skill_sources SET last_sync = datetime('now'), last_sync_error = ? WHERE id = ?",
+            (f"{e.reason}: {e.detail}"[:500], source_id),
+        )
+        db.commit()
+        return {
+            "success": False,
+            "source_id": source_id,
+            "message": f"Sync failed: {e.reason}",
+            "error": {"reason": e.reason, "detail": e.detail[:500]},
+        }
+
+    accepted, rejected = plan_registry_entries(index)
+    for planned in accepted:
+        e = planned.entry
+        db.execute(
+            """
+            INSERT INTO marketplace_skills
+                (source_id, skill_id, name, description, category, version, origin, security_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted')
+            ON CONFLICT(source_id, skill_id) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                category = excluded.category,
+                version = excluded.version,
+                origin = excluded.origin,
+                security_status = excluded.security_status
+            """,
+            (source_id, e.name, e.name, e.description, e.category, e.version, planned.origin),
+        )
+    db.execute(
+        "UPDATE skill_sources SET last_sync = datetime('now'), skill_count = ?, last_sync_error = NULL WHERE id = ?",
+        (len(accepted), source_id),
+    )
     db.commit()
-    return {"success": True, "message": f"Synced {source_id}"}
+    return {
+        "success": True,
+        "source_id": source_id,
+        "message": f"Synced {len(accepted)} skills from {src_url}",
+        "fetched": len(index.entries),
+        "accepted": len(accepted),
+        "rejected": rejected,
+        "skills": [p.entry.name for p in accepted],
+        "index_base": index.base_url,
+        "guard": "skill_guard/registry_sync (kilocode discovery.ts)",
+    }
+
+
+class MarketplaceInstallRequest(BaseModel):
+    force: bool = False  # 换origin源安装须显式force（kilocode origin钉死）
+
+
+@router.post("/skills/{source_id}/{skill_id}/install")
+async def marketplace_install_skill(
+    source_id: str,
+    skill_id: str,
+    body: MarketplaceInstallRequest | None = None,
+    user_id: UUID = Depends(get_current_user),
+):
+    """从registry安装skill — skill_guard供应链防御完整管线（本轮新接线）。
+
+    kilocode discovery.ts：index安全计划重跑→registry内下载（origin钉死index源）
+    →staging→promote_staging（security_plan→origin清单→原子swap）晋升shared目录。
+    任何一关不过=staging清理、live不动；同名skill换registry源=origin_mismatch
+    拒绝（除非显式force）——"同skill换源=供应链攻击信号"。
+    """
+    db = get_marketplace_db()
+    row = db.execute(
+        """
+        SELECT s.skill_id, s.name, s.origin, src.url, src.type
+        FROM marketplace_skills s
+        JOIN skill_sources src ON s.source_id = src.id
+        WHERE s.source_id = ? AND (s.skill_id = ? OR s.name = ?)
+        """,
+        (source_id, skill_id, skill_id),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Skill not found in marketplace (run sync first)")
+    _, skill_name, pinned_origin, src_url, src_type = row
+    force = bool(body.force) if body else False
+
+    try:
+        validate_skill_name(skill_name)
+    except SkillSecurityError as e:
+        return {"success": False, "error": f"skill_guard: {e.reason} — {e.detail}"}
+
+    # index重新拉取+安全计划重跑（入库后registry内容可能已被篡改，不信入库快照）
+    try:
+        index = fetch_registry_index(src_url, src_type)
+    except RegistrySyncError as e:
+        return {"success": False, "error": f"registry fetch failed: {e.reason} — {e.detail}"}
+    accepted, _rejected = plan_registry_entries(index)
+    planned = next((p for p in accepted if p.entry.name == skill_name), None)
+    if planned is None:
+        return {"success": False, "error": "skill未通过registry安全计划（name/路径/origin校验拒绝）"}
+    if pinned_origin and planned.origin != pinned_origin and not force:
+        return {
+            "success": False,
+            "error": (
+                f"skill_guard: origin_mismatch — 入库origin={pinned_origin!r} "
+                f"本次={planned.origin!r}（换源须显式force）"
+            ),
+        }
+
+    SHARED_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    staging = make_staging_dir(SHARED_SKILLS_DIR, skill_name)
+    try:
+        payload = download_skill_payload(planned, index, staging)
+    except RegistrySyncError as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        return {"success": False, "error": f"registry download failed: {e.reason} — {e.detail}"}
+
+    result = promote_staging(
+        payload,
+        SHARED_SKILLS_DIR,
+        origin=planned.origin,
+        source_type=f"registry:{src_type}",
+        force=force,
+        version=planned.entry.version,
+    )
+    shutil.rmtree(staging, ignore_errors=True)  # 容器清理（负载已被rename走或失败被清）
+    if not result.success:
+        return {"success": False, "error": f"skill_guard拒绝: {result.errors}"}
+    db.execute(
+        "UPDATE marketplace_skills SET installed = 1, origin = ? WHERE source_id = ? AND skill_id = ?",
+        (planned.origin, source_id, row[0]),
+    )
+    db.commit()
+    return {
+        "success": True,
+        "skill": skill_name,
+        "origin": planned.origin,
+        "swapped": result.swapped,
+        "skipped": result.skipped,
+        "fingerprint": result.fingerprint,
+        "guard": "skill_guard (origin钉死+staging+原子swap)",
+    }
 
 
 # ─── Agent Sources API ───────────────────────────────────────────
@@ -474,11 +643,18 @@ async def delete_agent_source(source_id: str, user_id: UUID = Depends(get_curren
 
 @router.get("/sync/skills")
 async def get_synced_skills(user_id: UUID = Depends(get_current_user)):
-    """Get all available skills from enabled sources (OpenMate polls this)"""
+    """Get all available skills from enabled sources (OpenMate polls this)
+
+    字段映射修复：原实现r[2..10]整体错位一位（name→description...r[10]越界
+    IndexError）——同步一旦有数据，前端skills页marketplace列表必然500。
+    现按SELECT列序精确映射，并补origin/security_status/install上下文供
+    前端安装走marketplace安全管线。
+    """
     db = get_marketplace_db()
     rows = db.execute("""
-        SELECT s.id, s.name, s.description, s.category, s.version, s.downloads, s.rating,
-               s.source_id, src.name as source_name, src.type as source_type
+        SELECT s.skill_id, s.name, s.description, s.category, s.version, s.downloads, s.rating,
+               s.source_id, src.name as source_name, src.type as source_type,
+               s.origin, s.security_status, s.installed
         FROM marketplace_skills s
         JOIN skill_sources src ON s.source_id = src.id
         WHERE src.enabled = 1
@@ -489,16 +665,20 @@ async def get_synced_skills(user_id: UUID = Depends(get_current_user)):
     for r in rows:
         skills.append(
             {
+                "skill_id": r[0],
                 "id": r[0],
-                "name": r[2],
-                "description": r[3],
-                "category": r[4],
-                "version": r[5],
-                "downloads": r[6],
-                "rating": r[7],
-                "source_id": r[8],
-                "source_name": r[9],
-                "source_type": r[10],
+                "name": r[1],
+                "description": r[2],
+                "category": r[3],
+                "version": r[4],
+                "downloads": r[5],
+                "rating": r[6],
+                "source_id": r[7],
+                "source_name": r[8],
+                "source_type": r[9],
+                "origin": r[10],
+                "security_status": r[11],
+                "installed": bool(r[12]),
             }
         )
     return {"skills": skills, "total": len(skills)}

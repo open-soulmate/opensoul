@@ -186,7 +186,8 @@ class SecurityPlanCheck:
     fingerprint: str = ""
 
 
-def security_plan(staging_dir: Path, expected_origin: str = "", live_dir: Path | None = None) -> SecurityPlanCheck:
+def security_plan(staging_dir: Path, expected_origin: str = "", live_dir: Path | None = None,
+                  force: bool = False) -> SecurityPlanCheck:
     """kilocode逐skill安全计划：staging目录在晋升live前的整体校验。
 
     1. SKILL.md必须存在
@@ -194,6 +195,10 @@ def security_plan(staging_dir: Path, expected_origin: str = "", live_dir: Path |
     3. 所有文件路径逃逸contained()检查（symlink逃逸也在此拦）
     4. origin比对（live已有同名skill时，来源必须一致，除非调用方force绕过）
     5. 版本指纹提取（供调用方决定skip/升级）
+
+    force参数修复：原实现verify_origin未接收force→promote_staging(force=True)
+    的换源安装在security_plan这关就被拦死（force形同虚态）。显式force是调用方
+    （API层/用户）的换源决策，防御层应如实执行而非二次否决。
     """
     name = staging_dir.name
     check = SecurityPlanCheck(skill_name=name, ok=True)
@@ -229,7 +234,7 @@ def security_plan(staging_dir: Path, expected_origin: str = "", live_dir: Path |
     check.fingerprint = skill_fingerprint(staging_dir)
     if live_dir is not None and expected_origin:
         try:
-            verify_origin(live_dir, expected_origin)
+            verify_origin(live_dir, expected_origin, force=force)
         except SkillSecurityError as e:
             check.ok = False
             check.errors.append({"type": e.reason, "detail": e.detail})
@@ -362,7 +367,8 @@ def promote_staging(
     result = InstallResult(success=False, skill=name, dest=str(dest), origin=origin,
                            fingerprint="", swapped=False, skipped=False)
     try:
-        check = security_plan(staging_dir, expected_origin=origin, live_dir=dest if dest.exists() else None)
+        check = security_plan(staging_dir, expected_origin=origin,
+                              live_dir=dest if dest.exists() else None, force=force)
         if not check.ok:
             result.errors = check.errors
             shutil.rmtree(staging_dir, ignore_errors=True)

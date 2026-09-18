@@ -9,6 +9,13 @@ from src.immune.permission_engine import (  # noqa: F401
     PermissionService,
     PermissionStore,
 )
+from src.immune.registry_sync import (  # noqa: F401
+    RegistryIndex,
+    RegistrySyncError,
+    download_skill_payload,
+    fetch_registry_index,
+    plan_registry_entries,
+)
 from src.immune.skill_guard import (  # noqa: F401
     OriginRecord,
     SkillSecurityError,
