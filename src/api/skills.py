@@ -14,6 +14,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 
 from src.api.user import get_current_user
+from src.immune.skill_guard import (
+    OriginRecord,
+    SkillSecurityError,
+    inventory,
+    make_staging_dir,
+    promote_staging,
+    safe_remove,
+    skill_fingerprint,
+    validate_registry_name,
+    validate_skill_name,
+    write_origin,
+)
 
 router = APIRouter()
 
@@ -137,7 +149,7 @@ def _scan_shared_skills() -> list[dict]:
     if not SHARED_SKILLS_DIR.exists():
         return skills
     for d in sorted(SHARED_SKILLS_DIR.iterdir()):
-        if d.is_dir():
+        if d.is_dir() and not d.name.startswith("."):
             skill_md = d / "SKILL.md"
             if skill_md.exists():
                 info = _parse_skill_md(skill_md)
@@ -168,14 +180,35 @@ def _scan_agent_skills() -> list[dict]:
 
 
 def _sync_to_shared(skill_path: Path, skill_name: str) -> bool:
-    """Copy a skill from agent dir to shared dir"""
+    """Copy a skill from agent dir to shared dir — staging+原子swap（skill_guard）
+
+    origin钉死：agent目录路径即origin，后续同名skill更新源不一致会被拒绝。
+    """
     dest = SHARED_SKILLS_DIR / skill_name
     if dest.exists():
         # Already in shared, skip
         return False
     SHARED_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(skill_path, dest)
-    return True
+    try:
+        validate_skill_name(skill_name)
+    except SkillSecurityError:
+        logger.warning("skill_guard拒绝迁移不安全skill名: %r", skill_name)
+        return False
+    staging = make_staging_dir(SHARED_SKILLS_DIR, skill_name)
+    payload = staging / skill_name  # kilocode式：staging容器内放skill负载，安全计划按负载目录名校验
+    try:
+        shutil.copytree(skill_path, payload)
+    except OSError as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        logger.warning("skill迁移copy失败已清理staging: %s (%s)", skill_name, e)
+        return False
+    result = promote_staging(payload, SHARED_SKILLS_DIR,
+                             origin=str(skill_path), source_type="agent-dir")
+    shutil.rmtree(staging, ignore_errors=True)  # 容器清理（负载已被rename走或失败被清）
+    if not result.success:
+        logger.warning("skill_guard拒绝迁移%s: %s", skill_name, result.errors)
+        return False
+    return result.swapped
 
 
 @router.get("")
@@ -226,7 +259,7 @@ async def validate_skills():
             if not base_dir.exists():
                 continue
             for d in sorted(base_dir.iterdir()):
-                if not d.is_dir():
+                if not d.is_dir() or d.name.startswith("."):  # 跳过.staging/.backup供应链临时目录
                     continue
                 errs = _validate_skill_dir(d)
                 if errs:
@@ -261,12 +294,23 @@ async def migrate_all_skills(user_id: UUID = Depends(get_current_user)):
 
 @router.post("/{skill_name}/install")
 async def install_skill(skill_name: str, user_id: UUID = Depends(get_current_user)):
-    """Install a skill using hermes CLI into shared directory"""
+    """Install a skill using hermes CLI into shared directory — skill_guard供应链防御
+
+    kilocode discovery.ts管线：name安全段校验→staging下载→安全计划→origin钉死→原子swap。
+    失败任何一关=staging清理，live共享目录永不出现半成品。
+    """
     SHARED_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    # 安全段校验在先：registry名每段都须安全段，不合法名在触网之前就被拒
+    # （runtime proof抓到的缺陷："../evil-name"只查尾段时".."段漏进git URL）
     try:
-        # Try hermes skill install first
+        repo_name = validate_registry_name(skill_name)
+    except SkillSecurityError as e:
+        return {"success": False, "error": f"skill_guard: {e.reason} — {e.detail}"}
+    try:
+        # Try hermes skill install first（安装到隔离staging而非live目录）
         env = os.environ.copy()
-        env["HERMES_SKILLS_DIR"] = str(SHARED_SKILLS_DIR)
+        staging = make_staging_dir(SHARED_SKILLS_DIR, repo_name)
+        env["HERMES_SKILLS_DIR"] = str(staging)
         proc = subprocess.run(
             ["hermes", "skill", "install", skill_name],
             capture_output=True,
@@ -274,40 +318,87 @@ async def install_skill(skill_name: str, user_id: UUID = Depends(get_current_use
             timeout=60,
             env=env,
         )
-        if proc.returncode == 0:
-            return {"success": True, "output": proc.stdout[-500:]}
+        installed_dir = staging / repo_name
+        if proc.returncode == 0 and installed_dir.is_dir():
+            result = promote_staging(installed_dir, SHARED_SKILLS_DIR,
+                                     origin=f"hermes:{skill_name}", source_type="registry")
+            shutil.rmtree(staging, ignore_errors=True)
+            if not result.success:
+                return {"success": False, "error": f"skill_guard拒绝: {result.errors}"}
+            return {"success": True, "output": proc.stdout[-500:], "origin": result.origin,
+                    "swapped": result.swapped, "guard": "skill_guard"}
+        shutil.rmtree(staging, ignore_errors=True)
 
-        # Fallback: try pip/npm if it looks like a package
+        # Fallback: try pip/npm if it looks like a package — git clone进staging，不直接落live
         if "/" in skill_name or "@" in skill_name:
             # GitHub repo
+            repo_url = f"https://github.com/{skill_name}"
+            staging = make_staging_dir(SHARED_SKILLS_DIR, repo_name)
+            clone_target = staging / repo_name
             proc = subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    f"https://github.com/{skill_name}",
-                    str(SHARED_SKILLS_DIR / skill_name.split("/")[-1]),
-                ],
+                ["git", "clone", "--depth", "1", repo_url, str(clone_target)],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
             if proc.returncode == 0:
-                return {"success": True, "output": "Cloned from GitHub"}
+                result = promote_staging(clone_target, SHARED_SKILLS_DIR,
+                                         origin=repo_url, source_type="git")
+                shutil.rmtree(staging, ignore_errors=True)
+                if not result.success:
+                    return {"success": False, "error": f"skill_guard拒绝: {result.errors}"}
+                return {"success": True, "output": "Cloned from GitHub", "origin": repo_url,
+                        "swapped": result.swapped, "guard": "skill_guard"}
+            shutil.rmtree(staging, ignore_errors=True)
 
         return {"success": False, "error": proc.stderr[-500:] or "Install failed"}
     except FileNotFoundError:
         return {"success": False, "error": "hermes CLI not found"}
     except subprocess.TimeoutExpired:
         return {"success": False, "error": "Install timed out"}
+    except SkillSecurityError as e:
+        return {"success": False, "error": f"skill_guard: {e.reason} — {e.detail}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 @router.delete("/{skill_name}")
 async def uninstall_skill(skill_name: str, user_id: UUID = Depends(get_current_user)):
-    """Uninstall a skill from shared directory"""
-    skill_path = SHARED_SKILLS_DIR / skill_name
-    if skill_path.exists():
-        shutil.rmtree(skill_path)
-        return {"success": True}
+    """Uninstall a skill from shared directory — safe_remove防路径穿越
+
+    此前shutil.rmtree(skill_path)直接吃用户输入：DELETE /skills/..%2F..%2Fxxx
+    会rmtree到共享目录之外。skill_guard：name安全段+containment双校验，fail-closed。
+    """
+    try:
+        removed = safe_remove(SHARED_SKILLS_DIR, skill_name)
+    except SkillSecurityError as e:
+        return {"success": False, "error": f"skill_guard: {e.reason} — {e.detail}"}
+    if removed:
+        return {"success": True, "guard": "skill_guard"}
     return {"success": False, "error": "Skill not found in shared directory"}
+
+
+@router.get("/security")
+async def skills_security_report():
+    """供应链安全报告 — 已装skill的origin/版本/指纹清单（免登录，监控用）
+
+    可观测性：每个skill"从哪来、什么时候装的、内容指纹是什么"一目了然；
+    has_origin_manifest=false = 防御接线前的老安装，更新时会补签origin。
+    """
+    shared = inventory(SHARED_SKILLS_DIR)
+    standard = []
+    for source, base_dir in AGENTS_STANDARD_DIRS:
+        for item in inventory(base_dir):
+            item["layer"] = source
+            standard.append(item)
+    all_items = shared + standard
+    return {
+        "shared_dir": str(SHARED_SKILLS_DIR),
+        "skills": all_items,
+        "stats": {
+            "total": len(all_items),
+            "with_origin_manifest": sum(1 for i in all_items if i["has_origin_manifest"]),
+            "legacy_no_manifest": sum(1 for i in all_items if not i["has_origin_manifest"]),
+        },
+        "guard": "src.immune.skill_guard (kilocode discovery.ts: origin钉死+staging+原子swap)",
+    }

@@ -9,3 +9,15 @@ from src.immune.permission_engine import (  # noqa: F401
     PermissionService,
     PermissionStore,
 )
+from src.immune.skill_guard import (  # noqa: F401
+    OriginRecord,
+    SkillSecurityError,
+    atomic_swap,
+    contained,
+    inventory,
+    promote_staging,
+    safe_remove,
+    security_plan,
+    validate_skill_name,
+    verify_origin,
+)
