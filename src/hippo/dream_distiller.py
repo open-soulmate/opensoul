@@ -372,9 +372,11 @@ class DreamDistiller:
     async def _call_gland_llm(self, system_prompt: str, user_prompt: str) -> str:
         """Call LLM via gland router (default when no llm_call provided)."""
         try:
-            from src.gland.router import ModelRouter
-            router = ModelRouter()
-            result = await router.chat(
+            # 复用api/gland.py的gateway单例(providers已bootstrap)——
+            # 此前新建ModelRouter()导致providers为空→NoProviderError
+            from src.api.gland import _ensure_bootstrapped, gateway
+            _ensure_bootstrapped()
+            result = await gateway.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
