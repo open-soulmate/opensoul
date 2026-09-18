@@ -16,6 +16,7 @@ from src.hippo.long_term_memory import (
     MemoryAuditEntry,
     _normalize_dict_floats,
 )
+from src.hippo.dream_distiller import DreamDistiller, DreamAction, DreamResult
 
 __all__ = [
     "DecayEngine",
@@ -29,4 +30,7 @@ __all__ = [
     "LongTermMemory",
     "LongTermMemoryStore",
     "_normalize_dict_floats",
+    "DreamDistiller",
+    "DreamAction",
+    "DreamResult",
 ]

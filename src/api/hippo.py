@@ -85,6 +85,7 @@ async def health():
         "memory": store.get_stats(),
         "sessions": sessions.get_stats(),
         "long_term_memory": _lt_store.get_stats(),
+        "dream_distiller": _dream_distiller.get_stats(),
     }
 
 
@@ -470,6 +471,59 @@ async def ltm_audit_history(
 async def ltm_audit_stats():
     """Get audit trail statistics."""
     return _lt_store.get_audit_stats()
+
+
+# ── Dream Distillation (CowAgent + nanobot + kilocode echo blocker) ──
+
+from src.hippo.dream_distiller import DreamDistiller
+_dream_distiller = DreamDistiller(ltm_store=_lt_store)
+
+
+class DreamRequest(BaseModel):
+    messages: list[dict] = []
+    force: bool = False  # bypass echo blocker for manual triggers
+
+
+class RecallMarkRequest(BaseModel):
+    memory_ids: list[str]
+
+
+@router.post("/ltm/dream")
+async def ltm_dream(req: DreamRequest):
+    """Run Dream memory distillation from conversation history.
+
+    CowAgent 5-step prompt + nanobot archive-as-tool-call +
+    kilocode memory echo blocker (unless force=True).
+    """
+    result = await _dream_distiller.dream(
+        messages=req.messages,
+        force=req.force,
+    )
+    return result.to_dict()
+
+
+@router.post("/ltm/dream/recall-mark")
+async def ltm_dream_recall_mark(req: RecallMarkRequest):
+    """Mark memories as recalled this turn (kilocode echo blocker).
+
+    Call this after memory retrieval so the Dream distiller knows
+    to skip digest for this turn (prevent self-pollution).
+    """
+    _dream_distiller.mark_recall(req.memory_ids)
+    return {"marked": len(req.memory_ids), "echo_stats": _dream_distiller.echo_stats}
+
+
+@router.post("/ltm/dream/reset-turn")
+async def ltm_dream_reset_turn():
+    """Reset per-turn echo tracking (call at turn boundary)."""
+    _dream_distiller.reset_turn()
+    return {"reset": True, "echo_stats": _dream_distiller.echo_stats}
+
+
+@router.get("/ltm/dream/stats")
+async def ltm_dream_stats():
+    """Dream distillation statistics."""
+    return _dream_distiller.get_stats()
 
 
 @router.get("/ltm/{memory_id}")
