@@ -410,25 +410,47 @@ class DreamDistiller:
 
     @staticmethod
     def _format_memories(memories: list[dict]) -> str:
-        """Format existing memories for the prompt."""
+        """Format existing memories for the prompt.
+        Token预算控制：每条截断100字+最多20条+总预算1200字。
+        """
+        MAX_CHARS_PER_MEM = 100
+        MAX_MEMS = 20
+        MAX_TOTAL_CHARS = 1200
         lines = []
-        for m in memories:
+        total = 0
+        for m in memories[:MAX_MEMS]:
             mid = m.get("memory_id", "")
-            content = m.get("content", "")
+            content = str(m.get("content", ""))[:MAX_CHARS_PER_MEM]
             mtype = m.get("memory_type", "semantic")
             importance = m.get("importance", 0.5)
-            lines.append(f"[{mid}] ({mtype}, imp={importance:.1f}) {content}")
+            line = f"[{mid}] ({mtype}, imp={importance:.1f}) {content}"
+            if total + len(line) > MAX_TOTAL_CHARS:
+                break
+            lines.append(line)
+            total += len(line)
         return "\n".join(lines)
 
     @staticmethod
     def _format_messages(messages: list[dict]) -> str:
-        """Format conversation messages for the prompt."""
+        """Format conversation messages for the prompt.
+        Token预算控制：deepseek-r1 ollama context=4096 tokens，中文token率高。
+        每条截断300字+最多20条+总预算1800字，防止context overflow→400。
+        """
+        MAX_CHARS_PER_MSG = 300
+        MAX_MSGS = 20
+        MAX_TOTAL_CHARS = 1800
         lines = []
-        for msg in messages:
+        total = 0
+        for msg in messages[-MAX_MSGS:]:
             role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            content = str(msg.get("content", ""))[:MAX_CHARS_PER_MSG]
             if content:
-                lines.append(f"[{role}] {content}")
+                line = f"[{role}] {content}"
+                if total + len(line) > MAX_TOTAL_CHARS:
+                    lines.append(f"[{role}] (消息截断——超出token预算)")
+                    break
+                lines.append(line)
+                total += len(line)
         return "\n".join(lines)
 
     def get_stats(self) -> dict:
