@@ -1,6 +1,9 @@
 # OpenSoul 能力评估与路线图
 
 > 定位：AI的个人电脑 — 不只是Agent框架，是AI的完整操作系统
+>
+> **产品主线纲领**：记忆×知识×技能×进化融合体 — 见 [docs/architecture-thesis.md](architecture-thesis.md)。
+> 涉及 hippo/knowledge/learn/gene/heredity 的开发项以纲领为准。
 
 ---
 
