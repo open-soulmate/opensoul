@@ -252,6 +252,45 @@ class ContextAttributor:
                 logger.debug("token attribution ledger write failed (non-fatal): %s", exc)
         return rec
 
+    def backfill_actual(self, session_id: str, actual_prompt_tokens: int | None) -> dict | None:
+        """P1 provider usage回填：流式请求从SSE chunk拿到provider真实prompt_tokens后，
+        回填到最近一条匹配session的归因记录，计算estimate_gap（估算vs真实偏差）。
+
+        为什么需要：estimate_tokens是启发式估算（只算了我方组装的记忆/RAG/问题），而provider
+        返回的prompt_tokens是权威计数（还含chat模板/系统提示等我方未归因的开销）。二者差值
+        estimate_gap量化"隐藏开销"——正是用户"不知道上下文被什么吃掉了"里估算覆盖不到的部分，
+        同时是估算器自我校准的信号源（record(actual_prompt_tokens=...)预留的字段由此真正接线）。
+
+        找不到匹配session记录时返回None（fail-safe，不新建记录、不抛异常）。
+        """
+        if actual_prompt_tokens is None:
+            return None
+        try:
+            for rec in reversed(self._records):
+                if rec.get("session_id") == session_id:
+                    rec["actual_prompt_tokens"] = actual_prompt_tokens
+                    rec["estimate_gap"] = actual_prompt_tokens - int(
+                        rec.get("usage", {}).get("total_tokens", 0)
+                    )
+                    if self.ledger_path:
+                        try:
+                            with open(self.ledger_path, "a", encoding="utf-8") as f:
+                                f.write(json.dumps({
+                                    "backfill": True, "ts": time.time(),
+                                    "session_id": session_id,
+                                    "actual_prompt_tokens": actual_prompt_tokens,
+                                    "estimate_gap": rec["estimate_gap"],
+                                }, ensure_ascii=False) + "\n")
+                        except Exception as exc:
+                            logger.debug(
+                                "token attribution backfill ledger write failed (non-fatal): %s",
+                                exc,
+                            )
+                    return rec
+        except Exception as exc:
+            logger.debug("token attribution backfill unavailable (non-fatal): %s", exc)
+        return None
+
     def recent(self, limit: int = 20) -> list[dict]:
         recs = list(self._records)
         return recs[-limit:][::-1]  # 最新在前

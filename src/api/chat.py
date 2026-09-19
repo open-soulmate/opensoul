@@ -248,6 +248,7 @@ def _attribute_chat_context(
     model: str | None = None,
     provider: str = "",
     session_key: str = "",
+    actual_prompt_tokens: int | None = None,
 ) -> dict | None:
     """P1: 上下文逐项token归因（claude-code SDKContextUsage移植）。
 
@@ -274,11 +275,31 @@ def _attribute_chat_context(
                         source="user", tokens=estimate_tokens(question))
         )
         usage = build_context_usage(items, model=model)
-        get_attributor().record(usage, session_id=session_key, provider=provider, model=model or "")
+        get_attributor().record(
+            usage, session_id=session_key, provider=provider, model=model or "",
+            actual_prompt_tokens=actual_prompt_tokens,
+        )
         return usage
     except Exception as exc:
         logger.debug("token attribution unavailable: %s", exc)
         return None
+
+
+def _backfill_token_usage(session_key: str, usage: dict | None) -> None:
+    """P1 provider usage回填：流式请求从SSE chunk捕获provider真实prompt_tokens后，
+    回填到最近一条匹配session的归因记录，计算estimate_gap（估算vs真实偏差）。
+
+    观测性旁路：任何失败只debug日志，不阻断流式主路径（fail-safe）。
+    """
+    try:
+        if not usage:
+            return
+        pt = usage.get("prompt_tokens")
+        if pt is None:
+            return
+        get_attributor().backfill_actual(session_key, int(pt))
+    except Exception as exc:
+        logger.debug("token usage backfill unavailable: %s", exc)
 
 
 class ChatRequest(BaseModel):
@@ -316,6 +337,7 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
         attempt_log: list = []
         last_exc: Exception | None = None
         streamed_ok = False
+        captured_usage: dict | None = None
         for t in attempts:
             if t.get("provider") == "online" and not t.get("api_key"):
                 continue
@@ -338,7 +360,10 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
                                 break
                             try:
                                 chunk = json.loads(data)
-                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                if chunk.get("usage"):
+                                    captured_usage = chunk["usage"]
+                                _choices = chunk.get("choices") or []
+                                delta = (_choices[0] or {}).get("delta", {}) if _choices else {}
                                 content = delta.get("content")
                                 if content:
                                     answer_parts.append(content)
@@ -355,6 +380,8 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
                 continue
         _route_decision_end(dec_id, attempt_log,
                             error=str(last_exc) if not streamed_ok else "")
+        if streamed_ok and captured_usage:
+            _backfill_token_usage(str(user_id), captured_usage)
         if not streamed_ok:
             yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
         else:
@@ -407,6 +434,7 @@ Answer:"""
     attempt_log = []
     last_exc: Exception | None = None
     streamed_ok = False
+    captured_usage: dict | None = None
     for t in attempts:
         if t.get("provider") == "online" and not t.get("api_key"):
             continue
@@ -433,7 +461,10 @@ Answer:"""
                             break
                         try:
                             chunk = json.loads(data)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            if chunk.get("usage"):
+                                captured_usage = chunk["usage"]
+                            _choices = chunk.get("choices") or []
+                            delta = (_choices[0] or {}).get("delta", {}) if _choices else {}
                             content = delta.get("content")
                             if content:
                                 answer_parts.append(content)
@@ -450,6 +481,8 @@ Answer:"""
             continue
     _route_decision_end(dec_id, attempt_log,
                         error=str(last_exc) if not streamed_ok else "")
+    if streamed_ok and captured_usage:
+        _backfill_token_usage(str(user_id), captured_usage)
 
     if not streamed_ok:
         yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
@@ -518,6 +551,7 @@ Answer:"""
     answer = None
     last_exc: Exception | None = None
     used_target = None
+    nonstream_usage: int | None = None
     for t in attempts:
         if t.get("provider") == "online" and not t.get("api_key"):
             continue
@@ -534,7 +568,9 @@ Answer:"""
                     timeout=120,
                 )
                 resp.raise_for_status()
-                answer = resp.json()["choices"][0]["message"]["content"]
+                _njson = resp.json()
+                answer = _njson["choices"][0]["message"]["content"]
+                nonstream_usage = (_njson.get("usage") or {}).get("prompt_tokens")
                 used_target = {"provider": t.get("provider"), "model": t.get("model")}
                 attempt_log.append({"provider": t.get("provider", ""), "ok": True})
                 break
@@ -551,6 +587,7 @@ Answer:"""
         model=(used_target or {}).get("model") or (attempts[0].get("model") if attempts else None),
         provider=(used_target or {}).get("provider", "") or (attempts[0].get("provider", "") if attempts else ""),
         session_key=str(user_id),
+        actual_prompt_tokens=nonstream_usage,
     )
     if answer is None:
         return {"answer": f"LLM不可用: {last_exc}", "sources": sources,
