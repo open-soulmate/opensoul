@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.config import settings
+from src.cortex.loop_guard import LoopGuard
 from src.services.search import semantic_search
 
 logger = logging.getLogger(__name__)
@@ -113,14 +114,33 @@ async def _compress_if_needed(context: str, budget_chars: int = 12000) -> str:
         return context[:budget_chars] + "\n...[context truncated]"
 
 
-def _check_loop(response_text: str) -> dict | None:
-    """P0-7附属: 循环/重复检测guard。检测到循环返回警告信息，否则None。"""
-    try:
-        from src.cortex.loop_guard import LoopGuard
+# ── P0 cortex循环guard按会话持久化 ──────────────────────────────────────
+# 修复接线缺陷：原实现每次请求new LoopGuard()——滑窗/去重集合每次请求清零，
+# 重复检测永远不触发（guard接线了但检测是死的）。检测语义要求状态跨请求累积
+# （同一用户多轮回答才构成"重复输出"），按session_key持久化实例。
+_CHAT_LOOP_GUARDS: dict[str, LoopGuard] = {}
+_CHAT_LOOP_GUARDS_MAX = 256  # 有界防泄漏；满时淘汰最旧（dict保持插入序）
+
+
+def _get_chat_loop_guard(session_key: str) -> LoopGuard:
+    """按会话key取持久化guard（同key同实例，状态跨请求累积）。"""
+    guard = _CHAT_LOOP_GUARDS.get(session_key)
+    if guard is None:
+        while len(_CHAT_LOOP_GUARDS) >= _CHAT_LOOP_GUARDS_MAX:
+            _CHAT_LOOP_GUARDS.pop(next(iter(_CHAT_LOOP_GUARDS)))
         guard = LoopGuard()
+        _CHAT_LOOP_GUARDS[session_key] = guard
+    return guard
+
+
+def _check_loop(response_text: str, session_key: str = "default") -> dict | None:
+    """P0 cortex: 循环/重复检测guard（持久化实例）。检测到循环返回警告信息，否则None。"""
+    try:
+        guard = _get_chat_loop_guard(session_key)
         result = guard.check(text_response=response_text)
         if result and result.is_looping:
-            return {"type": "loop_warning", "severity": str(result.severity)}
+            return {"type": "loop_warning", "severity": str(result.severity),
+                    "message": result.message}
     except Exception as exc:
         logger.debug("loop guard unavailable: %s", exc)
     return None
@@ -140,6 +160,7 @@ class ChatRequest(BaseModel):
 
 async def rag_stream(question: str, user_id: UUID, top_k: int):
     """Generate SSE streaming response for RAG query."""
+    answer_parts: list[str] = []  # P0循环guard：累积流式输出，流结束时做重复检测
     # Retrieve relevant chunks (timeout 8s: RAG不可用时降级为空context)
     try:
         results = await asyncio.wait_for(
@@ -181,6 +202,7 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
                                 delta = chunk.get("choices", [{}])[0].get("delta", {})
                                 content = delta.get("content")
                                 if content:
+                                    answer_parts.append(content)
                                     yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
                             except json.JSONDecodeError:
                                 continue
@@ -191,6 +213,11 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
                 continue
         if not streamed_ok:
             yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
+        else:
+            # P0 cortex: 流式路径循环guard（此前仅非流式路径接了guard）
+            _lw = _check_loop("".join(answer_parts), session_key=str(user_id))
+            if _lw:
+                yield f"data: {json.dumps({'type': 'loop_warning', 'content': _lw})}\n\n"
         yield "data: [DONE]\n\n"
         return
 
@@ -255,6 +282,7 @@ Answer:"""
                             delta = chunk.get("choices", [{}])[0].get("delta", {})
                             content = delta.get("content")
                             if content:
+                                answer_parts.append(content)
                                 yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
                         except json.JSONDecodeError:
                             continue
@@ -266,6 +294,11 @@ Answer:"""
 
     if not streamed_ok:
         yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
+    else:
+        # P0 cortex: 流式路径循环guard（此前仅非流式路径接了guard）
+        loop_warning = _check_loop("".join(answer_parts), session_key=str(user_id))
+        if loop_warning:
+            yield f"data: {json.dumps({'type': 'loop_warning', 'content': loop_warning})}\n\n"
     yield "data: [DONE]\n\n"
 
 
@@ -350,7 +383,7 @@ Answer:"""
                 "routing": {**routing_meta, "error": str(last_exc)}}
 
     # 循环检测guard
-    loop_warning = _check_loop(answer)
+    loop_warning = _check_loop(answer, session_key=str(user_id))
     result = {"answer": answer, "sources": sources,
               "routing": {**routing_meta, "used": used_target}}
     if loop_warning:
