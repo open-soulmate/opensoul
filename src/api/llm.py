@@ -141,6 +141,29 @@ def _load_overrides_from_env():
                     _llm_overrides[slot] = v
 
 
+def _sync_acp_proxy_env(url: str, model: str, api_key: str):
+    """打通soulmate配置：激活配置同步写入acp-proxy/.env（soulmate agent实际配置源）"""
+    acp_env = "/home/climbing/openmate/acp-proxy/.env"
+    try:
+        lines = open(acp_env).read().splitlines() if os.path.exists(acp_env) else []
+        updates = {"LLM_BASE_URL": url, "LLM_MODEL": model, "LLM_API_KEY": api_key}
+        out, seen = [], set()
+        for line in lines:
+            k = line.split("=")[0].strip() if "=" in line else ""
+            if k in updates:
+                out.append(f"{k}={updates[k]}")
+                seen.add(k)
+            else:
+                out.append(line)
+        for k, v in updates.items():
+            if k not in seen and v:
+                out.append(f"{k}={v}")
+        with open(acp_env, "w") as f:
+            f.write("\n".join(out) + "\n")
+    except Exception:
+        pass
+
+
 def _save_overrides_to_env():
     """Persist LLM overrides to .env file."""
     if not os.path.exists(ENV_PATH):
@@ -256,7 +279,9 @@ async def save_config(data: LLMConfigUpdate):
     _llm_overrides["model"] = prof.get("model", "")
     _llm_overrides["active_variant"] = variant
     _save_overrides_to_env()
-    return _get_config()
+    # 打通soulmate：激活配置同步到acp-proxy/.env
+    _sync_acp_proxy_env(prof.get("url", ""), prof.get("model", ""), prof.get("api_key", ""))
+    return await get_config()
 
 
 class LLMTestRequest(BaseModel):
