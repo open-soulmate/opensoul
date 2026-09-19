@@ -1,5 +1,7 @@
 import os
+import json
 import httpx
+from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -30,10 +32,56 @@ class LLMConfig(BaseModel):
 
 
 class LLMConfigUpdate(BaseModel):
+    provider: str | None = None
+    variant: str | None = None
     base_url: str | None = None
     api_key: str | None = None
     model: str | None = None
-    variant: str | None = None
+
+
+_PROFILES_PATH = Path(__file__).parent.parent.parent / "data" / "llm_profiles.json"
+
+
+def _load_profiles() -> dict:
+    if _PROFILES_PATH.exists():
+        try:
+            return json.loads(_PROFILES_PATH.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_profiles(profiles: dict):
+    _PROFILES_PATH.parent.mkdir(exist_ok=True)
+    _PROFILES_PATH.write_text(json.dumps(profiles, ensure_ascii=False, indent=2))
+
+
+def _mask_key(key: str) -> str:
+    return ("***" + key[-4:]) if key and len(key) > 4 else ("***" if key else "")
+
+
+def _migrate_env_to_profiles() -> dict:
+    """首次：把env现有双槽位配置迁入per-provider profiles（归到mimo名下）"""
+    if not _llm_overrides:
+        _load_overrides_from_env()
+    profiles = _load_profiles()
+    if not profiles:
+        profiles = {
+            "mimo": {
+                "standard": {
+                    "url": _llm_overrides.get("standard_base_url", "") or _llm_overrides.get("base_url", ""),
+                    "api_key": _llm_overrides.get("standard_api_key", "") or _llm_overrides.get("api_key", ""),
+                    "model": _llm_overrides.get("standard_model", "") or _llm_overrides.get("model", ""),
+                },
+                "subscription": {
+                    "url": _llm_overrides.get("subscription_base_url", ""),
+                    "api_key": _llm_overrides.get("subscription_api_key", ""),
+                    "model": _llm_overrides.get("subscription_model", ""),
+                },
+            }
+        }
+        _save_profiles(profiles)
+    return profiles
 
 
 class LLMModelsRequest(BaseModel):
@@ -148,24 +196,26 @@ def _mask(k: str, masked: bool) -> str:
 
 
 def _get_config(masked: bool = False) -> dict:
-    std_key = _llm_overrides.get("standard_api_key", "") or _llm_overrides.get("api_key", settings.llm_api_key)
-    sub_key = _llm_overrides.get("subscription_api_key", "")
+    profiles = _migrate_env_to_profiles()
+    masked_profiles = {}
+    for pid, variants in profiles.items():
+        masked_profiles[pid] = {}
+        for vid, prof in variants.items():
+            key = prof.get("api_key", "")
+            masked_profiles[pid][vid] = {
+                "url": prof.get("url", ""),
+                "api_key": _mask_key(key),
+                "has_key": bool(key),
+                "model": prof.get("model", ""),
+            }
+    active_variant = _active_variant()
     main_key = _llm_overrides.get("api_key", settings.llm_api_key)
     return {
+        "profiles": masked_profiles,
+        "active_variant": active_variant,
         "base_url": _llm_overrides.get("base_url", settings.llm_base_url),
         "api_key": _mask(main_key, masked),
         "model": _llm_overrides.get("model", settings.llm_model),
-        "active_variant": _active_variant(),
-        "standard": {
-            "base_url": _llm_overrides.get("standard_base_url", "") or _llm_overrides.get("base_url", settings.llm_base_url),
-            "api_key": _mask(std_key, masked),
-            "model": _llm_overrides.get("standard_model", "") or _llm_overrides.get("model", settings.llm_model),
-        },
-        "subscription": {
-            "base_url": _llm_overrides.get("subscription_base_url", ""),
-            "api_key": _mask(sub_key, masked),
-            "model": _llm_overrides.get("subscription_model", ""),
-        },
     }
 
 
@@ -177,19 +227,33 @@ async def get_config(masked: bool = False):
 
 @router.post("/config")
 async def save_config(data: LLMConfigUpdate):
-    """Save LLM configuration overrides and persist to .env."""
+    """Save per-provider×variant config to profiles JSON + sync active to .env."""
+    profiles = _migrate_env_to_profiles()
+    provider = (data.provider or "mimo").strip() or "mimo"
     variant = (data.variant or "standard").strip() or "standard"
     if variant not in ("standard", "subscription"):
         variant = "standard"
+    if provider not in profiles:
+        profiles[provider] = {}
+    prof = dict(profiles[provider].get(variant, {}))
     if data.base_url is not None:
-        _llm_overrides[f"{variant}_base_url"] = data.base_url
-        _llm_overrides["base_url"] = data.base_url
-    if data.api_key is not None:
-        _llm_overrides[f"{variant}_api_key"] = data.api_key
-        _llm_overrides["api_key"] = data.api_key
+        prof["url"] = data.base_url
+    if data.api_key is not None and data.api_key and not data.api_key.startswith("***"):
+        prof["api_key"] = data.api_key
     if data.model is not None:
-        _llm_overrides[f"{variant}_model"] = data.model
-        _llm_overrides["model"] = data.model
+        prof["model"] = data.model
+    if not prof.get("url"):
+        for v in PRESET_VARIANTS.get(provider, []):
+            if v["id"] == variant and v.get("base_url"):
+                prof["url"] = v["base_url"]
+    profiles[provider][variant] = prof
+    _save_profiles(profiles)
+    _llm_overrides[f"{variant}_base_url"] = prof.get("url", "")
+    _llm_overrides[f"{variant}_api_key"] = prof.get("api_key", "")
+    _llm_overrides[f"{variant}_model"] = prof.get("model", "")
+    _llm_overrides["base_url"] = prof.get("url", "")
+    _llm_overrides["api_key"] = prof.get("api_key", "")
+    _llm_overrides["model"] = prof.get("model", "")
     _llm_overrides["active_variant"] = variant
     _save_overrides_to_env()
     return _get_config()
@@ -270,38 +334,27 @@ async def _probe_variant(base_url: str, api_key: str, model: str = "") -> str:
 
 @router.get("/presets/status")
 async def presets_status():
-    """每个大模型×每个API体系(标准/订阅制)的状态指示灯。
-    standard槽位和subscription槽位各自独立探测：各自用自己的base_url+key。"""
-    if not _llm_overrides:
-        _load_overrides_from_env()
-    std_base = (_llm_overrides.get("standard_base_url") or _llm_overrides.get("base_url") or "").rstrip("/")
-    std_key = _llm_overrides.get("standard_api_key") or _llm_overrides.get("api_key") or ""
-    std_model = _llm_overrides.get("standard_model") or _llm_overrides.get("model") or ""
-    sub_base = (_llm_overrides.get("subscription_base_url") or "").rstrip("/")
-    sub_key = _llm_overrides.get("subscription_api_key") or ""
-    sub_model = _llm_overrides.get("subscription_model") or ""
+    """每个provider×每个API体系独立探测：绿=可用/黄=余额不足/红=Key无效/灰=未配置"""
+    profiles = _migrate_env_to_profiles()
     presets: dict[str, dict] = {}
     for pid, variants in PRESET_VARIANTS.items():
         presets[pid] = {}
         for v in variants:
-            vbase = v["base_url"].rstrip("/")
+            prof = profiles.get(pid, {}).get(v["id"], {})
+            url = prof.get("url", "")
+            key = prof.get("api_key", "")
+            model = prof.get("model", "")
             status = "not_configured"
-            if v["id"] == "subscription":
-                if sub_key and vbase and vbase == sub_base:
-                    status = await _probe_variant(v["base_url"], sub_key, sub_model)
-            else:
-                if std_key and vbase and vbase == std_base:
-                    status = await _probe_variant(v["base_url"], std_key, std_model)
+            if key and url:
+                status = await _probe_variant(url, key, model)
             presets[pid][v["id"]] = {
                 "status": status,
                 "label": v["label"],
-                "base_url": v["base_url"],
+                "base_url": url,
                 "key_prefix": v.get("key_prefix", ""),
             }
     return {
         "active_variant": _active_variant(),
-        "standard": {"base_url": std_base, "model": std_model, "configured": bool(std_key)},
-        "subscription": {"base_url": sub_base, "model": sub_model, "configured": bool(sub_key)},
         "presets": presets,
     }
 
