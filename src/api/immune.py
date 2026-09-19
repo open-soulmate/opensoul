@@ -97,6 +97,47 @@ async def moderate_text(req: ModerateRequest):
     }
 
 
+class ScanTextRequest(BaseModel):
+    text: str
+    min_risk: str = "low"  # low / medium / high / critical — only return findings >= this level
+
+
+@router.post("/scan-text")
+async def scan_text_for_display(req: ScanTextRequest):
+    """P1流式输出脱敏展示：为前端内联显示扫描文本中的敏感数据。
+
+    与/moderate的区别：
+    - 返回position（start/end偏移量），前端可精确高亮/替换匹配片段
+    - 不返回matched原文（前端只需位置+类型即可渲染脱敏徽章）
+    - 支持min_risk过滤（只关注高风险项，避免PII噪声）
+    - 不触发审计日志/事件推送（只读扫描，不改变系统状态）
+
+    参照：Warp secret_redaction（hover点击揭示UX）— 前端渲染层消费此API。
+    """
+    result = moderator.moderate(req.text)
+    risk_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+    threshold = risk_order.get(req.min_risk, 0)
+
+    findings = []
+    for f in result.findings:
+        if risk_order.get(f["risk"], 0) < threshold:
+            continue
+        findings.append({
+            "type": f["type"],
+            "label": f["label"],
+            "risk": f["risk"],
+            "start": f["position"][0],
+            "end": f["position"][1],
+        })
+
+    return {
+        "risk_level": result.risk_level,
+        "total_findings": len(findings),
+        "findings": findings,
+        "original_length": result.original_length,
+    }
+
+
 # ── Rate Limiting ──────────────────────────────────────────
 
 
