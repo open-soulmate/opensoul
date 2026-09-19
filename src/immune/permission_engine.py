@@ -182,7 +182,8 @@ _SOURCE_PRIORITY = {"session": 3, "user": 2, "builtin": 1}
 
 
 def _shell_command_of(tool_input: dict) -> str:
-    return str(tool_input.get("command") or tool_input.get("cmd") or "")
+    # acp-proxy execute_code工具的代码载荷在"code"键（非"command"/"cmd"）
+    return str(tool_input.get("command") or tool_input.get("cmd") or tool_input.get("code") or "")
 
 
 def _path_of(tool_input: dict) -> str:
