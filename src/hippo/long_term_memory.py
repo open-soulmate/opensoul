@@ -20,6 +20,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from src.hippo.extractors.deermem_tags import (
+    TagDecision,
+    infer_tags,
+    validate_delete_tags,
+    validate_write_tags,
+)
 from src.hippo.extractors.gatekeeper import GateDecision, MemoryGatekeeper
 
 logger = logging.getLogger("opensoul.hippo.long_term")
@@ -108,6 +114,10 @@ class LongTermMemoryStore:
             if gatekeeper is not None
             else MemoryGatekeeper(enabled=gatekeeper_enabled)
         )
+        # DeerMem标签门可观测状态（每次store/delete更新，API层读取）
+        self.last_write_outcome: str = ""  # added / merged / rejected_tags / rejected_gate
+        self.last_tag_decision: Optional[TagDecision] = None
+        self.last_delete_decision: Optional[TagDecision] = None
         self._init_db()
 
     def _init_db(self):
@@ -177,12 +187,24 @@ class LongTermMemoryStore:
         metadata: Optional[dict] = None,
         source_session: str = "",
         force: bool = False,
+        safety_tags: Optional[dict] = None,
+        write_mode: str = "auto",
+        dup_policy: str = "reject",
     ) -> Optional[LongTermMemory]:
         """Store a new long-term memory.
 
         P1 gatekeeper（LobeChat记忆守门员）：写入前过准入判定。
         - reject：不入库，写GATE_REJECT审计（mem0 §1.1失败必须可见），返回None
         - force=True：旁路全部准入规则（显式人工覆盖）
+
+        DeerMem写侧安全（18-deer-flow-source.md #10/#11）：
+        - safety_tags/write_mode：抽取提议必须带scope/durability/authority三标签，
+          自动写(write_mode="auto")只接受user+durable+descriptive；缺失标签由
+          确定性推断补齐后照常校验，不合规→TAG_REJECT审计+返回None（fail-closed可见）
+        - dup_policy="merge"：近重复fact并入既有记忆（保留原id、importance取max、
+          MERGE审计），而非gatekeeper默认的reject——fact_dedup门仅并入同类别
+          (memory_type相同)fact，跨类别近重复维持reject
+        - resolved标签写入metadata["deermem_tags"]（删除门的依据）
         """
         # ── 准入判定（gatekeeper在真实写入路径上，覆盖ltm_add/dream/import三个入口）──
         if self.gatekeeper.enabled and not force:
@@ -193,7 +215,52 @@ class LongTermMemoryStore:
                 force=False,
             )
             if not decision.admitted:
+                # DeerMem #10 fact_dedup：近重复→同类别并入而非追加
+                if (
+                    dup_policy == "merge"
+                    and decision.rule in ("duplicate_exact", "duplicate_near")
+                    and decision.duplicate_of
+                ):
+                    tag_dec = (
+                        TagDecision(
+                            accepted=True,
+                            rule="bypass",
+                            reason="force",
+                            tags=infer_tags(content, memory_type),
+                        )
+                        if force
+                        else validate_write_tags(
+                            safety_tags,
+                            content=content,
+                            memory_type=memory_type,
+                            write_mode=write_mode,
+                        )
+                    )
+                    if not tag_dec.accepted:
+                        self._reject_on_tags(
+                            tag_dec, content, memory_type, gate_decision=decision
+                        )
+                        return None
+                    merged = self._merge_into_existing(
+                        duplicate_of=decision.duplicate_of,
+                        content=content,
+                        memory_type=memory_type,
+                        importance=importance,
+                        tag_dec=tag_dec,
+                        similarity=decision.similarity,
+                        dup_rule=decision.rule,
+                        source_session=source_session,
+                    )
+                    if merged is not None:
+                        return merged
+                    # 目标缺失/跨类别：落到下方GATE_REJECT审计（原因标注）
                 # 拒绝也必须可见：落审计而非静默丢弃
+                extra_reason = ""
+                if (
+                    dup_policy == "merge"
+                    and decision.rule in ("duplicate_exact", "duplicate_near")
+                ):
+                    extra_reason = " (cross_category_not_mergeable)"
                 self._write_audit(
                     memory_id=f"gate_{hashlib.sha256(f'{content}:{time.time()}'.encode()).hexdigest()[:12]}",
                     event="GATE_REJECT",
@@ -203,18 +270,46 @@ class LongTermMemoryStore:
                             "content": (content or "")[:200],
                             "memory_type": memory_type,
                             "rule": decision.rule,
-                            "reason": decision.reason,
+                            "reason": decision.reason + extra_reason,
                             "duplicate_of": decision.duplicate_of,
                         },
                         ensure_ascii=False,
                     ),
                     reason=f"gatekeeper:{decision.rule}",
                 )
+                self.last_write_outcome = "rejected_gate"
+                self.last_tag_decision = None
                 return None
         else:
             self.gatekeeper.evaluate(content, force=True)
 
+        # ── DeerMem #11 写侧安全标签门（gatekeeper准入之后、入库之前）──
+        if force:
+            tag_dec = TagDecision(
+                accepted=True,
+                rule="bypass",
+                reason="force",
+                tags=infer_tags(content, memory_type),
+            )
+        else:
+            tag_dec = validate_write_tags(
+                safety_tags,
+                content=content,
+                memory_type=memory_type,
+                write_mode=write_mode,
+            )
+            if not tag_dec.accepted:
+                self._reject_on_tags(tag_dec, content, memory_type)
+                return None
+        self.last_tag_decision = tag_dec
+
         memory_id = f"ltm_{hashlib.sha256(f'{content}:{time.time()}'.encode()).hexdigest()[:12]}"
+
+        # resolved安全标签随metadata落库（删除门/审计的依据）
+        resolved_metadata = dict(metadata or {})
+        resolved_metadata["deermem_tags"] = (
+            tag_dec.tags.to_dict() if tag_dec.tags else {}
+        )
 
         mem = LongTermMemory(
             memory_id=memory_id,
@@ -222,7 +317,7 @@ class LongTermMemoryStore:
             memory_type=memory_type,
             importance=importance,
             tags=tags or [],
-            metadata=metadata or {},
+            metadata=resolved_metadata,
             source_session=source_session,
         )
 
@@ -234,11 +329,11 @@ class LongTermMemoryStore:
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (memory_id, content, memory_type, importance,
                  json.dumps(tags or [], ensure_ascii=False),
-                 json.dumps(metadata or {}, ensure_ascii=False),
+                 json.dumps(resolved_metadata, ensure_ascii=False),
                  mem.created_at, mem.last_accessed_at, 0, source_session),
             )
             conn.execute(
-                "INSERT INTO memories_fts (memory_id, content, tags) VALUES (?, ?, ?)",
+                'INSERT INTO memories_fts (memory_id, content, tags) VALUES (?, ?, ?)',
                 (memory_id, content, json.dumps(tags or [])),
             )
             conn.commit()
@@ -253,10 +348,145 @@ class LongTermMemoryStore:
                 "content": content[:200],
                 "memory_type": memory_type,
                 "importance": importance,
+                "deermem_tags": resolved_metadata["deermem_tags"],
             }, ensure_ascii=False),
             reason="store",
         )
+        self.last_write_outcome = "added"
         return mem
+
+    def _reject_on_tags(
+        self,
+        tag_dec: TagDecision,
+        content: str,
+        memory_type: str,
+        gate_decision: Optional[GateDecision] = None,
+    ):
+        """TAG_REJECT审计（mem0 §1.1：标签门拒绝必须可见，绝不静默）。"""
+        self._write_audit(
+            memory_id=f"tag_{hashlib.sha256(f'{content}:{time.time()}'.encode()).hexdigest()[:12]}",
+            event="TAG_REJECT",
+            old_value="",
+            new_value=json.dumps(
+                {
+                    "content": (content or "")[:200],
+                    "memory_type": memory_type,
+                    "rule": tag_dec.rule,
+                    "reason": tag_dec.reason,
+                    "tags": tag_dec.tags.to_dict() if tag_dec.tags else None,
+                    "duplicate_of": gate_decision.duplicate_of if gate_decision else "",
+                },
+                ensure_ascii=False,
+            ),
+            reason=f"deermem_tags:{tag_dec.rule}",
+        )
+        self.last_write_outcome = "rejected_tags"
+        self.last_tag_decision = tag_dec
+        logger.info("DeerMem tag gate reject rule=%s", tag_dec.rule)
+
+    def _merge_into_existing(
+        self,
+        duplicate_of: str,
+        content: str,
+        memory_type: str,
+        importance: float,
+        tag_dec: TagDecision,
+        similarity: float,
+        dup_rule: str,
+        source_session: str = "",
+    ) -> Optional[LongTermMemory]:
+        """DeerMem #10 fact_dedup：近重复并入既有fact。
+
+        - 仅同类别（memory_type相同）并入；跨类别返回None（调用方回退reject）
+        - 保留原memory_id与原content；importance取max（"confidence取max"）
+        - 被并入内容记入metadata["deermem_merges"]（有界，最新20条）
+        - 写MERGE审计（reason=fact_dedup:<rule>），全程可追溯
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """SELECT * FROM memories
+                   WHERE memory_id = ? AND consolidated = 0 AND merged_into = ''""",
+                (duplicate_of,),
+            ).fetchone()
+        if row is None:
+            return None
+        if row["memory_type"] != memory_type:
+            return None  # 跨类别近重复不并入（DeerMem：同类别fact才merge）
+
+        old_importance = float(row["importance"])
+        new_importance = max(old_importance, importance)
+        old_metadata = json.loads(row["metadata"] or "{}")
+        merge_log = old_metadata.get("deermem_merges", [])
+        merge_log.append(
+            {
+                "content": (content or "")[:200],
+                "importance": importance,
+                "similarity": round(similarity, 3),
+                "rule": dup_rule,
+                "at": time.time(),
+            }
+        )
+        old_metadata["deermem_merges"] = merge_log[-20:]
+        now = time.time()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """UPDATE memories
+                   SET importance = ?, metadata = ?, last_accessed_at = ?
+                   WHERE memory_id = ?""",
+                (
+                    new_importance,
+                    json.dumps(old_metadata, ensure_ascii=False),
+                    now,
+                    duplicate_of,
+                ),
+            )
+            conn.commit()
+
+        self._write_audit(
+            memory_id=duplicate_of,
+            event="MERGE",
+            old_value=json.dumps(
+                {
+                    "content": row["content"][:200],
+                    "importance": old_importance,
+                },
+                ensure_ascii=False,
+            ),
+            new_value=json.dumps(
+                {
+                    "merged_content": (content or "")[:200],
+                    "importance": new_importance,
+                    "similarity": round(similarity, 3),
+                    "rule": dup_rule,
+                },
+                ensure_ascii=False,
+            ),
+            reason=f"fact_dedup:{dup_rule}",
+        )
+        self.last_write_outcome = "merged"
+        self.last_tag_decision = tag_dec
+        logger.info(
+            "DeerMem fact_dedup merged into %s (similarity=%.2f, importance %.2f->%.2f)",
+            duplicate_of,
+            similarity,
+            old_importance,
+            new_importance,
+        )
+        return LongTermMemory(
+            memory_id=duplicate_of,
+            content=row["content"],
+            memory_type=row["memory_type"],
+            importance=new_importance,
+            tags=json.loads(row["tags"] or "[]"),
+            metadata=old_metadata,
+            created_at=row["created_at"],
+            last_accessed_at=now,
+            access_count=row["access_count"],
+            consolidated=bool(row["consolidated"]),
+            merged_into=row["merged_into"],
+            source_session=row["source_session"] or source_session,
+        )
 
     def _write_audit(
         self,
@@ -384,14 +614,23 @@ class LongTermMemoryStore:
         memory_id: str,
         reason: str = "user_delete",
         hard_delete: bool = False,
+        delete_mode: str = "explicit",
+        replacement: str = "",
     ) -> bool:
         """Delete a long-term memory with audit trail.
 
         Soft delete (default): marks consolidated=1 so it stops appearing in
         retrieval but data remains for audit. Hard delete: removes the row
         entirely (audit trail preserved separately).
+
+        DeerMem #11 删除安全门：
+        - 矛盾事实（authority=contradiction）删除必须带reason+replacement（两种模式强制）
+        - task/project域事实在自动路径(delete_mode="auto"，如dream)fail-closed
+        - 人工CRUD路径(delete_mode="explicit")可删task/project域（人的权威）
+        - 拦截→DELETE_BLOCKED审计+返回False（mem0 §1.1失败可见）
         """
         # Check existence + fetch snapshot for audit
+        self.last_delete_decision = None  # 防止上次判定残留误导调用方
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -405,6 +644,39 @@ class LongTermMemoryStore:
             "memory_type": row["memory_type"],
             "importance": row["importance"],
         }
+
+        # ── DeerMem #11 删除安全门（在任何删除动作之前）──
+        meta = json.loads(row["metadata"] or "{}")
+        stored_tags = meta.get("deermem_tags") or None
+        dec = validate_delete_tags(
+            stored_tags,
+            content=row["content"],
+            reason=reason,
+            replacement=replacement,
+            mode=delete_mode,
+        )
+        self.last_delete_decision = dec
+        if not dec.accepted:
+            self._write_audit(
+                memory_id=memory_id,
+                event="DELETE_BLOCKED",
+                old_value=json.dumps(snapshot, ensure_ascii=False),
+                new_value=json.dumps(
+                    {
+                        "rule": dec.rule,
+                        "reason": dec.reason,
+                        "tags": dec.tags.to_dict() if dec.tags else None,
+                        "delete_mode": delete_mode,
+                    },
+                    ensure_ascii=False,
+                ),
+                reason=f"deermem_tags:{dec.rule}",
+                is_deleted=False,
+            )
+            logger.info(
+                "DeerMem delete gate blocked %s rule=%s", memory_id, dec.rule
+            )
+            return False
 
         with sqlite3.connect(self.db_path) as conn:
             if hard_delete:
@@ -570,6 +842,40 @@ class LongTermMemoryStore:
                     "created_at": r[3],
                 }
                 for r in recent_rows
+            ],
+        }
+        # DeerMem可观测性：标签门/删除门/fact_dedup计数（用户重视"能看到在干嘛"）
+        with sqlite3.connect(self.db_path) as conn:
+            tag_rejected = conn.execute(
+                "SELECT COUNT(*) FROM memory_audit WHERE event = 'TAG_REJECT'"
+            ).fetchone()[0]
+            delete_blocked = conn.execute(
+                "SELECT COUNT(*) FROM memory_audit WHERE event = 'DELETE_BLOCKED'"
+            ).fetchone()[0]
+            fact_dedup_merged = conn.execute(
+                """SELECT COUNT(*) FROM memory_audit
+                   WHERE event = 'MERGE' AND reason LIKE 'fact_dedup:%'"""
+            ).fetchone()[0]
+            recent_dm_rows = conn.execute(
+                """SELECT memory_id, event, reason, new_value, created_at
+                   FROM memory_audit
+                   WHERE event IN ('TAG_REJECT', 'DELETE_BLOCKED')
+                   ORDER BY created_at DESC LIMIT 10"""
+            ).fetchall()
+        stats["deermem"] = {
+            "tag_rejected": tag_rejected,
+            "delete_blocked": delete_blocked,
+            "fact_dedup_merged": fact_dedup_merged,
+            "last_write_outcome": self.last_write_outcome,
+            "recent_blocks": [
+                {
+                    "memory_id": r[0],
+                    "event": r[1],
+                    "reason": r[2],
+                    "detail": r[3],
+                    "created_at": r[4],
+                }
+                for r in recent_dm_rows
             ],
         }
         return stats

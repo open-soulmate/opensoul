@@ -57,6 +57,10 @@ class LongTermMemoryRequest(BaseModel):
     content: str
     tags: list[str] = []
     metadata: dict = {}
+    # DeerMem写侧安全（18-deer-flow-source.md #10/#11）
+    dup_policy: str = "reject"  # reject | merge（近重复并入既有fact而非追加）
+    safety_tags: dict | None = None  # {scope,durability,authority}；缺省=确定性推断
+    write_mode: str = "auto"  # auto | explicit（人工路径可写非user+durable+descriptive组合）
 
 
 class LongTermSearchRequest(BaseModel):
@@ -386,6 +390,8 @@ async def ltm_add(req: LongTermMemoryRequest):
     """Add a long-term memory entry.
 
     P1 gatekeeper：准入判定拒绝时返回added=False+拒绝原因（非错误，是判定）。
+    DeerMem写侧安全：outcome标注入库方式（added/merged/rejected_tags/rejected_gate），
+    dup_policy="merge"时近重复并入既有fact（响应memory_id=既有fact的id）。
     """
     mem = _lt_store.store(
         content=req.content,
@@ -394,21 +400,45 @@ async def ltm_add(req: LongTermMemoryRequest):
         tags=req.tags,
         metadata=req.metadata,
         source_session="",
+        safety_tags=req.safety_tags,
+        write_mode=req.write_mode,
+        dup_policy=req.dup_policy,
     )
+    outcome = _lt_store.last_write_outcome
     if mem is None:
         dec = _lt_store.gatekeeper.last_decision
+        tag_dec = _lt_store.last_tag_decision
         return {
             "added": False,
             "memory_id": "",
+            "outcome": outcome,
             "gatekeeper": dec.to_dict() if dec else {"verdict": "reject"},
+            "deermem_tags": tag_dec.to_dict() if tag_dec else None,
         }
-    return {"memory_id": mem.memory_id, "added": True}
+    return {
+        "memory_id": mem.memory_id,
+        "added": True,
+        "outcome": outcome,
+        "merged": outcome == "merged",
+    }
 
 
 @router.get("/ltm/gatekeeper/stats")
 async def ltm_gatekeeper_stats():
-    """P1 gatekeeper准入统计（LobeChat记忆守门员）：拒了什么、为什么拒、可审计。"""
+    """P1 gatekeeper准入统计（LobeChat记忆守门员）：拒了什么、为什么拒、可审计。
+
+    响应含deermem节：TAG_REJECT/DELETE_BLOCKED/fact_dedup MERGE计数。
+    """
     return _lt_store.get_gatekeeper_stats()
+
+
+@router.get("/ltm/deermem/stats")
+async def ltm_deermem_stats():
+    """DeerMem安全标签门统计+词表（18-deer-flow-source.md #10/#11可观测性）。"""
+    from src.hippo.extractors.deermem_tags import tags_vocab
+
+    stats = _lt_store.get_gatekeeper_stats()
+    return {"deermem": stats.get("deermem", {}), "vocab": tags_vocab()}
 
 
 @router.post("/ltm/search")
@@ -506,6 +536,7 @@ class LTMUpdateRequest(BaseModel):
 class LTMDeleteRequest(BaseModel):
     reason: str = "user_delete"
     hard_delete: bool = False
+    replacement: str = ""  # DeerMem #11：矛盾事实删除必须带replacement
 
 
 # NOTE: /ltm/list and /ltm/audit/* MUST be registered BEFORE /ltm/{memory_id}
@@ -653,13 +684,28 @@ async def ltm_update(memory_id: str, req: LTMUpdateRequest):
 
 @router.delete("/ltm/{memory_id}")
 async def ltm_delete(memory_id: str, req: LTMDeleteRequest = LTMDeleteRequest()):
-    """Delete a long-term memory with audit trail."""
+    """Delete a long-term memory with audit trail.
+
+    DeerMem #11删除安全门（人工CRUD=explicit模式）：矛盾事实删除必须带
+    replacement；被拦截→409+判定详情（DELETE_BLOCKED审计已落库）。
+    """
     success = _lt_store.delete_memory(
         memory_id=memory_id,
         reason=req.reason,
         hard_delete=req.hard_delete,
+        delete_mode="explicit",
+        replacement=req.replacement,
     )
     if not success:
+        dec = _lt_store.last_delete_decision
+        if dec is not None and not dec.accepted:
+            raise HTTPException(
+                409,
+                {
+                    "error": "deermem_delete_blocked",
+                    "decision": dec.to_dict(),
+                },
+            )
         raise HTTPException(444, f"Long-term memory {memory_id} not found")
     return {"deleted": True, "memory_id": memory_id, "hard_delete": req.hard_delete}
 

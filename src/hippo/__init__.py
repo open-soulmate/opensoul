@@ -19,6 +19,14 @@ from src.hippo.long_term_memory import (
 from src.hippo.dream_distiller import DreamDistiller, DreamAction, DreamResult
 from src.hippo.decision_log import DecisionEntry, DecisionLog, get_decision_log
 from src.hippo.nl_filters import NLFilterResult, parse_nl_query, apply_post_filters
+from src.hippo.extractors.deermem_tags import (
+    SafetyTags,
+    TagDecision,
+    infer_tags,
+    tags_vocab,
+    validate_delete_tags,
+    validate_write_tags,
+)
 
 __all__ = [
     "DecayEngine",
@@ -41,4 +49,10 @@ __all__ = [
     "NLFilterResult",
     "parse_nl_query",
     "apply_post_filters",
+    "SafetyTags",
+    "TagDecision",
+    "infer_tags",
+    "tags_vocab",
+    "validate_delete_tags",
+    "validate_write_tags",
 ]

@@ -37,6 +37,10 @@ class DreamAction:
     importance: float = 0.5
     tags: list[str] = field(default_factory=list)
     reason: str = ""  # why this action was chosen
+    # DeerMem #11 安全标签（抽取提议必须带三标签；空=未提供，由store确定性推断）
+    scope: str = ""  # user / task / project / session
+    durability: str = ""  # durable / transient
+    authority: str = ""  # descriptive / prescriptive / contradiction
 
 
 @dataclass
@@ -93,7 +97,7 @@ DREAM_SYSTEM_PROMPT = """你是一个记忆蒸馏专家。你的任务是从对�
 输出一个JSON数组，每个元素是一个记忆操作：
 ```json
 [
-  {"action": "ADD", "content": "记忆内容", "memory_type": "semantic", "importance": 0.7, "tags": ["tag1"], "reason": "为什么添加"},
+  {"action": "ADD", "content": "记忆内容", "memory_type": "semantic", "importance": 0.7, "tags": ["tag1"], "scope": "user", "durability": "durable", "authority": "descriptive", "reason": "为什么添加"},
   {"action": "UPDATE", "memory_id": "ltm_xxx", "new_content": "更新后的内容", "reason": "为什么更新"},
   {"action": "DELETE", "memory_id": "ltm_xxx", "reason": "为什么删除"},
   {"action": "SKIP", "memory_id": "ltm_xxx", "reason": "为什么保留不动"}
@@ -106,8 +110,15 @@ DREAM_SYSTEM_PROMPT = """你是一个记忆蒸馏专家。你的任务是从对�
 - 每个操作必须给出reason（为什么做这个决定）
 - importance评分范围0.0-1.0（0.3以下=低价值，0.5=中等，0.7+=高价值）
 - memory_type只能选：episodic（事件）/ semantic（知识）/ procedural（技能）/ working（工作记忆）
+- ADD必须带三标签（DeerMem安全标签）：scope=user/task/project/session、
+  durability=durable/transient、authority=descriptive/prescriptive/contradiction；
+  自动入库只接受scope=user+durability=durable+authority=descriptive，
+  其他组合会被安全门拒绝并计skipped
+- 与现有记忆近重复的ADD会被自动并入既有记忆（保留原id、importance取max），
+  不会产生重复条目
 - 如果对话中没有值得记住的新信息，返回空数组[]
 - 不确定的记忆操作用SKIP而非DELETE（保守原则）
+- task/project域记忆与矛盾事实的DELETE会被安全门拦截（fail-closed），优先用UPDATE
 """
 
 
@@ -164,6 +175,10 @@ def _parse_dream_actions(response: str) -> list[DreamAction]:
             importance=max(0.0, min(1.0, float(item.get("importance", 0.5)))),
             tags=[str(t) for t in item.get("tags", [])],
             reason=str(item.get("reason", "")),
+            # DeerMem三标签（宽容解析：缺失=空串→store侧确定性推断）
+            scope=str(item.get("scope", "") or "").strip().lower(),
+            durability=str(item.get("durability", "") or "").strip().lower(),
+            authority=str(item.get("authority", "") or "").strip().lower(),
         )
         # Validate memory_type
         if da.memory_type not in valid_types:
@@ -339,6 +354,15 @@ class DreamDistiller:
         nanobot pattern: each action is an explicit confirmed operation.
         """
         if action.action == "ADD":
+            # DeerMem #11：抽取提议带三标签则显式传入（部分提供→fail-closed拒绝）；
+            # 三者全空→None，由store确定性推断
+            safety_tags = None
+            if action.scope or action.durability or action.authority:
+                safety_tags = {
+                    "scope": action.scope,
+                    "durability": action.durability,
+                    "authority": action.authority,
+                }
             mem = self._store.store(
                 content=action.content,
                 memory_type=action.memory_type,
@@ -346,11 +370,16 @@ class DreamDistiller:
                 tags=action.tags,
                 metadata={"source": "dream_distillation", "reason": action.reason},
                 source_session="dream",
+                safety_tags=safety_tags,
+                write_mode="auto",
+                # DeerMem #10 fact_dedup：dream是自动抽取管线，近重复→并入既有fact
+                dup_policy="merge",
             )
             if mem is None:
-                # gatekeeper拒绝：计入skipped（可见），不静默当成功（mem0 §1.1）
+                # gatekeeper/标签门拒绝：计入skipped（可见），不静默当成功（mem0 §1.1）
+                outcome = getattr(self._store, "last_write_outcome", "") or "gate-rejected"
                 logger.info(
-                    "Dream ADD gate-rejected: %s", (action.content or "")[:80]
+                    "Dream ADD %s: %s", outcome, (action.content or "")[:80]
                 )
             return mem is not None
 
@@ -363,10 +392,12 @@ class DreamDistiller:
             return result is not None
 
         elif action.action == "DELETE":
+            # DeerMem #11：dream是自动路径，删除过安全门（task/project域+矛盾事实fail-closed）
             return self._store.delete_memory(
                 memory_id=action.memory_id,
                 reason=f"dream_delete: {action.reason}",
                 hard_delete=False,
+                delete_mode="auto",
             )
 
         elif action.action == "SKIP":

@@ -217,7 +217,11 @@ class TestMemoryCRUDAndAudit(unittest.TestCase):
         self.store.store(content="Test", tags=["tag1", "tag2"], metadata={"key": "val"})
         results = self.store.list_memories()
         assert results[0]["tags"] == ["tag1", "tag2"]
-        assert results[0]["metadata"] == {"key": "val"}
+        # DeerMem #11：store()将resolved安全标签持久化进metadata["deermem_tags"]
+        # （删除安全门的依据），用户提供的key必须原样保留
+        assert results[0]["metadata"]["key"] == "val"
+        assert results[0]["metadata"]["deermem_tags"]["scope"] == "user"
+        assert results[0]["metadata"]["deermem_tags"]["provenance"] == "inferred"
 
     # ── get_history() ───────────────────────────────────────
 
