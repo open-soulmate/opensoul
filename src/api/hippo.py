@@ -413,12 +413,37 @@ async def ltm_gatekeeper_stats():
 
 @router.post("/ltm/search")
 async def ltm_search(req: LongTermSearchRequest):
-    """Search long-term memories."""
-    results = _lt_store.retrieve(
-        query=req.query,
-        memory_type=req.memory_types[0] if req.memory_types else "",
-        limit=req.limit,
-    )
+    """Search long-term memories with Khoj-style NL filter support.
+
+    The query string is parsed for natural language filters (dates, types,
+    importance, word matches) before being passed to the retrieval engine.
+    Response includes `nl_filters` showing what was extracted.
+    """
+    from src.hippo.nl_filters import parse_nl_query, apply_post_filters
+
+    nl = parse_nl_query(req.query)
+    effective_query = nl.clean_query if nl.clean_query else req.query
+    effective_type = req.memory_types[0] if req.memory_types else ""
+    if not effective_type and nl.memory_types:
+        effective_type = nl.memory_types[0]
+
+    # If NL filters left an empty clean query but we have filters, list instead of search
+    if not nl.clean_query and nl.has_filters:
+        results = _lt_store.list_memories(
+            memory_type=effective_type,
+            include_deleted=False,
+            limit=req.limit,
+        )
+        results = apply_post_filters(results, nl)
+    else:
+        results = _lt_store.retrieve(
+            query=effective_query,
+            memory_type=effective_type,
+            limit=req.limit,
+        )
+        if nl.has_filters:
+            results = apply_post_filters(results, nl)
+
     return {
         "results": [
             {
@@ -432,6 +457,7 @@ async def ltm_search(req: LongTermSearchRequest):
             for m in results
         ],
         "count": len(results),
+        "nl_filters": nl.to_dict(),
     }
 
 
@@ -450,12 +476,20 @@ async def ltm_stats():
 
 @router.post("/ltm/context")
 async def ltm_context(req: LongTermSearchRequest):
-    """Get context-formatted memories for prompt injection."""
+    """Get context-formatted memories for prompt injection (NL filter aware)."""
+    from src.hippo.nl_filters import parse_nl_query
+
+    nl = parse_nl_query(req.query)
+    effective_query = nl.clean_query if nl.clean_query else req.query
+    effective_type = req.memory_types[0] if req.memory_types else ""
+    if not effective_type and nl.memory_types:
+        effective_type = nl.memory_types[0]
+
     context = _lt_store.get_context_prompt(
-        query=req.query,
-        memory_type=req.memory_types[0] if req.memory_types else "",
+        query=effective_query,
+        memory_type=effective_type,
     )
-    return {"context": context}
+    return {"context": context, "nl_filters": nl.to_dict()}
 
 
 # ── Long-term Memory CRUD + Audit (Khoj + mem0 pattern) ────
