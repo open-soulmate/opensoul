@@ -546,6 +546,13 @@ async def promote_to_knowledge(file_id: str, req: PromoteRequest | None = None):
             _time.time(),
             _time.time(),
         )
+
+        # fire-and-forget: meilisearch增量索引（失败不阻塞主流程）
+        try:
+            from src.services.meili_indexer import schedule_index
+            schedule_index(knowledge_id)
+        except Exception:
+            pass
         # Add tags to knowledge_tags table
         for tag_name in set(file_tags):
             tag_id = str(_uuid.uuid4())
@@ -767,6 +774,13 @@ async def auto_process_file(file_id: str, req: AutoProcessRequest | None = None)
                 ),
                 _time.time(),
             )
+
+            # fire-and-forget: meilisearch增量索引（失败不阻塞主流程）
+            try:
+                from src.services.meili_indexer import schedule_index
+                schedule_index(knowledge_id)
+            except Exception:
+                pass
             # Add tags to knowledge_tags table
             for tag_name in set(tags):
                 tag_id = str(_uuid.uuid4())
@@ -930,6 +944,12 @@ async def batch_auto_process(req: BatchAutoProcessRequest):
                         _time.time(),
                         _time.time(),
                     )
+                    # fire-and-forget: meilisearch增量索引（失败不阻塞主流程）
+                    try:
+                        from src.services.meili_indexer import schedule_index
+                        schedule_index(kid)
+                    except Exception:
+                        pass
                     # Add tags to knowledge_tags table
                     for tag_name in set(tags):
                         tag_id = str(_uuid.uuid4())

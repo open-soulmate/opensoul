@@ -185,6 +185,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         print("WARNING: Qdrant not available, skipping")
     meili_client.ensure_index()
+    # Meilisearch知识库索引管道：启动自动全量索引（fire-and-forget不阻塞启动）
+    try:
+        from src.services.meili_indexer import index_all_knowledge
+
+        asyncio.create_task(index_all_knowledge())
+    except Exception:
+        print("WARNING: meilisearch startup indexer failed")
     await gland_gateway.startup()
 
     # Vital services

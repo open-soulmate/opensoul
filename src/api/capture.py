@@ -332,6 +332,13 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
             time.time(),
             time.time(),
         )
+
+        # fire-and-forget: meilisearch增量索引（失败不阻塞主流程）
+        try:
+            from src.services.meili_indexer import schedule_index
+            schedule_index(knowledge_id)
+        except Exception:
+            pass
         # Add tags to knowledge_tags table
         for tag_name in tags:
             tag_id = str(_uuid.uuid4())

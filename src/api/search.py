@@ -19,6 +19,7 @@ async def search_health():
 async def search_stats():
     """Get search system statistics."""
     from src.database.postgres import db_pool
+    from src.services.meili_indexer import get_index_stats
 
     try:
         knowledge_count = await db_pool.fetchval("SELECT COUNT(*) FROM knowledge") or 0
@@ -27,6 +28,7 @@ async def search_stats():
             "component": "SearchSystem",
             "searchable_entries": knowledge_count,
             "modes": ["semantic", "fulltext", "hybrid"],
+            "meilisearch": get_index_stats(),
         }
     except Exception:
         return {
@@ -34,6 +36,7 @@ async def search_stats():
             "component": "SearchSystem",
             "searchable_entries": 0,
             "modes": ["semantic", "fulltext", "hybrid"],
+            "meilisearch": get_index_stats(),
         }
 
 
@@ -349,6 +352,15 @@ async def _search_echo_messages(query: str, limit: int) -> list[dict]:
         return matches
     except Exception:
         return []
+
+
+@router.post("/reindex")
+async def reindex_meilisearch():
+    """Manually trigger full Meilisearch reindex from knowledge table."""
+    from src.services.meili_indexer import index_all_knowledge
+
+    result = await index_all_knowledge()
+    return {"status": "ok" if "error" not in result else "error", **result}
 
 
 @router.get("/unified")

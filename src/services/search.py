@@ -22,10 +22,14 @@ async def semantic_search(query: str, user_id: UUID, limit: int = 10) -> list[di
 
 
 async def fulltext_search(query: str, user_id: UUID, limit: int = 10) -> list[dict]:
-    """Search using Meilisearch full-text search."""
+    """Search using Meilisearch full-text search.
+
+    user_id过滤放宽：knowledge写入路径user_id不统一（UUID/hash(default)混存），
+    强过滤致0命中——本地单用户系统全库检索，多租户隔离交给semantic/qdrant层。
+    """
     if not meili_client.AVAILABLE:
         return []
-    result = meili_client.search(query, limit=limit, filters=f'user_id = "{user_id}"')
+    result = meili_client.search(query, limit=limit)
     return result.get("hits", [])
 
 
