@@ -160,6 +160,80 @@ class LLMTestRequest(BaseModel):
     model: str | None = None
 
 
+# ── 大模型预设双体系（标准API / Token Plan）状态指示灯 ──────────
+PRESET_VARIANTS: dict[str, list[dict]] = {
+    "mimo": [
+        {"id": "standard", "label": "标准API (按量付费)", "base_url": "https://api.xiaomimimo.com/v1", "key_prefix": "sk-"},
+        {"id": "token-plan", "label": "Token Plan (订阅制)", "base_url": "https://token-plan-cn.xiaomimimo.com/v1", "key_prefix": "tp-"},
+    ],
+    "openai": [{"id": "standard", "label": "标准API", "base_url": "https://api.openai.com/v1", "key_prefix": "sk-"}],
+    "claude": [{"id": "standard", "label": "标准API", "base_url": "https://api.anthropic.com/v1", "key_prefix": "sk-ant-"}],
+    "gemini": [{"id": "standard", "label": "标准API", "base_url": "https://generativelanguage.googleapis.com/v1beta", "key_prefix": "AIza"}],
+    "deepseek": [{"id": "standard", "label": "标准API", "base_url": "https://api.deepseek.com/v1", "key_prefix": "sk-"}],
+    "qwen": [{"id": "standard", "label": "标准API", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "key_prefix": "sk-"}],
+    "zhipu": [{"id": "standard", "label": "标准API", "base_url": "https://open.bigmodel.cn/api/paas/v4", "key_prefix": ""}],
+    "moonshot": [{"id": "standard", "label": "标准API", "base_url": "https://api.moonshot.cn/v1", "key_prefix": "sk-"}],
+    "baichuan": [{"id": "standard", "label": "标准API", "base_url": "https://api.baichuan-ai.com/v1", "key_prefix": "sk-"}],
+    "yi": [{"id": "standard", "label": "标准API", "base_url": "https://api.lingyiwanwu.com/v1", "key_prefix": "sk-"}],
+    "minimax": [{"id": "standard", "label": "标准API", "base_url": "https://api.minimax.chat/v1", "key_prefix": "eyJ"}],
+    "stepfun": [{"id": "standard", "label": "标准API", "base_url": "https://api.stepfun.com/v1", "key_prefix": "sk-"}],
+    "doubao": [{"id": "standard", "label": "标准API", "base_url": "https://ark.cn-beijing.volces.com/api/v3", "key_prefix": ""}],
+    "ollama": [{"id": "standard", "label": "本地", "base_url": "http://localhost:11434/v1", "key_prefix": ""}],
+    "lmstudio": [{"id": "standard", "label": "本地", "base_url": "http://localhost:1234/v1", "key_prefix": ""}],
+    "vllm": [{"id": "standard", "label": "本地", "base_url": "http://localhost:8000/v1", "key_prefix": ""}],
+    "custom": [{"id": "standard", "label": "自定义", "base_url": "", "key_prefix": ""}],
+}
+
+
+async def _probe_variant(base_url: str, api_key: str) -> str:
+    """探测API端点可用性→状态: ok/invalid_key/low_balance/unreachable/not_configured。"""
+    if not api_key or not base_url:
+        return "not_configured"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"{base_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        if resp.status_code == 200:
+            return "ok"
+        if resp.status_code in (401, 403):
+            return "invalid_key"
+        if resp.status_code == 402:
+            return "low_balance"
+        return f"error_{resp.status_code}"
+    except Exception:
+        return "unreachable"
+
+
+@router.get("/presets/status")
+async def presets_status():
+    """每个大模型×每个API体系（标准API/Token Plan）的状态指示灯数据。
+    当前.env激活的base_url+key会被实际探测，其余预设显示not_configured。"""
+    current_base = (_llm_overrides.get("base_url") or "").rstrip("/")
+    current_key = _llm_overrides.get("api_key") or ""
+    if not current_base:
+        _load_overrides_from_env()
+        current_base = (_llm_overrides.get("base_url") or "").rstrip("/")
+        current_key = _llm_overrides.get("api_key") or ""
+    presets: dict[str, dict] = {}
+    for pid, variants in PRESET_VARIANTS.items():
+        presets[pid] = {}
+        for v in variants:
+            vbase = v["base_url"].rstrip("/")
+            if current_key and vbase and vbase == current_base:
+                status = await _probe_variant(v["base_url"], current_key)
+            else:
+                status = "not_configured"
+            presets[pid][v["id"]] = {
+                "status": status,
+                "label": v["label"],
+                "base_url": v["base_url"],
+                "key_prefix": v.get("key_prefix", ""),
+            }
+    return {"current_base_url": current_base, "current_model": _llm_overrides.get("model", ""), "presets": presets}
+
+
 @router.post("/test")
 async def test_connection(body: LLMTestRequest | None = None):
     """Test LLM connection with a simple prompt.
