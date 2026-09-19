@@ -339,7 +339,7 @@ class DreamDistiller:
         nanobot pattern: each action is an explicit confirmed operation.
         """
         if action.action == "ADD":
-            self._store.store(
+            mem = self._store.store(
                 content=action.content,
                 memory_type=action.memory_type,
                 importance=action.importance,
@@ -347,7 +347,12 @@ class DreamDistiller:
                 metadata={"source": "dream_distillation", "reason": action.reason},
                 source_session="dream",
             )
-            return True
+            if mem is None:
+                # gatekeeper拒绝：计入skipped（可见），不静默当成功（mem0 §1.1）
+                logger.info(
+                    "Dream ADD gate-rejected: %s", (action.content or "")[:80]
+                )
+            return mem is not None
 
         elif action.action == "UPDATE":
             result = self._store.update_memory(

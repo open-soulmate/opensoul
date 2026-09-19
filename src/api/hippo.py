@@ -383,7 +383,10 @@ async def import_sessions(req: SessionImportRequest):
 
 @router.post("/ltm/add")
 async def ltm_add(req: LongTermMemoryRequest):
-    """Add a long-term memory entry."""
+    """Add a long-term memory entry.
+
+    P1 gatekeeper：准入判定拒绝时返回added=False+拒绝原因（非错误，是判定）。
+    """
     mem = _lt_store.store(
         content=req.content,
         memory_type=req.memory_type,
@@ -392,7 +395,20 @@ async def ltm_add(req: LongTermMemoryRequest):
         metadata=req.metadata,
         source_session="",
     )
+    if mem is None:
+        dec = _lt_store.gatekeeper.last_decision
+        return {
+            "added": False,
+            "memory_id": "",
+            "gatekeeper": dec.to_dict() if dec else {"verdict": "reject"},
+        }
     return {"memory_id": mem.memory_id, "added": True}
+
+
+@router.get("/ltm/gatekeeper/stats")
+async def ltm_gatekeeper_stats():
+    """P1 gatekeeper准入统计（LobeChat记忆守门员）：拒了什么、为什么拒、可审计。"""
+    return _lt_store.get_gatekeeper_stats()
 
 
 @router.post("/ltm/search")

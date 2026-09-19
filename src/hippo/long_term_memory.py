@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from src.hippo.extractors.gatekeeper import GateDecision, MemoryGatekeeper
+
 logger = logging.getLogger("opensoul.hippo.long_term")
 
 
@@ -89,12 +91,23 @@ class LongTermMemoryStore:
     - LongTermMemoryStore = persistent, cross-session, retrieval-based
     """
 
-    def __init__(self, db_path: str = ""):
+    def __init__(
+        self,
+        db_path: str = "",
+        gatekeeper: Optional[MemoryGatekeeper] = None,
+        gatekeeper_enabled: bool = True,
+    ):
         if not db_path:
             base = Path.home() / ".hermes" / "opensoul" / "hippo"
             base.mkdir(parents=True, exist_ok=True)
             db_path = str(base / "long_term_memory.db")
         self.db_path = db_path
+        # LobeChat gatekeeper：记忆准入判定，默认开启（gatekeeper_enabled=False仅测试用）
+        self.gatekeeper = (
+            gatekeeper
+            if gatekeeper is not None
+            else MemoryGatekeeper(enabled=gatekeeper_enabled)
+        )
         self._init_db()
 
     def _init_db(self):
@@ -163,8 +176,44 @@ class LongTermMemoryStore:
         tags: Optional[list[str]] = None,
         metadata: Optional[dict] = None,
         source_session: str = "",
-    ) -> LongTermMemory:
-        """Store a new long-term memory."""
+        force: bool = False,
+    ) -> Optional[LongTermMemory]:
+        """Store a new long-term memory.
+
+        P1 gatekeeper（LobeChat记忆守门员）：写入前过准入判定。
+        - reject：不入库，写GATE_REJECT审计（mem0 §1.1失败必须可见），返回None
+        - force=True：旁路全部准入规则（显式人工覆盖）
+        """
+        # ── 准入判定（gatekeeper在真实写入路径上，覆盖ltm_add/dream/import三个入口）──
+        if self.gatekeeper.enabled and not force:
+            decision = self.gatekeeper.evaluate(
+                content,
+                memory_type=memory_type,
+                recent_contents=self._recent_memory_contents(),
+                force=False,
+            )
+            if not decision.admitted:
+                # 拒绝也必须可见：落审计而非静默丢弃
+                self._write_audit(
+                    memory_id=f"gate_{hashlib.sha256(f'{content}:{time.time()}'.encode()).hexdigest()[:12]}",
+                    event="GATE_REJECT",
+                    old_value="",
+                    new_value=json.dumps(
+                        {
+                            "content": (content or "")[:200],
+                            "memory_type": memory_type,
+                            "rule": decision.rule,
+                            "reason": decision.reason,
+                            "duplicate_of": decision.duplicate_of,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    reason=f"gatekeeper:{decision.rule}",
+                )
+                return None
+        else:
+            self.gatekeeper.evaluate(content, force=True)
+
         memory_id = f"ltm_{hashlib.sha256(f'{content}:{time.time()}'.encode()).hexdigest()[:12]}"
 
         mem = LongTermMemory(
@@ -475,6 +524,55 @@ class LongTermMemoryStore:
                 for r in recent
             ],
         }
+
+    def _recent_memory_contents(self, limit: int = 300) -> list[tuple[str, str]]:
+        """最近活跃记忆(memory_id, content)候选集 — gatekeeper重复判定的输入。
+
+        有界扫描（默认最近300条）：写入量级下O(limit)可接受；
+        大库场景可换FTS预筛（遗留优化项）。
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT memory_id, content FROM memories
+                   WHERE consolidated = 0 AND merged_into = ''
+                   ORDER BY created_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    def get_gatekeeper_stats(self) -> dict:
+        """gatekeeper准入统计 — 进程内计数 + 跨进程审计历史（memory_audit GATE_REJECT）。
+
+        用户极度重视可观测性：拒了什么、为什么拒，必须能查。
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT reason, COUNT(*) FROM memory_audit
+                   WHERE event = 'GATE_REJECT' GROUP BY reason"""
+            ).fetchall()
+            total_rejected = conn.execute(
+                "SELECT COUNT(*) FROM memory_audit WHERE event = 'GATE_REJECT'"
+            ).fetchone()[0]
+            recent_rows = conn.execute(
+                """SELECT memory_id, reason, new_value, created_at
+                   FROM memory_audit WHERE event = 'GATE_REJECT'
+                   ORDER BY created_at DESC LIMIT 10"""
+            ).fetchall()
+        stats = self.gatekeeper.stats()
+        stats["audit"] = {
+            "total_rejected_records": total_rejected,
+            "by_reason": {r[0]: r[1] for r in rows},
+            "recent_rejections": [
+                {
+                    "gate_id": r[0],
+                    "reason": r[1],
+                    "detail": r[2],
+                    "created_at": r[3],
+                }
+                for r in recent_rows
+            ],
+        }
+        return stats
 
     def retrieve(
         self,

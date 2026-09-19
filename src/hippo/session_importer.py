@@ -104,6 +104,7 @@ class SessionImporter:
             "scanned": len(candidates),
             "skipped_imported": 0,
             "skipped_short": 0,
+            "gate_rejected": 0,
             "imported_sessions": 0,
             "memories_created": 0,
             "dry_run": dry_run,
@@ -130,12 +131,12 @@ class SessionImporter:
                 continue
 
             created = 0
-            # 1. 用户消息 → episodic记忆
+            # 1. 用户消息 → episodic记忆（gatekeeper准入：reject返回None不计数）
             for m in user_msgs:
                 content = m["content"][:500]
                 importance = min(0.6, 0.3 + len(m["content"]) / 3000.0)
                 try:
-                    self.ltm.store(
+                    mem = self.ltm.store(
                         content=content,
                         memory_type="episodic",
                         importance=importance,
@@ -148,7 +149,10 @@ class SessionImporter:
                         },
                         source_session=sid,
                     )
-                    created += 1
+                    if mem is not None:
+                        created += 1
+                    else:
+                        stats["gate_rejected"] += 1
                 except Exception as e:
                     logger.warning("store episodic failed session=%s: %s", sid, e)
 
@@ -165,7 +169,7 @@ class SessionImporter:
                 f"用户共{len(user_msgs)}条消息，开场话题: {first_ask}"
             )
             try:
-                self.ltm.store(
+                mem = self.ltm.store(
                     content=summary,
                     memory_type="semantic",
                     importance=0.4,
@@ -177,7 +181,10 @@ class SessionImporter:
                     },
                     source_session=sid,
                 )
-                created += 1
+                if mem is not None:
+                    created += 1
+                else:
+                    stats["gate_rejected"] += 1
             except Exception as e:
                 logger.warning("store summary failed session=%s: %s", sid, e)
 

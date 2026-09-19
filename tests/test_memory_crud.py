@@ -23,7 +23,10 @@ class TestMemoryCRUDAndAudit(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
         self._db_path = os.path.join(self._tmpdir, "test_ltm.db")
-        self.store = LongTermMemoryStore(db_path=self._db_path)
+        # gatekeeper关闭：本套件专注CRUD/审计语义，含故意重复内容（consolidate用例）
+        self.store = LongTermMemoryStore(
+            db_path=self._db_path, gatekeeper_enabled=False
+        )
 
     def tearDown(self):
         import shutil

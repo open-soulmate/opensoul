@@ -69,7 +69,9 @@ class TestThreeFactorRetrieve:
     def store(self):
         fd, path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
-        s = LongTermMemoryStore(db_path=path)
+        # gatekeeper关闭：本套件用相同内容构造recency/importance排序场景，
+        # 重复内容是有意的测试夹具，不是记忆污染
+        s = LongTermMemoryStore(db_path=path, gatekeeper_enabled=False)
         yield s
         os.unlink(path)
 
