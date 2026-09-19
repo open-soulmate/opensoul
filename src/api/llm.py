@@ -33,6 +33,7 @@ class LLMConfigUpdate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     model: str | None = None
+    variant: str | None = None
 
 
 class LLMModelsRequest(BaseModel):
@@ -44,7 +45,7 @@ class LLMModelsRequest(BaseModel):
 async def list_models(body: LLMModelsRequest):
     """List available models from an OpenAI-compatible API endpoint."""
     base_url = body.base_url.rstrip("/")
-    api_key = body.api_key or _llm_overrides.get("api_key", "") or settings.llm_api_key
+    api_key = body.api_key or _active_slot("api_key") or settings.llm_api_key
 
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -81,12 +82,15 @@ def _load_overrides_from_env():
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 k, v = k.strip(), v.strip()
-                if k == "LLM_API_KEY" and v:
-                    _llm_overrides["api_key"] = v
-                elif k == "LLM_BASE_URL" and v:
-                    _llm_overrides["base_url"] = v
-                elif k == "LLM_MODEL" and v:
-                    _llm_overrides["model"] = v
+                _SLOT_MAP = {
+                    "LLM_API_KEY": "api_key", "LLM_BASE_URL": "base_url", "LLM_MODEL": "model",
+                    "LLM_ACTIVE_VARIANT": "active_variant",
+                    "LLM_STANDARD_API_KEY": "standard_api_key", "LLM_STANDARD_BASE_URL": "standard_base_url", "LLM_STANDARD_MODEL": "standard_model",
+                    "LLM_SUBSCRIPTION_API_KEY": "subscription_api_key", "LLM_SUBSCRIPTION_BASE_URL": "subscription_base_url", "LLM_SUBSCRIPTION_MODEL": "subscription_model",
+                }
+                slot = _SLOT_MAP.get(k)
+                if slot and v:
+                    _llm_overrides[slot] = v
 
 
 def _save_overrides_to_env():
@@ -96,7 +100,12 @@ def _save_overrides_to_env():
     with open(ENV_PATH) as f:
         lines = f.readlines()
 
-    keys_to_save = {"LLM_API_KEY": "api_key", "LLM_BASE_URL": "base_url", "LLM_MODEL": "model"}
+    keys_to_save = {
+        "LLM_API_KEY": "api_key", "LLM_BASE_URL": "base_url", "LLM_MODEL": "model",
+        "LLM_ACTIVE_VARIANT": "active_variant",
+        "LLM_STANDARD_API_KEY": "standard_api_key", "LLM_STANDARD_BASE_URL": "standard_base_url", "LLM_STANDARD_MODEL": "standard_model",
+        "LLM_SUBSCRIPTION_API_KEY": "subscription_api_key", "LLM_SUBSCRIPTION_BASE_URL": "subscription_base_url", "LLM_SUBSCRIPTION_MODEL": "subscription_model",
+    }
     updated_keys = set()
 
     new_lines = []
@@ -125,12 +134,38 @@ def _save_overrides_to_env():
 _load_overrides_from_env()
 
 
+def _active_variant() -> str:
+    return _llm_overrides.get("active_variant", "standard") or "standard"
+
+
+def _active_slot(field: str) -> str:
+    prefix = f"{_active_variant()}_"
+    return _llm_overrides.get(prefix + field) or _llm_overrides.get(field, "")
+
+
+def _mask(k: str, masked: bool) -> str:
+    return ("***" if masked and k else k) if k else ""
+
+
 def _get_config(masked: bool = False) -> dict:
-    real_key = _llm_overrides.get("api_key", settings.llm_api_key)
+    std_key = _llm_overrides.get("standard_api_key", "") or _llm_overrides.get("api_key", settings.llm_api_key)
+    sub_key = _llm_overrides.get("subscription_api_key", "")
+    main_key = _llm_overrides.get("api_key", settings.llm_api_key)
     return {
         "base_url": _llm_overrides.get("base_url", settings.llm_base_url),
-        "api_key": ("***" if masked and real_key else real_key) if real_key else "",
+        "api_key": _mask(main_key, masked),
         "model": _llm_overrides.get("model", settings.llm_model),
+        "active_variant": _active_variant(),
+        "standard": {
+            "base_url": _llm_overrides.get("standard_base_url", "") or _llm_overrides.get("base_url", settings.llm_base_url),
+            "api_key": _mask(std_key, masked),
+            "model": _llm_overrides.get("standard_model", "") or _llm_overrides.get("model", settings.llm_model),
+        },
+        "subscription": {
+            "base_url": _llm_overrides.get("subscription_base_url", ""),
+            "api_key": _mask(sub_key, masked),
+            "model": _llm_overrides.get("subscription_model", ""),
+        },
     }
 
 
@@ -143,12 +178,19 @@ async def get_config(masked: bool = False):
 @router.post("/config")
 async def save_config(data: LLMConfigUpdate):
     """Save LLM configuration overrides and persist to .env."""
+    variant = (data.variant or "standard").strip() or "standard"
+    if variant not in ("standard", "subscription"):
+        variant = "standard"
     if data.base_url is not None:
+        _llm_overrides[f"{variant}_base_url"] = data.base_url
         _llm_overrides["base_url"] = data.base_url
     if data.api_key is not None:
+        _llm_overrides[f"{variant}_api_key"] = data.api_key
         _llm_overrides["api_key"] = data.api_key
     if data.model is not None:
+        _llm_overrides[f"{variant}_model"] = data.model
         _llm_overrides["model"] = data.model
+    _llm_overrides["active_variant"] = variant
     _save_overrides_to_env()
     return _get_config()
 
@@ -161,31 +203,37 @@ class LLMTestRequest(BaseModel):
 
 
 # ── 大模型预设双体系（标准API / Token Plan）状态指示灯 ──────────
+def _std(url: str, prefix: str = "sk-") -> dict:
+    return {"id": "standard", "label": "标准API", "base_url": url, "key_prefix": prefix}
+
+
+def _sub(url: str = "", prefix: str = "") -> dict:
+    return {"id": "subscription", "label": "订阅制", "base_url": url, "key_prefix": prefix}
+
+
+# 所有云端大模型统一双体系：标准API + 订阅制（订阅地址为空=用户自填；小米订阅制=官方Token Plan地址）
 PRESET_VARIANTS: dict[str, list[dict]] = {
-    "mimo": [
-        {"id": "standard", "label": "标准API (按量付费)", "base_url": "https://api.xiaomimimo.com/v1", "key_prefix": "sk-"},
-        {"id": "token-plan", "label": "Token Plan (订阅制)", "base_url": "https://token-plan-cn.xiaomimimo.com/v1", "key_prefix": "tp-"},
-    ],
-    "openai": [{"id": "standard", "label": "标准API", "base_url": "https://api.openai.com/v1", "key_prefix": "sk-"}],
-    "claude": [{"id": "standard", "label": "标准API", "base_url": "https://api.anthropic.com/v1", "key_prefix": "sk-ant-"}],
-    "gemini": [{"id": "standard", "label": "标准API", "base_url": "https://generativelanguage.googleapis.com/v1beta", "key_prefix": "AIza"}],
-    "deepseek": [{"id": "standard", "label": "标准API", "base_url": "https://api.deepseek.com/v1", "key_prefix": "sk-"}],
-    "qwen": [{"id": "standard", "label": "标准API", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "key_prefix": "sk-"}],
-    "zhipu": [{"id": "standard", "label": "标准API", "base_url": "https://open.bigmodel.cn/api/paas/v4", "key_prefix": ""}],
-    "moonshot": [{"id": "standard", "label": "标准API", "base_url": "https://api.moonshot.cn/v1", "key_prefix": "sk-"}],
-    "baichuan": [{"id": "standard", "label": "标准API", "base_url": "https://api.baichuan-ai.com/v1", "key_prefix": "sk-"}],
-    "yi": [{"id": "standard", "label": "标准API", "base_url": "https://api.lingyiwanwu.com/v1", "key_prefix": "sk-"}],
-    "minimax": [{"id": "standard", "label": "标准API", "base_url": "https://api.minimax.chat/v1", "key_prefix": "eyJ"}],
-    "stepfun": [{"id": "standard", "label": "标准API", "base_url": "https://api.stepfun.com/v1", "key_prefix": "sk-"}],
-    "doubao": [{"id": "standard", "label": "标准API", "base_url": "https://ark.cn-beijing.volces.com/api/v3", "key_prefix": ""}],
+    "mimo": [_std("https://api.xiaomimimo.com/v1"), _sub("https://token-plan-cn.xiaomimimo.com/v1", "tp-")],
+    "openai": [_std("https://api.openai.com/v1"), _sub()],
+    "claude": [_std("https://api.anthropic.com/v1", "sk-ant-"), _sub()],
+    "gemini": [_std("https://generativelanguage.googleapis.com/v1beta", "AIza"), _sub()],
+    "deepseek": [_std("https://api.deepseek.com/v1"), _sub()],
+    "qwen": [_std("https://dashscope.aliyuncs.com/compatible-mode/v1"), _sub()],
+    "zhipu": [_std("https://open.bigmodel.cn/api/paas/v4", ""), _sub()],
+    "moonshot": [_std("https://api.moonshot.cn/v1"), _sub()],
+    "baichuan": [_std("https://api.baichuan-ai.com/v1"), _sub()],
+    "yi": [_std("https://api.lingyiwanwu.com/v1"), _sub()],
+    "minimax": [_std("https://api.minimax.chat/v1", "eyJ"), _sub()],
+    "stepfun": [_std("https://api.stepfun.com/v1"), _sub()],
+    "doubao": [_std("https://ark.cn-beijing.volces.com/api/v3", ""), _sub()],
     "ollama": [{"id": "standard", "label": "本地", "base_url": "http://localhost:11434/v1", "key_prefix": ""}],
     "lmstudio": [{"id": "standard", "label": "本地", "base_url": "http://localhost:1234/v1", "key_prefix": ""}],
     "vllm": [{"id": "standard", "label": "本地", "base_url": "http://localhost:8000/v1", "key_prefix": ""}],
-    "custom": [{"id": "standard", "label": "自定义", "base_url": "", "key_prefix": ""}],
+    "custom": [_std("", ""), _sub("", "")],
 }
 
 
-async def _probe_variant(base_url: str, api_key: str) -> str:
+async def _probe_variant(base_url: str, api_key: str, model: str = "") -> str:
     """探测API端点可用性→状态: ok/invalid_key/low_balance/unreachable/not_configured。"""
     if not api_key or not base_url:
         return "not_configured"
@@ -202,7 +250,7 @@ async def _probe_variant(base_url: str, api_key: str) -> str:
         if resp.status_code == 200:
             # models可达≠余额充足：做一次最小chat调用探测真实可用性（max_tokens=1，成本可忽略）
             try:
-                model = _llm_overrides.get("model") or ""
+                pass
                 if model:
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         probe = await client.post(
@@ -222,30 +270,40 @@ async def _probe_variant(base_url: str, api_key: str) -> str:
 
 @router.get("/presets/status")
 async def presets_status():
-    """每个大模型×每个API体系（标准API/Token Plan）的状态指示灯数据。
-    当前.env激活的base_url+key会被实际探测，其余预设显示not_configured。"""
-    current_base = (_llm_overrides.get("base_url") or "").rstrip("/")
-    current_key = _llm_overrides.get("api_key") or ""
-    if not current_base:
+    """每个大模型×每个API体系(标准/订阅制)的状态指示灯。
+    standard槽位和subscription槽位各自独立探测：各自用自己的base_url+key。"""
+    if not _llm_overrides:
         _load_overrides_from_env()
-        current_base = (_llm_overrides.get("base_url") or "").rstrip("/")
-        current_key = _llm_overrides.get("api_key") or ""
+    std_base = (_llm_overrides.get("standard_base_url") or _llm_overrides.get("base_url") or "").rstrip("/")
+    std_key = _llm_overrides.get("standard_api_key") or _llm_overrides.get("api_key") or ""
+    std_model = _llm_overrides.get("standard_model") or _llm_overrides.get("model") or ""
+    sub_base = (_llm_overrides.get("subscription_base_url") or "").rstrip("/")
+    sub_key = _llm_overrides.get("subscription_api_key") or ""
+    sub_model = _llm_overrides.get("subscription_model") or ""
     presets: dict[str, dict] = {}
     for pid, variants in PRESET_VARIANTS.items():
         presets[pid] = {}
         for v in variants:
             vbase = v["base_url"].rstrip("/")
-            if current_key and vbase and vbase == current_base:
-                status = await _probe_variant(v["base_url"], current_key)
+            status = "not_configured"
+            if v["id"] == "subscription":
+                if sub_key and vbase and vbase == sub_base:
+                    status = await _probe_variant(v["base_url"], sub_key, sub_model)
             else:
-                status = "not_configured"
+                if std_key and vbase and vbase == std_base:
+                    status = await _probe_variant(v["base_url"], std_key, std_model)
             presets[pid][v["id"]] = {
                 "status": status,
                 "label": v["label"],
                 "base_url": v["base_url"],
                 "key_prefix": v.get("key_prefix", ""),
             }
-    return {"current_base_url": current_base, "current_model": _llm_overrides.get("model", ""), "presets": presets}
+    return {
+        "active_variant": _active_variant(),
+        "standard": {"base_url": std_base, "model": std_model, "configured": bool(std_key)},
+        "subscription": {"base_url": sub_base, "model": sub_model, "configured": bool(sub_key)},
+        "presets": presets,
+    }
 
 
 @router.post("/test")
@@ -254,9 +312,9 @@ async def test_connection(body: LLMTestRequest | None = None):
     Accepts optional overrides so the frontend can test settings
     the user has edited but not yet saved.
     """
-    api_key = (body.api_key if body and body.api_key else None) or _llm_overrides.get("api_key", settings.llm_api_key)
-    base_url = (body.base_url if body and body.base_url else None) or _llm_overrides.get("base_url", settings.llm_base_url)
-    model = (body.model if body and body.model else None) or _llm_overrides.get("model", settings.llm_model)
+    api_key = (body.api_key if body and body.api_key else None) or _active_slot("api_key") or settings.llm_api_key
+    base_url = (body.base_url if body and body.base_url else None) or _active_slot("base_url") or settings.llm_base_url
+    model = (body.model if body and body.model else None) or _active_slot("model") or settings.llm_model
 
     import logging
     logging.getLogger("llm-test").warning(
