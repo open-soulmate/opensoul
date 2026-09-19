@@ -10,6 +10,15 @@ from pydantic import BaseModel
 
 from src.config import settings
 from src.cortex.loop_guard import LoopGuard
+from src.cortex.token_attribution import (
+    KIND_MEMORY,
+    KIND_MESSAGE,
+    KIND_RAG,
+    ContextItem,
+    build_context_usage,
+    estimate_tokens,
+    get_attributor,
+)
 from src.services.search import semantic_search
 
 logger = logging.getLogger(__name__)
@@ -215,6 +224,63 @@ async def chat_health():
     return {"status": "ok", "component": "ChatSystem"}
 
 
+@router.get("/token-attribution")
+async def token_attribution(limit: int = 20):
+    """P1: 上下文逐项token归因（claude-code SDKContextUsage移植）。
+
+    "上下文被什么吃掉了"的直接答案：最近LLM请求的逐项明细（hippo记忆/RAG chunk/问题）
+    + 聚合摘要（top_consumers/超限记录/平均总量）。
+    """
+    try:
+        attributor = get_attributor()
+        return {
+            "recent": attributor.recent(limit=min(max(limit, 1), 50)),
+            "summary": attributor.summary(),
+        }
+    except Exception as exc:
+        return {"recent": [], "summary": {"total_records": 0, "error": str(exc)}}
+
+
+def _attribute_chat_context(
+    question: str,
+    context_parts: list[str],
+    memory_ctx: str,
+    model: str | None = None,
+    provider: str = "",
+    session_key: str = "",
+) -> dict | None:
+    """P1: 上下文逐项token归因（claude-code SDKContextUsage移植）。
+
+    每次LLM请求把上下文构成逐项记账：hippo记忆逐条 / RAG chunk逐块 / 用户问题，
+    并按模型窗口计算percentage与over_limit（hard_limit vs compaction_window）。
+    观测性旁路：任何失败只debug日志，不阻断chat主路径（fail-safe）。
+    """
+    try:
+        items: list[ContextItem] = []
+        if memory_ctx:
+            mem_lines = [ln for ln in memory_ctx.splitlines() if ln.strip()]
+            for i, ln in enumerate(mem_lines):
+                items.append(
+                    ContextItem(kind=KIND_MEMORY, name=f"hippo_memory[{i}]",
+                                source="hippo.long_term_memory", tokens=estimate_tokens(ln))
+                )
+        for i, part in enumerate(context_parts or []):
+            items.append(
+                ContextItem(kind=KIND_RAG, name=f"rag_chunk[{i}]",
+                            source="search.semantic", tokens=estimate_tokens(part))
+            )
+        items.append(
+            ContextItem(kind=KIND_MESSAGE, name="user_question",
+                        source="user", tokens=estimate_tokens(question))
+        )
+        usage = build_context_usage(items, model=model)
+        get_attributor().record(usage, session_id=session_key, provider=provider, model=model or "")
+        return usage
+    except Exception as exc:
+        logger.debug("token attribution unavailable: %s", exc)
+        return None
+
+
 class ChatRequest(BaseModel):
     question: str
     top_k: int = 5
@@ -240,6 +306,13 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
         attempts, _meta = _route_llm_targets(question)
         # P0-6决策延迟回填：路由决策先记pending，真实结果在本请求内回填同一条目
         dec_id = _route_decision_begin(question, _meta, attempts)
+        # P1: 上下文逐项token归因——降级路径也记账（RAG不可用时上下文仅用户问题）
+        _attribute_chat_context(
+            question, [], "",
+            model=(attempts[0].get("model") if attempts else None),
+            provider=(attempts[0].get("provider", "") if attempts else ""),
+            session_key=str(user_id),
+        )
         attempt_log: list = []
         last_exc: Exception | None = None
         streamed_ok = False
@@ -324,6 +397,13 @@ Answer:"""
     attempts, routing_meta = _route_llm_targets(question)
     # P0-6决策延迟回填：路由决策先记pending，真实结果在本请求内回填同一条目
     dec_id = _route_decision_begin(question, routing_meta, attempts)
+    # P1: 上下文逐项token归因（SDKContextUsage）——记忆/RAG chunk/问题逐项记账
+    _attribute_chat_context(
+        question, context_parts, memory_ctx,
+        model=(attempts[0].get("model") if attempts else None),
+        provider=(attempts[0].get("provider", "") if attempts else ""),
+        session_key=str(user_id),
+    )
     attempt_log = []
     last_exc: Exception | None = None
     streamed_ok = False
@@ -465,6 +545,13 @@ Answer:"""
             continue
     _route_decision_end(dec_id, attempt_log,
                         error=str(last_exc) if answer is None else "")
+    # P1: 上下文逐项token归因——记录真实命中的provider/model对应的上下文构成
+    _attribute_chat_context(
+        req.question, context_parts, memory_ctx,
+        model=(used_target or {}).get("model") or (attempts[0].get("model") if attempts else None),
+        provider=(used_target or {}).get("provider", "") or (attempts[0].get("provider", "") if attempts else ""),
+        session_key=str(user_id),
+    )
     if answer is None:
         return {"answer": f"LLM不可用: {last_exc}", "sources": sources,
                 "routing": {**routing_meta, "error": str(last_exc)}}
