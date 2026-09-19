@@ -6,6 +6,8 @@ Reads from both Hermes state SQLite database and OpenSoul agent_sessions.
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import sqlite3
@@ -505,9 +507,13 @@ async def get_session_messages(
     adb = _get_agent_db()
     if adb:
         try:
+            try:
+                adb.execute("SELECT attachments FROM agent_messages LIMIT 1")
+            except Exception:
+                adb.execute("ALTER TABLE agent_messages ADD COLUMN attachments TEXT")
             rows = adb.execute(
                 """
-                SELECT id, role, content, timestamp
+                SELECT id, role, content, timestamp, attachments
                 FROM agent_messages
                 WHERE session_id = ?
                 ORDER BY id
@@ -516,6 +522,24 @@ async def get_session_messages(
             ).fetchall()
             messages = []
             for r in rows:
+                attachments_out = []
+                if r["attachments"]:
+                    try:
+                        att_list = json.loads(r["attachments"])
+                        for att in att_list:
+                            att_data = None
+                            att_path = att.get("path")
+                            if att_path and os.path.exists(att_path):
+                                with open(att_path, "rb") as af:
+                                    att_data = base64.b64encode(af.read()).decode()
+                            attachments_out.append({
+                                "type": att.get("type", "file"),
+                                "name": att.get("name", "file"),
+                                "mime_type": att.get("mime_type", "application/octet-stream"),
+                                "data": att_data,
+                            })
+                    except Exception as _att_e:
+                        logger.warning("parse attachments error: %s", _att_e)
                 messages.append(
                     {
                         "id": str(r["id"]),
@@ -523,6 +547,7 @@ async def get_session_messages(
                         "content": r["content"] or "",
                         "timestamp": _ts_to_iso(r["timestamp"]),
                         "source": "agent-db",
+                        "attachments": attachments_out if attachments_out else None,
                     }
                 )
             return {"messages": messages, "total": len(messages)}
