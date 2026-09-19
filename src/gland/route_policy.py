@@ -118,6 +118,48 @@ def local_target() -> dict:
     return dict(LOCAL_TARGET)
 
 
+def _decision_feedback_swap(prefer: str, primary: dict, backup: dict) -> tuple[bool, str]:
+    """P0-6 TradingAgents决策延迟回填·读路径①：按决策日志中provider真实成功率反馈
+    决定是否主备互换——"带真实反馈信号的记忆直接影响下一次决策"（进化闭环最小实证）。
+
+    数据源：src/hippo/decision_log.get_provider_stats("llm_routing")——由
+    src/api/chat.py每次LLM调用回填的attempts_detail聚合（provider×ok逐次真实结果）。
+
+    规则（保守、确定性，无数据时行为与接线前完全一致）：
+    - 首选provider：窗口内attempts≥5且failure_rate≥0.5 → 候选互换；
+    - 备选provider有数据（≥5次）：须failure_rate比首选低0.3以上才互换
+      （备选同样糟糕时不换——没有更好的可换）；
+    - 备选无数据：仅当首选failure_rate≥0.8（系统性失败）才切到未知备选（failover语义）；
+    - decision_log不可用/无数据 → 返回(False, "")，路由行为不变（失败静默降级）。
+    """
+    try:
+        from src.hippo.decision_log import get_decision_log
+        stats = get_decision_log().get_provider_stats(domain="llm_routing", window=100)
+    except Exception:
+        return False, ""
+    if not stats:
+        return False, ""
+    p_name = primary.get("provider", "")
+    b_name = backup.get("provider", "")
+    p = stats.get(p_name)
+    if not p or not b_name or p_name == b_name:
+        return False, ""
+    p_rate = p.get("failure_rate", 0.0)
+    p_n = p.get("attempts", 0)
+    if p_n < 5 or p_rate < 0.5:
+        return False, ""
+    b = stats.get(b_name)
+    if b and b.get("attempts", 0) >= 5:
+        b_rate = b.get("failure_rate", 1.0)
+        if b_rate < p_rate - 0.3:
+            return True, (f"{p_name}近{p_n}次失败率{p_rate:.0%}，"
+                          f"{b_name}失败率{b_rate:.0%}→主备互换")
+        return False, ""
+    if p_rate >= 0.8:
+        return True, f"{p_name}近{p_n}次失败率{p_rate:.0%}（系统性失败）→切换到{b_name}"
+    return False, ""
+
+
 def detect_complexity(message: str, auto_params: dict) -> tuple[float, dict]:
     """auto模式的复杂度启发式（0=简单→local，1=复杂→online）"""
     flags = {"code": False, "question": False, "short": False, "image": False}
@@ -176,6 +218,14 @@ def resolve_target(message: str = "") -> dict:
     else:  # balance (default)
         prefer, fallback, reason = "online", "local", "balance模式：在线主链，本地兜底"
         primary, backup = online, local
+
+    # P0-6决策延迟回填·读路径①：决策记忆反馈影响本次路由。
+    # 仅auto/balance模式（用户显式选择的cost/intelligence语义不覆盖）；无数据/异常时静默不变。
+    if mode in ("auto", "balance") and fallback:
+        swapped, fb_note = _decision_feedback_swap(prefer, primary, backup)
+        if swapped:
+            primary, backup = backup, primary
+            reason = f"{reason}；决策记忆反馈：{fb_note}"
 
     out = {
         "mode": mode,

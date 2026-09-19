@@ -17,6 +17,7 @@ from src.hippo.long_term_memory import (
     _normalize_dict_floats,
 )
 from src.hippo.dream_distiller import DreamDistiller, DreamAction, DreamResult
+from src.hippo.decision_log import DecisionEntry, DecisionLog, get_decision_log
 
 __all__ = [
     "DecayEngine",
@@ -33,4 +34,7 @@ __all__ = [
     "DreamDistiller",
     "DreamAction",
     "DreamResult",
+    "DecisionEntry",
+    "DecisionLog",
+    "get_decision_log",
 ]

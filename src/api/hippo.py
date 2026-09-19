@@ -86,6 +86,7 @@ async def health():
         "sessions": sessions.get_stats(),
         "long_term_memory": _lt_store.get_stats(),
         "dream_distiller": _dream_distiller.get_stats(),
+        "decision_log": _decision_log.get_stats(),
     }
 
 
@@ -611,6 +612,118 @@ async def ltm_delete(memory_id: str, req: LTMDeleteRequest = LTMDeleteRequest())
     if not success:
         raise HTTPException(444, f"Long-term memory {memory_id} not found")
     return {"deleted": True, "memory_id": memory_id, "hard_delete": req.hard_delete}
+
+
+# ── Decision Log (TradingAgents延迟回填: pending→update_with_outcome) ──
+# 调研来源：14-tradingagents-source.md #1/#2/#3/#4 + SUMMARY.md P0-6。
+# 运行时写路径：src/api/chat.py路由决策自动记录；读路径①：src/gland/route_policy.py反馈。
+from src.hippo.decision_log import get_decision_log
+_decision_log = get_decision_log()
+
+
+class DecisionStoreRequest(BaseModel):
+    decision: str
+    domain: str = "general"
+    agent_id: str = "default"
+    context: str = ""
+    rating: str = ""
+    metadata: dict = {}
+    source_session: str = ""
+
+
+class DecisionOutcomeRequest(BaseModel):
+    decision_id: str = ""
+    domain: str = ""
+    outcome: str = ""
+    metrics: dict = {}
+    reflection: str = ""
+    success: bool | None = None
+    resolution_date: str = ""  # YYYY-MM-DD结果已知日期；缺省=今天（as_of时间旅行过滤事实源）
+
+
+@router.post("/decisions")
+async def decision_store(req: DecisionStoreRequest):
+    """记录一条pending决策（TradingAgents store_decision）。
+
+    幂等：同domain+同decision已有pending条目时不重复创建（返回既有条目+deduped=True）。
+    """
+    if not req.decision.strip():
+        raise HTTPException(422, "decision must be non-empty")
+    return _decision_log.store_decision(
+        decision=req.decision,
+        domain=req.domain,
+        agent_id=req.agent_id,
+        context=req.context,
+        rating=req.rating,
+        metadata=req.metadata,
+        source_session=req.source_session,
+    )
+
+
+@router.get("/decisions")
+async def decision_list(
+    status: str = Query(default=""),
+    domain: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """列出决策记录（status=pending/resolved过滤）。"""
+    entries = _decision_log.list_decisions(status=status, domain=domain, limit=limit)
+    return {"decisions": entries, "count": len(entries)}
+
+
+@router.get("/decisions/stats")
+async def decision_stats():
+    """决策日志统计：success_rate/by_domain/provider成功率——"有没有进化"的度量面。"""
+    return _decision_log.get_stats()
+
+
+@router.get("/decisions/context")
+async def decision_context(
+    domain: str = Query(default=""),
+    n_same: int = Query(default=5, ge=0, le=20),
+    n_cross: int = Query(default=3, ge=0, le=20),
+    as_of: str = Query(default=""),
+    token_budget: int = Query(default=800, ge=100, le=8000),
+):
+    """带真实反馈信号的few-shot上下文（同域全量/跨域反思两档 + as_of时间旅行过滤）。"""
+    context = _decision_log.get_past_context(
+        domain=domain, n_same=n_same, n_cross=n_cross,
+        as_of=as_of, token_budget=token_budget,
+    )
+    return {"context": context}
+
+
+@router.get("/decisions/audit")
+async def decision_audit(
+    decision_id: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """决策审计轨迹（mem0 §1.2：谁在何时把哪条决策从什么改成什么）。"""
+    history = _decision_log.get_audit(decision_id=decision_id, limit=limit)
+    return {"history": history, "count": len(history)}
+
+
+@router.post("/decisions/{decision_id}/outcome")
+async def decision_outcome(decision_id: str, req: DecisionOutcomeRequest):
+    """把真实结果回填到pending决策（TradingAgents update_with_outcome）。
+
+    只更新pending条目；已resolved条目原样返回且带_already_resolved标志（幂等）。
+    未知decision_id返回444（mem0 §1.1：失败必须可见，不静默假成功）。
+    """
+    result = _decision_log.update_with_outcome(
+        decision_id=decision_id,
+        domain=req.domain,
+        outcome=req.outcome,
+        metrics=req.metrics,
+        reflection=req.reflection,
+        success=req.success,
+        resolution_date=req.resolution_date,
+    )
+    if result is None:
+        raise HTTPException(
+            444, f"Decision {decision_id} not found (or no pending decision in domain)"
+        )
+    return result
 
 
 # ── Stats ──────────────────────────────────────────────────

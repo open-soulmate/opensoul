@@ -146,6 +146,69 @@ def _check_loop(response_text: str, session_key: str = "default") -> dict | None
     return None
 
 
+# ── P0-6 TradingAgents决策延迟回填（pending→update_with_outcome）──────────
+# 写路径：LLM路由决策先记pending，调用结果出来后把真实attempts_detail回填到同一条目
+# ——"先记决策、后补结果"让决策记忆携带真实反馈信号（SUMMARY.md P0-6"不进化"痛点独有解）。
+# 读路径①：src/gland/route_policy.py按provider成功率反馈调整主备（决策记忆影响下一次决策）
+# 读路径②：/api/hippo/decisions/* 六个端点 + get_past_context() few-shot素材
+
+def _route_decision_begin(question: str, routing_meta: dict, attempts: list) -> str:
+    """记录pending路由决策（TradingAgents store_decision）。失败静默，不阻断chat。"""
+    try:
+        from src.hippo.decision_log import get_decision_log
+        primary = attempts[0] if attempts else {}
+        decision = (
+            f"mode={routing_meta.get('mode', '')} prefer={routing_meta.get('prefer', '')} "
+            f"primary={primary.get('provider', '')}:{primary.get('model', '')} "
+            f"q_len={len(question)}"
+        )
+        entry = get_decision_log().store_decision(
+            decision=decision,
+            domain="llm_routing",
+            agent_id="chat",
+            context=question[:200],
+            metadata={"attempts": [t.get("provider", "") for t in attempts]},
+        )
+        return str(entry.get("decision_id", ""))
+    except Exception as exc:
+        logger.debug("decision log (begin) unavailable: %s", exc)
+        return ""
+
+
+def _route_decision_end(decision_id: str, attempt_log: list, error: str = "") -> None:
+    """回填outcome到pending决策（TradingAgents update_with_outcome）。失败静默。"""
+    if not decision_id:
+        return
+    try:
+        from src.hippo.decision_log import get_decision_log
+        success = any(a.get("ok") for a in attempt_log)
+        used = next((a.get("provider", "") for a in attempt_log if a.get("ok")), "")
+        failover = success and len(attempt_log) > 1
+        if success and not failover:
+            reflection = f"首选provider {used} 直接成功"
+        elif success:
+            reflection = f"首选失败，failover到 {used} 成功（尝试{len(attempt_log)}次）"
+        else:
+            reflection = f"全部provider失败：{error[:200]}"
+        metrics = {
+            "success": success,
+            "used_provider": used,
+            "attempts": len(attempt_log),
+            "failover": failover,
+            "attempts_detail": attempt_log,
+        }
+        get_decision_log().update_with_outcome(
+            decision_id=decision_id,
+            domain="llm_routing",
+            outcome=reflection,
+            metrics=metrics,
+            reflection=reflection,
+            success=success,
+        )
+    except Exception as exc:
+        logger.debug("decision log (end) unavailable: %s", exc)
+
+
 @router.get("/health")
 async def chat_health():
     """Chat system health check."""
@@ -175,6 +238,9 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
         # 降级：不返回error，继续走LLM路径（模型路由接线：按mode选target+备target重试）
         prompt = question
         attempts, _meta = _route_llm_targets(question)
+        # P0-6决策延迟回填：路由决策先记pending，真实结果在本请求内回填同一条目
+        dec_id = _route_decision_begin(question, _meta, attempts)
+        attempt_log: list = []
         last_exc: Exception | None = None
         streamed_ok = False
         for t in attempts:
@@ -207,10 +273,15 @@ async def rag_stream(question: str, user_id: UUID, top_k: int):
                             except json.JSONDecodeError:
                                 continue
                 streamed_ok = True
+                attempt_log.append({"provider": t.get("provider", ""), "ok": True})
                 break
             except Exception as exc:
                 last_exc = exc
+                attempt_log.append({"provider": t.get("provider", ""), "ok": False,
+                                    "error": str(exc)[:120]})
                 continue
+        _route_decision_end(dec_id, attempt_log,
+                            error=str(last_exc) if not streamed_ok else "")
         if not streamed_ok:
             yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
         else:
@@ -251,6 +322,9 @@ Answer:"""
 
     # 模型路由接线：按mode选LLM target，主target失败自动切备target
     attempts, routing_meta = _route_llm_targets(question)
+    # P0-6决策延迟回填：路由决策先记pending，真实结果在本请求内回填同一条目
+    dec_id = _route_decision_begin(question, routing_meta, attempts)
+    attempt_log = []
     last_exc: Exception | None = None
     streamed_ok = False
     for t in attempts:
@@ -287,10 +361,15 @@ Answer:"""
                         except json.JSONDecodeError:
                             continue
             streamed_ok = True
+            attempt_log.append({"provider": t.get("provider", ""), "ok": True})
             break
         except Exception as exc:
             last_exc = exc
+            attempt_log.append({"provider": t.get("provider", ""), "ok": False,
+                                "error": str(exc)[:120]})
             continue
+    _route_decision_end(dec_id, attempt_log,
+                        error=str(last_exc) if not streamed_ok else "")
 
     if not streamed_ok:
         yield f"data: {json.dumps({'type': 'error', 'content': f'LLM也不可用: {last_exc}'})}\n\n"
@@ -353,6 +432,9 @@ Answer:"""
 
     # 模型路由接线：按mode选LLM target，失败自动切备target
     attempts, routing_meta = _route_llm_targets(req.question)
+    # P0-6决策延迟回填：路由决策先记pending，真实结果在本请求内回填同一条目
+    dec_id = _route_decision_begin(req.question, routing_meta, attempts)
+    attempt_log = []
     answer = None
     last_exc: Exception | None = None
     used_target = None
@@ -374,10 +456,15 @@ Answer:"""
                 resp.raise_for_status()
                 answer = resp.json()["choices"][0]["message"]["content"]
                 used_target = {"provider": t.get("provider"), "model": t.get("model")}
+                attempt_log.append({"provider": t.get("provider", ""), "ok": True})
                 break
         except Exception as exc:
             last_exc = exc
+            attempt_log.append({"provider": t.get("provider", ""), "ok": False,
+                                "error": str(exc)[:120]})
             continue
+    _route_decision_end(dec_id, attempt_log,
+                        error=str(last_exc) if answer is None else "")
     if answer is None:
         return {"answer": f"LLM不可用: {last_exc}", "sources": sources,
                 "routing": {**routing_meta, "error": str(last_exc)}}
