@@ -4,6 +4,7 @@ Chains: Vein → Immune → Sense → Soul (Knowledge)
 One upload, automatic multi-organ processing.
 """
 
+import asyncio
 import logging
 import time
 
@@ -14,6 +15,10 @@ from src.nerve.event_bridge import push_event
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# 知识入库步骤的墙钟上限：embedding降级预算12s+DB操作留余量；
+# 超时→步骤标记error并返回，上传请求永不挂死（此前embedding挂起≈3分钟→客户端ReadTimeout）
+KNOWLEDGE_STEP_TIMEOUT = 20.0
 
 
 # ── Request Schemas ────────────────────────────────────────
@@ -356,15 +361,25 @@ async def pipeline_upload(
                 "error": "Content blocked by security scan (high risk)",
             }
 
-    # Step 4: Knowledge import
+    # Step 4: Knowledge import（wait_for有界：超时=步骤error可见，不拖垮整个上传请求）
     if not skip_knowledge and extracted_text:
         knowledge_tags = tag_list + ["pipeline", pipeline, "auto-import"]
-        knowledge_result = await _step_knowledge_import(
-            title=f"[Pipeline] {filename}",
-            content=extracted_text,
-            tags=knowledge_tags,
-            user_id=user_id,
-        )
+        try:
+            knowledge_result = await asyncio.wait_for(
+                _step_knowledge_import(
+                    title=f"[Pipeline] {filename}",
+                    content=extracted_text,
+                    tags=knowledge_tags,
+                    user_id=user_id,
+                ),
+                timeout=KNOWLEDGE_STEP_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            knowledge_result = {
+                "step": "knowledge",
+                "status": "error",
+                "error": f"knowledge import timed out after {KNOWLEDGE_STEP_TIMEOUT:.0f}s (bounded so upload never hangs)",
+            }
         steps.append(knowledge_result)
 
     finished_at = time.time()
@@ -450,15 +465,25 @@ async def pipeline_run(req: PipelineRunRequest):
         immune_result = await _step_immune_scan(extracted_text)
         steps.append(immune_result)
 
-    # Knowledge import
+    # Knowledge import（同样有界）
     if not req.skip_knowledge and extracted_text:
         tags = (req.tags or []) + ["pipeline", pipeline, "auto-import"]
-        knowledge_result = await _step_knowledge_import(
-            title=f"[Pipeline] {meta.name}",
-            content=extracted_text,
-            tags=tags,
-            user_id=req.user_id,
-        )
+        try:
+            knowledge_result = await asyncio.wait_for(
+                _step_knowledge_import(
+                    title=f"[Pipeline] {meta.name}",
+                    content=extracted_text,
+                    tags=tags,
+                    user_id=req.user_id,
+                ),
+                timeout=KNOWLEDGE_STEP_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            knowledge_result = {
+                "step": "knowledge",
+                "status": "error",
+                "error": f"knowledge import timed out after {KNOWLEDGE_STEP_TIMEOUT:.0f}s (bounded so pipeline never hangs)",
+            }
         steps.append(knowledge_result)
 
     finished_at = time.time()

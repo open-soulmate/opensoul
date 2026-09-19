@@ -364,27 +364,39 @@ async def test_connection(body: LLMTestRequest | None = None):
 
 @router.post("/completions")
 async def completions(req: LLMRequest):
-    api_key = _llm_overrides.get("api_key", settings.llm_api_key)
+    # 双体系槽位解析：variant槽位优先，回退legacy槽位，再回退settings
+    api_key = _active_slot("api_key") or settings.llm_api_key
     if not api_key:
         raise HTTPException(status_code=400, detail="LLM API key not configured")
 
-    base_url = _llm_overrides.get("base_url", settings.llm_base_url)
-    model = req.model or _llm_overrides.get("model", settings.llm_model)
+    base_url = _active_slot("base_url") or settings.llm_base_url
+    model = req.model or _active_slot("model") or settings.llm_model
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
-            },
-            json={
-                "model": model,
-                "messages": req.messages,
-                "temperature": req.temperature,
-                "max_tokens": req.max_tokens,
-            },
-            timeout=120,
-        )
-        resp.raise_for_status()
-        return resp.json()
+    # 失败必须typed可见（mem0 §1.1）：上游错误→502，超时→504，不可达→502；
+    # 禁止裸raise导致ASGI 500纯文本（此前connect失败直接500，客户端无法区分原因）
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Content-Type": "application/json",
+                    **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+                },
+                json={
+                    "model": model,
+                    "messages": req.messages,
+                    "temperature": req.temperature,
+                    "max_tokens": req.max_tokens,
+                },
+                timeout=120,
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"LLM API error: {e.response.status_code} — {e.response.text[:200]}")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="LLM request timed out (120s)")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"LLM upstream unreachable: {type(e).__name__}: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM completion failed: {type(e).__name__}: {e}")

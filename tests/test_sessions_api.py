@@ -34,9 +34,16 @@ class TestSessionsList:
         assert "sessions" in data
 
     def test_list_sessions_limit_boundary(self, client):
-        # Limit too high — should be capped at 200
+        # 契约实证（2026-09-19）：limit上限=500——前端 app-shell.tsx:192 请求 ?limit=500，
+        # 生产端点 sessions_api.py Query(le=500)，500必须200（收紧到le=200会打断前端会话列表）
         resp = client.get("/api/sessions", params={"limit": 500})
-        assert resp.status_code == 422  # FastAPI validation error
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("limit") == 500
+        assert len(data["sessions"]) <= 500
+        # 超过上限 → FastAPI 422 validation error
+        resp = client.get("/api/sessions", params={"limit": 501})
+        assert resp.status_code == 422
 
     def test_list_sessions_limit_too_low(self, client):
         resp = client.get("/api/sessions", params={"limit": 0})

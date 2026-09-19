@@ -161,6 +161,27 @@ class SQLitePool:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.execute("PRAGMA foreign_keys=ON")
+        await self._ensure_schema()
+
+    async def _ensure_schema(self):
+        """幂等schema guard：老库缺列自动补齐（migrations/*.sql只建新表不ALTER已有表，
+        2026-09-19实证：live knowledge_chunks缺token_count列→知识入库100%报错）。
+
+        模式：PRAGMA table_info探测→缺失才ALTER，幂等可重复执行。
+        每补一列在_SCHEMA_FIXES登记一行；出现新的"no column named"错误时在此登记。
+        """
+        _SCHEMA_FIXES = [
+            ("knowledge_chunks", "token_count", "ALTER TABLE knowledge_chunks ADD COLUMN token_count INT DEFAULT 0"),
+        ]
+        conn = self._conn
+        if conn is None:
+            return
+        for table, column, ddl in _SCHEMA_FIXES:
+            async with conn.execute(f"PRAGMA table_info({table})") as cursor:
+                cols = [row[1] for row in await cursor.fetchall()]
+            if cols and column not in cols:
+                await conn.execute(ddl)
+                await conn.commit()
 
     async def disconnect(self):
         if self._conn:

@@ -1,5 +1,7 @@
 """Integration tests for LLM Proxy API — configuration and completions endpoints."""
 
+import pytest
+
 
 class TestLLMHealth:
     def test_health(self, client):
@@ -11,6 +13,33 @@ class TestLLMHealth:
 
 
 class TestLLMConfig:
+    @pytest.fixture(autouse=True)
+    def _restore_live_config(self, client):
+        """POST /api/llm/config 持久化写穿live .env——测试后必须完整恢复
+        （2026-09-19实证：config测试曾污染生产base_url/model无人恢复）。"""
+        snap = client.get("/api/llm/config").json()
+        yield
+        std = snap.get("standard") or {}
+        sub = snap.get("subscription") or {}
+        client.post("/api/llm/config", json={
+            "variant": "subscription",
+            "base_url": sub.get("base_url", ""),
+            "api_key": sub.get("api_key", ""),
+            "model": sub.get("model", ""),
+        })
+        client.post("/api/llm/config", json={
+            "variant": "standard",
+            "base_url": std.get("base_url", ""),
+            "api_key": std.get("api_key", ""),
+            "model": std.get("model", ""),
+        })
+        client.post("/api/llm/config", json={
+            "variant": snap.get("active_variant", "standard"),
+            "base_url": snap.get("base_url", ""),
+            "api_key": snap.get("api_key", ""),
+            "model": snap.get("model", ""),
+        })
+
     def test_get_config(self, client):
         resp = client.get("/api/llm/config")
         assert resp.status_code == 200
@@ -18,9 +47,14 @@ class TestLLMConfig:
         assert "base_url" in data
         assert "api_key" in data
         assert "model" in data
-        # API key should be masked
-        if data["api_key"]:
-            assert data["api_key"] == "***"
+        # 契约（2026-09-19实证）：默认返回真实key供settings页表单回写
+        # （settings-client.tsx:384/:545 填充+原样POST回写，masked默认值会覆盖真实key）；
+        # 掩码机制用显式 ?masked=true 验证
+        resp_masked = client.get("/api/llm/config", params={"masked": True})
+        assert resp_masked.status_code == 200
+        masked = resp_masked.json()
+        if masked["api_key"]:
+            assert masked["api_key"] == "***"
 
     def test_update_config(self, client):
         resp = client.post(

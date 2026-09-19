@@ -58,7 +58,8 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
         points = []
         for chunk, embedding in zip(chunks, embeddings):
             point_id = f"{knowledge_id}_{chunk.index}"
-            if PointStruct is not None:
+            # 空向量（embedding降级）不写qdrant——空vector会被qdrant拒绝并打断整个入库
+            if PointStruct is not None and embedding:
                 points.append(
                     PointStruct(
                         id=point_id,
@@ -79,7 +80,7 @@ async def create_knowledge(data: KnowledgeCreate, user_id: UUID) -> dict:
                 knowledge_id,
                 chunk.index,
                 chunk.content,
-                point_id,
+                point_id if embedding else None,
                 len(chunk.content.split()),
             )
         if points:

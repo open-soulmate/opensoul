@@ -6,10 +6,23 @@ from src.services.embedding import get_embedding
 
 
 async def semantic_search(query: str, user_id: UUID, limit: int = 10) -> list[dict]:
-    """Search using vector similarity."""
+    """Search using vector similarity.
+
+    Embedding失败/超时降级为空结果+可见日志（embedding.py预算12s内返回），
+    不允许向上传播异常把搜索API打成500——hybrid模式由fulltext兜底。
+    """
     if not qdrant_client.AVAILABLE:
         return []
-    query_vector = await get_embedding(query)
+    try:
+        query_vector = await get_embedding(query)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "semantic_search degraded (embedding unavailable): %s — returning empty vector results", exc
+        )
+        return []
+    if not query_vector:
+        return []
     results = qdrant_client.search(query_vector, limit=limit, user_id=user_id)
     return [
         {
