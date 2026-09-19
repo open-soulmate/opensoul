@@ -195,12 +195,26 @@ async def _probe_variant(base_url: str, api_key: str) -> str:
                 f"{base_url.rstrip('/')}/models",
                 headers={"Authorization": f"Bearer {api_key}"},
             )
-        if resp.status_code == 200:
-            return "ok"
         if resp.status_code in (401, 403):
             return "invalid_key"
         if resp.status_code == 402:
             return "low_balance"
+        if resp.status_code == 200:
+            # models可达≠余额充足：做一次最小chat调用探测真实可用性（max_tokens=1，成本可忽略）
+            try:
+                model = _llm_overrides.get("model") or ""
+                if model:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        probe = await client.post(
+                            f"{base_url.rstrip('/')}/chat/completions",
+                            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                            json={"model": model, "messages": [{"role": "user", "content": "."}], "max_tokens": 1},
+                        )
+                    if probe.status_code == 402:
+                        return "low_balance"
+            except Exception:
+                pass
+            return "ok"
         return f"error_{resp.status_code}"
     except Exception:
         return "unreachable"
