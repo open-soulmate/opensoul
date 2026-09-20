@@ -33,6 +33,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from src.gland.router import extract_chat_text
+
 logger = logging.getLogger("opensoul.hippo.memory_pipeline")
 
 VALID_OPS = {"ADD_NEW", "MERGE_INTO", "UPDATE", "REJECT"}
@@ -290,6 +292,8 @@ class Phase1Result:
             "candidates": [c.to_dict() for c in self.candidates],
             "count": len(self.candidates),
             "error": self.error,
+            # 失败可见：count=0时调用方可审计LLM原始返回（截断500字）
+            "raw_response": self.raw_response[:500],
             "created_at": self.created_at,
         }
 
@@ -375,6 +379,9 @@ class MemoryPipeline:
             res.error = f"Phase1 LLM call failed: {e}"
             logger.error("Pipeline %s: %s", run_id, res.error)
             return res
+        # 非str响应（OpenAI风格dict等）统一经权威解包点（router.extract_chat_text）
+        if not isinstance(response, str):
+            response = extract_chat_text(response)
         res.raw_response = (response or "")[:2000]
         res.candidates = parse_phase1(response)
         return res
@@ -400,6 +407,8 @@ class MemoryPipeline:
                     "[[EXISTING]]", self._format_memories(existing) or "（无现有记忆）"
                 ).replace("[[CANDIDATES]]", self._format_candidates(candidates))
                 response = await self._call_llm(prompt, "请为每条候选输出整合决策JSON数组。")
+                if not isinstance(response, str):
+                    response = extract_chat_text(response)
                 decisions, pmeta = parse_phase2(response or "", candidates)
                 if decisions:
                     meta = {"phase2": "llm", **pmeta}
@@ -740,9 +749,9 @@ class MemoryPipeline:
                 temperature=0.2,
                 max_tokens=4096,
             )
-            if isinstance(result, dict):
-                return result.get("content", result.get("text", str(result)))
-            return str(result)
+            # 权威解包：chat()返回provider原始响应体（choices[0].message.content），
+            # 此前的result.get("content")猜测在真实provider上永远落空（live实证bug）
+            return extract_chat_text(result)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Gland router call failed: {e}") from e
 

@@ -34,6 +34,36 @@ def _outbound_redactor():
 
 
 _REDACTOR = None
+
+
+def extract_chat_text(result) -> str:
+    """从chat()返回的OpenAI风格响应体提取文本content（唯一权威解包点）。
+
+    背景（live实证bug）：chat()/_call_chat返回provider原始响应体resp.json()——
+    choices[0].message.content结构；调用方此前各自猜测形状
+    （result.get("content", result.get("text", str(result)))），真实provider上
+    顶层无content键→回退str(整个响应体)→下游JSON解析全部失败且无error
+    （Phase1提取count=0、dream gland路径0 actions——"写了≠接线了≠能跑了"标本）。
+    解包优先级：str直通 → 顶层content/text（扁平测试桩/个别provider）→
+    choices[0].message.content → choices[0].text → 无法识别时str(result)
+    （保留repr进调用方raw_response，失败必须可见而非静默空串）。
+    """
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        if isinstance(result.get("content"), str):
+            return result["content"]
+        if isinstance(result.get("text"), str):
+            return result["text"]
+        choices = result.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0] or {}
+            msg = first.get("message") or {}
+            if isinstance(msg.get("content"), str) and msg["content"]:
+                return msg["content"]
+            if isinstance(first.get("text"), str) and first["text"]:
+                return first["text"]
+    return str(result)
 _REDACTOR_INIT = False
 # Minimum risk level redacted before text leaves the machine toward an LLM
 # provider. "critical" = API keys/tokens/passwords only; set to "low" to also

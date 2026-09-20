@@ -26,7 +26,8 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def make_llm(response_text: str):
+def make_llm(response_text):
+    """Fake LLM：原样返回response_text（str或OpenAI风格dict——解包回归测试用）。"""
     async def _llm(system_prompt, user_prompt):
         return response_text
     return _llm
@@ -507,3 +508,55 @@ class _FakeQueue:
 
     def register_handler(self, name, fn):
         self.handlers[name] = fn
+
+
+# ── P0修复回归：provider响应解包（router.extract_chat_text权威解包点）────
+# live实证bug：chat()返回OpenAI原始响应体choices[0].message.content，
+# 旧代码result.get("content")落空→str(整个响应体)→解析0条且无error。
+
+class TestProviderResponseUnwrap:
+    def test_extract_chat_text_openai_body(self):
+        from src.gland.router import extract_chat_text
+        body = {"choices": [{"finish_reason": "stop", "index": 0,
+                              "message": {"content": "正文内容", "role": "assistant"}}]}
+        assert extract_chat_text(body) == "正文内容"
+
+    def test_extract_chat_text_flat_str_and_unknown(self):
+        from src.gland.router import extract_chat_text
+        assert extract_chat_text({"content": "直接内容"}) == "直接内容"
+        assert extract_chat_text({"text": "text字段"}) == "text字段"
+        assert extract_chat_text("已是字符串") == "已是字符串"
+        # 无法识别的dict形状→repr保留（失败可见，不静默空串）
+        assert extract_chat_text({"choices": []}).startswith("{")
+
+    def test_pipeline_openai_shaped_llm_response(self, store):
+        openai_body = {"choices": [{"message": {"content": PHASE1_RESP, "role": "assistant"}}]}
+        pipe = MemoryPipeline(ltm_store=store, llm_call=make_llm(openai_body))
+        result = run(pipe.run(
+            messages=[{"role": "user", "content": "以后请用中文回复，项目用Python 3.12"}],
+            session_id="s-unwrap",
+        ))
+        assert result.error == ""
+        assert result.phase1_count == 2  # 解包后Phase1候选正确解析（修复前=0）
+        contents = [m["content"] for m in store.list_memories(limit=100)]
+        assert "用户偏好用中文回复" in contents
+        # extract端点可观测：raw_response即解包后的JSON（非响应体repr）
+        p1 = run(pipe.extract(messages=[{"role": "user", "content": "x"}]))
+        assert "候选" in p1.raw_response or "用户偏好" in p1.raw_response
+        assert "choices" not in p1.raw_response  # 不再是整个响应体的repr
+
+    def test_dream_openai_shaped_response(self, store):
+        from src.hippo.dream_distiller import DreamDistiller
+        dream_actions = json.dumps([
+            {"action": "ADD", "content": "解包修复后入库的记忆", "memory_type": "semantic",
+             "importance": 0.6, "reason": "unwrap回归"},
+        ])
+        openai_body = {"choices": [{"message": {"content": dream_actions, "role": "assistant"}}]}
+        dd = DreamDistiller(ltm_store=store, llm_call=make_llm(openai_body))
+        result = run(dd.dream(messages=[{"role": "user", "content": "记住：解包修复后入库的记忆"}]))
+        assert result.error == ""
+        assert result.applied == 1  # 修复前：gland形状→0 actions
+        contents = [m["content"] for m in store.list_memories(limit=100)]
+        assert "解包修复后入库的记忆" in contents
+        d = result.to_dict()
+        assert "raw_response" in d  # 失败可见字段

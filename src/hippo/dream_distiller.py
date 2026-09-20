@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from src.gland.router import extract_chat_text
+
 logger = logging.getLogger("opensoul.hippo.dream")
 
 
@@ -73,6 +75,8 @@ class DreamResult:
             "failed": self.failed,
             "echo_blocked": self.echo_blocked,
             "error": self.error,
+            # 失败可见：0 actions时调用方可审计LLM原始返回（截断500字）
+            "raw_response": (self.raw_response or "")[:500],
             "created_at": self.created_at,
         }
 
@@ -317,6 +321,10 @@ class DreamDistiller:
             self._dream_history.append(result.to_dict())
             return result
 
+        # 非str响应（OpenAI风格dict等）统一经权威解包点（router.extract_chat_text）——
+        # 此前gland路径把整个响应体str()喂给解析器→0 actions且无error（live实证bug）
+        if not isinstance(response, str):
+            response = extract_chat_text(response)
         result.raw_response = response[:2000]
 
         # Parse actions
@@ -438,9 +446,9 @@ class DreamDistiller:
                 temperature=0.3,  # Low temperature for consistent distillation
                 max_tokens=4096,
             )
-            if isinstance(result, dict):
-                return result.get("content", result.get("text", str(result)))
-            return str(result)
+            # 权威解包：chat()返回provider原始响应体（choices[0].message.content），
+            # 此前的result.get("content")猜测在真实provider上永远落空（live实证bug）
+            return extract_chat_text(result)
         except Exception as e:
             raise RuntimeError(f"Gland router call failed: {e}") from e
 
