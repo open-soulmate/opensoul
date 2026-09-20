@@ -451,6 +451,130 @@ async def dag_stats():
     return dag_planner.get_stats()
 
 
+# ── P1 Goal自主目标循环（kilocode goal/runner.ts移植）──
+from src.will.goal_runner import (
+    GoalCreate as _GoalCreate,
+    GoalReport as _GoalReport,
+    GoalState as _GoalState,
+    get_goal_runner,
+)
+
+class GoalCreateRequest(BaseModel):
+    session_id: str = ""
+    description: str
+    max_loops: int = 50
+
+class GoalReportRequest(BaseModel):
+    status: str  # "complete" | "blocked"
+    reason: str = ""
+
+class GoalEventRequest(BaseModel):
+    tool_name: str
+    result: dict[str, Any] = Field(default_factory=dict)
+    detail: str = ""
+
+@router.post("/goals")
+async def create_goal(req: GoalCreateRequest):
+    """Create a new autonomous goal. Admission check applied."""
+    runner = get_goal_runner()
+    goal = runner.create_goal(_GoalCreate(
+        session_id=req.session_id,
+        description=req.description,
+        max_loops=req.max_loops,
+    ))
+    if not goal:
+        raise HTTPException(409, "Admission denied — session already has active/blocked goal")
+    return goal.model_dump()
+
+@router.get("/goals")
+async def list_goals(
+    session_id: str = Query(default=None),
+    state: str = Query(default=None),
+):
+    """List goals, optionally filtered by session or state."""
+    runner = get_goal_runner()
+    gs = runner.list_goals(
+        session_id=session_id,
+        state=_GoalState(state) if state else None,
+    )
+    return {"goals": [g.model_dump() for g in gs], "count": len(gs)}
+
+@router.get("/goals/{goal_id}")
+async def get_goal(goal_id: str):
+    """Get goal details including event history."""
+    runner = get_goal_runner()
+    goal = runner.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return goal.model_dump()
+
+@router.delete("/goals/{goal_id}")
+async def delete_goal(goal_id: str):
+    """Delete a goal."""
+    runner = get_goal_runner()
+    if not runner.delete_goal(goal_id):
+        raise HTTPException(404, "Goal not found")
+    return {"status": "ok", "goal_id": goal_id}
+
+@router.post("/goals/{goal_id}/report")
+async def goal_report(goal_id: str, req: GoalReportRequest):
+    """Agent self-report via goal_report protocol.
+
+    注意：这是agent自报，不是独立验证。事件驱动计数决定是否真正COMPLETED。
+    """
+    runner = get_goal_runner()
+    goal = runner.goal_report(_GoalReport(
+        goal_id=goal_id,
+        status=req.status,
+        reason=req.reason,
+    ))
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return goal.model_dump()
+
+@router.post("/goals/{goal_id}/events")
+async def record_goal_event(goal_id: str, req: GoalEventRequest):
+    """Record a tool execution event for event-driven outcome counting."""
+    runner = get_goal_runner()
+    event = runner.record_event(goal_id, req.tool_name, req.result, req.detail)
+    if event is None:
+        raise HTTPException(404, "Goal not found or already terminal")
+    goal = runner.get_goal(goal_id)
+    return {"event": event.model_dump(), "goal_state": goal.state.value if goal else "unknown"}
+
+@router.post("/goals/{goal_id}/pause")
+async def pause_goal(goal_id: str, reason: str = Query(default="User paused")):
+    """Pause an active goal (user preemption). Not terminal."""
+    runner = get_goal_runner()
+    goal = runner.pause_goal(goal_id, reason)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return goal.model_dump()
+
+@router.post("/goals/{goal_id}/resume")
+async def resume_goal(goal_id: str, reason: str = Query(default="User resumed")):
+    """Resume a paused goal. BLOCKED goals require goal_report first."""
+    runner = get_goal_runner()
+    goal = runner.resume_goal(goal_id, reason)
+    if not goal:
+        raise HTTPException(400, "Cannot resume — goal not found, terminal, or BLOCKED")
+    return goal.model_dump()
+
+@router.post("/goals/{goal_id}/cancel")
+async def cancel_goal(goal_id: str, reason: str = Query(default="User cancelled")):
+    """Cancel a goal → FAILED terminal state."""
+    runner = get_goal_runner()
+    goal = runner.cancel_goal(goal_id, reason)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return goal.model_dump()
+
+@router.get("/goals-stats")
+async def goal_stats():
+    """Goal runner statistics for monitoring panel."""
+    runner = get_goal_runner()
+    return runner.get_stats()
+
 # ── P0-8 后台作业队列（agno job_queue模式）──
 
 # 运行时接线（2026-09-19 cron轮，"写了≠接线了"修复）：handler注册在模块
