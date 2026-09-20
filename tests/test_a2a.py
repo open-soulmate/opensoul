@@ -9,6 +9,8 @@ Tests the real service-integrated task handlers:
 
 import pytest
 
+pytestmark = pytest.mark.live  # 需要活服务的集成测试——CI用-m "not live"排除
+
 
 class TestAgentCardDiscovery:
     """Test /.well-known/agent.json endpoint."""

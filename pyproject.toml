@@ -55,3 +55,8 @@ ignore = ["E501", "E402", "F601", "N815", "N806", "E722", "E741", "F401", "F402"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+markers = [
+    "live: 需要活服务运行的集成测试（CI用-m 'not live'排除）",
+]

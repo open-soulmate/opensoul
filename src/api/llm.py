@@ -267,6 +267,12 @@ async def get_config(masked: bool = False):
 @router.post("/config")
 async def save_config(data: LLMConfigUpdate):
     """Save per-provider×variant config to profiles JSON + sync active to .env."""
+    # 空请求体幂等：不做任何变更，不清空现有配置
+    if all(
+        getattr(data, f, None) is None
+        for f in ("provider", "variant", "base_url", "api_key", "model")
+    ):
+        return await get_config()
     profiles = _migrate_env_to_profiles()
     provider = (data.provider or "mimo").strip() or "mimo"
     variant = (data.variant or "standard").strip() or "standard"
@@ -287,16 +293,23 @@ async def save_config(data: LLMConfigUpdate):
                 prof["url"] = v["base_url"]
     profiles[provider][variant] = prof
     _save_profiles(profiles)
-    _llm_overrides[f"{variant}_base_url"] = prof.get("url", "")
-    _llm_overrides[f"{variant}_api_key"] = prof.get("api_key", "")
-    _llm_overrides[f"{variant}_model"] = prof.get("model", "")
-    _llm_overrides["base_url"] = prof.get("url", "")
-    _llm_overrides["api_key"] = prof.get("api_key", "")
-    _llm_overrides["model"] = prof.get("model", "")
+    # 同步overrides：profile槽位字段为空时保留现有生效值，不清空
+    cur_url = _llm_overrides.get("base_url", settings.llm_base_url)
+    cur_key = _llm_overrides.get("api_key", settings.llm_api_key)
+    cur_model = _llm_overrides.get("model", settings.llm_model)
+    eff_url = prof.get("url", "") or cur_url
+    eff_key = prof.get("api_key", "") or cur_key
+    eff_model = prof.get("model", "") or cur_model
+    _llm_overrides[f"{variant}_base_url"] = eff_url
+    _llm_overrides[f"{variant}_api_key"] = eff_key
+    _llm_overrides[f"{variant}_model"] = eff_model
+    _llm_overrides["base_url"] = eff_url
+    _llm_overrides["api_key"] = eff_key
+    _llm_overrides["model"] = eff_model
     _llm_overrides["active_variant"] = variant
     _save_overrides_to_env()
-    # 打通soulmate：激活配置同步到acp-proxy/.env
-    _sync_acp_proxy_env(prof.get("url", ""), prof.get("model", ""), prof.get("api_key", ""))
+    # 打通soulmate：激活配置同步到acp-proxy/.env（仅用生效值，空值不清.env）
+    _sync_acp_proxy_env(eff_url, eff_model, eff_key)
     return await get_config()
 
 
