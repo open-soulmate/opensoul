@@ -258,6 +258,8 @@ async def token_attribution(limit: int = 20):
         return {
             "recent": attributor.recent(limit=min(max(limit, 1), 50)),
             "summary": attributor.summary(),
+            # d439f163遗留#3：估算器校准状态顶层可见（sample_count/calibrated/factor）
+            "calibration": attributor.calibration(),
         }
     except Exception as exc:
         return {"recent": [], "summary": {"total_records": 0, "error": str(exc)}}
@@ -308,7 +310,13 @@ def _attribute_chat_context(
                 tokens=estimate_tokens(question),
             )
         )
-        usage = build_context_usage(items, model=model)
+        usage = build_context_usage(
+            items,
+            model=model,
+            # d439f163遗留#3估算校准（两侧镜像）：provider回填推出的Σactual/Σestimated
+            # 因子进入归因记录（calibrated_*字段与raw并排，估算偏差对观测者可见）
+            calibration_factor=get_attributor().calibration().get("factor"),
+        )
         get_attributor().record(
             usage,
             session_id=session_key,

@@ -72,6 +72,61 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
 DEFAULT_CONTEXT_WINDOW = 32768  # 与llm_engine._truncate_context默认max_tokens一致
 DEFAULT_COMPACTION_RATIO = 0.6  # context_compression.DEFAULT_BUDGET_RATIO
 
+# ── estimate_tokens公式校准（d439f163遗留#3：estimate_gap信号此前只采集不消费）──
+# 校准语义（两侧镜像一致，acp-proxy/agent/token_attribution.py同值同逻辑）：
+# factor = Σactual / Σestimated — provider权威prompt_tokens与启发式估算总量之比。
+# estimated≤0或actual为None的样本剔除；样本数<MIN_CALIBRATION_SAMPLES → calibrated=False
+# 且factor=1.0（fail-safe：样本不足时估算器行为完全不变，只观测不校正）；
+# factor夹在CALIBRATION_FACTOR_BOUNDS内防脏数据把估算拉飞。
+MIN_CALIBRATION_SAMPLES = 3
+CALIBRATION_FACTOR_BOUNDS = (0.5, 4.0)
+CALIBRATION_CACHE_TTL = 300.0  # 秒：与acp-proxy侧同值（镜像契约）
+
+
+def compute_calibration(pairs: list[dict]) -> dict:
+    """从(estimated, actual)样本对计算估算器校准因子（两侧镜像公式一致）。
+
+    pairs: [{"estimated": int, "actual": int}, ...]（estimated=usage.total_tokens估算值，
+    actual=provider权威prompt_tokens）。返回：
+    - sample_count: 有效样本数（estimated>0且actual非None）
+    - calibrated: 是否达到最小样本数（不足时factor恒1.0）
+    - factor: 夹限后的校准因子（未校准时1.0）
+    - avg_estimate_gap: 平均偏差(actual-estimated)，无有效样本为None
+    - calibrated时附加raw_factor/sum_estimated/sum_actual（审计溯源）
+    """
+    valid: list[tuple[int, int]] = []
+    for p in pairs or []:
+        e = (p or {}).get("estimated")
+        a = (p or {}).get("actual")
+        if e is None or a is None:
+            continue
+        e, a = int(e), int(a)
+        if e > 0 and a >= 0:
+            valid.append((e, a))
+    sample_count = len(valid)
+    if sample_count < MIN_CALIBRATION_SAMPLES:
+        avg_gap = sum(a - e for e, a in valid) // sample_count if sample_count else None
+        return {
+            "sample_count": sample_count,
+            "calibrated": False,
+            "factor": 1.0,
+            "avg_estimate_gap": avg_gap,
+        }
+    sum_est = sum(e for e, _ in valid)
+    sum_act = sum(a for _, a in valid)
+    raw_factor = sum_act / sum_est
+    lo, hi = CALIBRATION_FACTOR_BOUNDS
+    factor = round(min(hi, max(lo, raw_factor)), 4)
+    return {
+        "sample_count": sample_count,
+        "calibrated": True,
+        "factor": factor,
+        "raw_factor": round(raw_factor, 4),
+        "avg_estimate_gap": (sum_act - sum_est) // sample_count,
+        "sum_estimated": sum_est,
+        "sum_actual": sum_act,
+    }
+
 
 def resolve_context_window(model: str | None, default: int = DEFAULT_CONTEXT_WINDOW) -> int:
     """按模型名子串解析上下文窗口；未命中返回default。"""
@@ -145,6 +200,7 @@ def build_context_usage(
     max_tokens: int | None = None,
     compaction_tokens: int | None = None,
     model: str | None = None,
+    calibration_factor: float | None = None,
 ) -> dict:
     """构建SDKContextUsage形态的归因结果。
 
@@ -155,6 +211,11 @@ def build_context_usage(
     - 明细数组：mcp_tools/builtin_tools/evolution_tools/tools/memory_files/agents/skills
     - sections：其余类别按kind聚合（system_prompt/message/tool_result/rag_context等）
     - top_consumers：全部item按tokens降序前10（"什么最吃上下文"直接答案）
+    - calibration_factor（d439f163遗留#3估算校准，两侧镜像）：provider回填推出的
+      Σactual/Σestimated因子；提供时输出calibrated_total_tokens/
+      calibrated_percentage/calibrated_over_limit三个校准后字段（raw字段保持启发式
+      原值不变——两套数字并存，估算器偏差对观测者可见）。None/未校准时factor按1.0
+      处理（校准值与raw值一致，schema稳定）。
     """
     if max_tokens is None:
         max_tokens = resolve_context_window(model)
@@ -171,6 +232,22 @@ def build_context_usage(
     elif total > compaction_tokens:
         over_limit = {
             "tokens_over": total - compaction_tokens,
+            "kind": "compaction_window",
+        }
+
+    # ── 估算校准后判定（d439f163遗留#3，两侧镜像）：raw over_limit不动，校准值并排输出 ──
+    _factor = 1.0 if not calibration_factor else max(0.01, float(calibration_factor))
+    calibrated_total = int(round(total * _factor))
+    calibrated_percentage = round(calibrated_total * 100.0 / max_tokens, 1)
+    calibrated_over_limit: dict | None = None
+    if calibrated_total > max_tokens:
+        calibrated_over_limit = {
+            "tokens_over": calibrated_total - max_tokens,
+            "kind": "hard_limit",
+        }
+    elif calibrated_total > compaction_tokens:
+        calibrated_over_limit = {
+            "tokens_over": calibrated_total - compaction_tokens,
             "kind": "compaction_window",
         }
 
@@ -201,6 +278,10 @@ def build_context_usage(
         "compaction_tokens": compaction_tokens,
         "percentage": percentage,
         "over_limit": over_limit,
+        "calibration_factor": round(_factor, 4),
+        "calibrated_total_tokens": calibrated_total,
+        "calibrated_percentage": calibrated_percentage,
+        "calibrated_over_limit": calibrated_over_limit,
         **lists,
         "sections": dict(sections),
         "top_consumers": top,
@@ -299,6 +380,28 @@ class ContextAttributor:
             logger.debug("token attribution backfill unavailable (non-fatal): %s", exc)
         return None
 
+    def calibration(self) -> dict:
+        """估算器校准状态（d439f163遗留#3，与acp-proxy AttributionLedger同语义）：
+        从进程内归因记录中取带actual_prompt_tokens的样本对(usage.total_tokens, actual)，
+        交给compute_calibration（两侧镜像公式）。样本不足calibrated=False/factor=1.0。
+        fail-safe：任何异常返回未校准形态（观测性旁路不阻断chat路径）。
+        """
+        try:
+            pairs = []
+            for r in self._records:
+                a = r.get("actual_prompt_tokens")
+                if a is not None:
+                    pairs.append(
+                        {
+                            "estimated": int(r.get("usage", {}).get("total_tokens", 0)),
+                            "actual": int(a),
+                        }
+                    )
+            return compute_calibration(pairs)
+        except Exception as exc:
+            logger.debug("token attribution calibration unavailable (fail-safe): %s", exc)
+            return {"sample_count": 0, "calibrated": False, "factor": 1.0, "avg_estimate_gap": None}
+
     def recent(self, limit: int = 20) -> list[dict]:
         recs = list(self._records)
         return recs[-limit:][::-1]  # 最新在前
@@ -344,6 +447,8 @@ class ContextAttributor:
                 "raw_max_tokens": latest["usage"].get("raw_max_tokens", 0),
             },
             "top_consumers": top,
+            # d439f163遗留#3：估算器校准状态（gap信号的消费端）
+            "calibration": self.calibration(),
         }
 
 
