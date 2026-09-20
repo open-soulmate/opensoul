@@ -389,22 +389,14 @@ async def delete_skill_source(source_id: str, user_id: UUID = Depends(get_curren
     return {"success": True}
 
 
-@router.post("/skills/sources/{source_id}/sync")
-async def sync_skill_source(source_id: str, user_id: UUID = Depends(get_current_user)):
-    """Registry真实同步 — kilocode discovery.ts管线（替换"Simulate sync"占位）。
+def _sync_registry_source(db: sqlite3.Connection, existing) -> dict:
+    """单源registry同步管线（fetch→plan→persist）— 单源端点与sync-all聚合端点共用。
 
-    index.json真实拉取→逐skill安全计划（name安全段/registry内相对路径逃逸/
-    download_url origin钉死在index源）→accepted入库marketplace_skills（含origin
-    +security_status），rejected带typed reason随响应返回；
-    拉取失败→last_sync_error落库+success=False可见（mem0 §1.1：失败必须可见，
-    禁止只更新last_sync时间戳的静默假成功）。
+    失败语义（mem0 §1.1失败必须可见）：RegistrySyncError→last_sync_error落库+
+    success=False+typed reason；非RegistryError的意外异常同样落库可见且不炸整批
+    （sync-all循环里单源异常绝不能阻断其他源）。成功→last_sync_error清NULL。
     """
-    db = get_marketplace_db()
-    existing = db.execute("SELECT * FROM skill_sources WHERE id = ?", (source_id,)).fetchone()
-    if not existing:
-        raise HTTPException(status_code=404, detail="Source not found")
-    src_type, src_url = existing[2], existing[3]
-
+    source_id, src_type, src_url = existing[0], existing[2], existing[3]
     try:
         index = fetch_registry_index(src_url, src_type)
     except RegistrySyncError as e:
@@ -418,6 +410,18 @@ async def sync_skill_source(source_id: str, user_id: UUID = Depends(get_current_
             "source_id": source_id,
             "message": f"Sync failed: {e.reason}",
             "error": {"reason": e.reason, "detail": e.detail[:500]},
+        }
+    except Exception as e:  # 意外异常：typed reason可见，禁止静默也禁止炸整批
+        db.execute(
+            "UPDATE skill_sources SET last_sync = datetime('now'), last_sync_error = ? WHERE id = ?",
+            (f"unexpected: {e}"[:500], source_id),
+        )
+        db.commit()
+        return {
+            "success": False,
+            "source_id": source_id,
+            "message": "Sync failed: unexpected",
+            "error": {"reason": "unexpected", "detail": str(e)[:500]},
         }
 
     accepted, rejected = plan_registry_entries(index)
@@ -453,6 +457,78 @@ async def sync_skill_source(source_id: str, user_id: UUID = Depends(get_current_
         "skills": [p.entry.name for p in accepted],
         "index_base": index.base_url,
         "guard": "skill_guard/registry_sync (kilocode discovery.ts)",
+    }
+
+
+@router.post("/skills/sources/{source_id}/sync")
+async def sync_skill_source(source_id: str, user_id: UUID = Depends(get_current_user)):
+    """Registry真实同步 — kilocode discovery.ts管线（替换"Simulate sync"占位）。
+
+    index.json真实拉取→逐skill安全计划（name安全段/registry内相对路径逃逸/
+    download_url origin钉死在index源）→accepted入库marketplace_skills（含origin
+    +security_status），rejected带typed reason随响应返回；
+    拉取失败→last_sync_error落库+success=False可见（mem0 §1.1：失败必须可见，
+    禁止只更新last_sync时间戳的静默假成功）。
+
+    管线主体在_sync_registry_source（与POST /sync/skills聚合端点共用）。
+    """
+    db = get_marketplace_db()
+    existing = db.execute("SELECT * FROM skill_sources WHERE id = ?", (source_id,)).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return _sync_registry_source(db, existing)
+
+
+@router.post("/sync/skills")
+async def sync_all_skill_sources(user_id: UUID = Depends(get_current_user)):
+    """同步全部已启用skill源 — 前端marketplace页"同步全部"按钮的POST目标。
+
+    修复死按钮：前端syncAllSkills() POST /api/marketplace/sync/skills，而此路径
+    此前只有GET（列表轮询端点get_synced_skills）→POST必然405，按钮永远"Sync
+    failed"（live curl实证405）。本端点逐源执行与/skills/sources/{id}/sync相同的
+    registry管线（_sync_registry_source共用），单源失败不阻断其他源（per-source
+    fail-isolated），每源结果逐条返回，失败源last_sync_error落库可见。
+    """
+    db = get_marketplace_db()
+    rows = db.execute(
+        "SELECT * FROM skill_sources WHERE enabled = 1 ORDER BY builtin DESC, name"
+    ).fetchall()
+    results = [_sync_registry_source(db, r) for r in rows]
+    synced = sum(1 for r in results if r.get("success"))
+    failed = len(results) - synced
+    return {
+        "success": failed == 0,
+        "synced": synced,
+        "failed": failed,
+        "total": len(results),
+        "results": results,
+        "message": f"Synced {synced}/{len(results)} skill sources"
+        + (f", {failed} failed" if failed else ""),
+    }
+
+
+@router.post("/sync/agents")
+async def sync_all_agent_sources(user_id: UUID = Depends(get_current_user)):
+    """同步全部已启用agent源 — 诚实typed not_implemented（mem0 §1.1）。
+
+    agent registry同步管线尚未实现：agent源无index.json摄取格式定义（调研报告
+    未覆盖agent registry格式），marketplace_agents无摄取路径。不假装成功也不
+    静默更新时间戳——typed not_implemented响应回前端错误条，替代此前必然405的
+    死按钮（诚实失败>静默405）。管线实现需先定agent registry index格式，遗留候选。
+    """
+    db = get_marketplace_db()
+    total = db.execute("SELECT COUNT(*) FROM agent_sources WHERE enabled = 1").fetchone()[0]
+    return {
+        "success": False,
+        "synced": 0,
+        "failed": total,
+        "total": total,
+        "results": [],
+        "error": {
+            "reason": "not_implemented",
+            "detail": "agent registry同步管线未实现（agent源无index格式定义），不假装同步成功",
+        },
+        "message": "Agent registry sync not implemented",
     }
 
 
