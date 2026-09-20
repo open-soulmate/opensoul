@@ -90,6 +90,7 @@ async def health():
         "sessions": sessions.get_stats(),
         "long_term_memory": _lt_store.get_stats(),
         "dream_distiller": _dream_distiller.get_stats(),
+        "memory_pipeline": _memory_pipeline.get_stats(),
         "decision_log": _decision_log.get_stats(),
     }
 
@@ -653,6 +654,142 @@ async def ltm_dream_reset_turn():
 async def ltm_dream_stats():
     """Dream distillation statistics."""
     return _dream_distiller.get_stats()
+
+
+# ── codex两阶段记忆管线（11-openai-codex-source.md #1）────────────
+# Phase1结构化提取→Phase2 consolidation agent→MemoryVersion版本化落库→workspace diff。
+# NOTE: /ltm/pipeline/* MUST be registered BEFORE /ltm/{memory_id}（同list/audit先例，
+# 防"pipeline"被路径参数捕获）。
+
+from src.hippo.memory_pipeline import MemoryPipeline
+_memory_pipeline = MemoryPipeline(ltm_store=_lt_store)
+
+
+class PipelineExtractRequest(BaseModel):
+    messages: list[dict] = []
+    session_id: str = ""
+
+
+class PipelineRunRequest(BaseModel):
+    messages: list[dict] = []
+    candidates: list[dict] = []  # 直供候选（mode=import，跳过Phase1）
+    session_id: str = ""
+    apply: bool = True  # False=dry-run（只产workspace diff不落库）
+    use_llm_phase2: bool = True  # False=确定性整合（不依赖LLM）
+    background: bool = False  # P0-8接线：True→提交hippo.memory_pipeline后台作业
+
+
+class PipelinePruneRequest(BaseModel):
+    max_age_hours: float = 72.0
+    memory_type: str = "working"
+
+
+class LTMRollbackRequest(BaseModel):
+    version: int
+    reason: str = "user_rollback"
+
+
+@router.post("/ltm/pipeline/extract")
+async def ltm_pipeline_extract(req: PipelineExtractRequest):
+    """Phase1：会话历史→候选事实（codex每会话结构化提取）。LLM故障→error可见。"""
+    result = await _memory_pipeline.extract(
+        messages=req.messages, session_id=req.session_id
+    )
+    return result.to_dict()
+
+
+@router.post("/ltm/pipeline/run")
+async def ltm_pipeline_run(req: PipelineRunRequest):
+    """端到端管线：Phase1→Phase2整合→版本化落库→workspace diff。
+
+    background=True → will job_queue后台作业（LLM长任务不阻塞请求方，
+    作业状态经/api/will/jobs/{id}可见）。
+    """
+    if req.background:
+        from src.will.job_handlers import HANDLER_SPECS, register_default_handlers
+        from src.will.job_queue import get_job_queue
+
+        jq = get_job_queue()
+        register_default_handlers(jq)  # 幂等
+        await jq.start()
+        job_id = await jq.submit(
+            "hippo.memory_pipeline",
+            {
+                "messages": req.messages,
+                "candidates": req.candidates,
+                "session_id": req.session_id,
+                "apply": req.apply,
+                "use_llm_phase2": req.use_llm_phase2,
+            },
+        )
+        return {
+            "queued": True,
+            "job_id": job_id,
+            "queue": "will.job_queue",
+            "handler": "hippo.memory_pipeline" if "hippo.memory_pipeline" in HANDLER_SPECS else "",
+            "status_url": f"/api/will/jobs/{job_id}",
+        }
+    result = await _memory_pipeline.run(
+        messages=req.messages,
+        session_id=req.session_id,
+        candidates=req.candidates,
+        apply=req.apply,
+        use_llm_phase2=req.use_llm_phase2,
+    )
+    return result.to_dict()
+
+
+@router.get("/ltm/pipeline/runs")
+async def ltm_pipeline_runs(limit: int = Query(default=20, ge=1, le=200)):
+    """最近管线运行记录（codex workspace diff持久化——管线跑过什么、改了什么）。"""
+    runs = _memory_pipeline.get_runs(limit=limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+@router.get("/ltm/pipeline/stats")
+async def ltm_pipeline_stats():
+    """管线统计：runs/候选数/diff四类计数/llm与import模式分布。"""
+    return _memory_pipeline.get_stats()
+
+
+@router.post("/ltm/pipeline/prune")
+async def ltm_pipeline_prune(req: PipelinePruneRequest):
+    """旧资源修剪（codex workspace修剪本地化）：过期transient工作记忆软删。
+    task/project域被DeerMem删除门拦截→blocked计数可见（fail-closed不绕过）。"""
+    return _memory_pipeline.prune(
+        max_age_hours=req.max_age_hours, memory_type=req.memory_type
+    )
+
+
+@router.get("/ltm/{memory_id}/versions")
+async def ltm_memory_versions(memory_id: str):
+    """MemoryVersion版本历史（codex storage.rs：这条记忆被谁、因为什么、从什么改成什么）。"""
+    versions = _lt_store.get_versions(memory_id)
+    return {
+        "memory_id": memory_id,
+        "versions": versions,
+        "current_version": _lt_store.get_current_version(memory_id),
+        "count": len(versions),
+    }
+
+
+@router.post("/ltm/{memory_id}/rollback")
+async def ltm_memory_rollback(memory_id: str, req: LTMRollbackRequest):
+    """回滚到指定历史版本（经update_memory写新版本+审计，历史链只增不改）。
+    版本/记忆不存在→444（mem0 §1.1失败可见，不静默假成功）。"""
+    result = _lt_store.rollback_version(
+        memory_id=memory_id, version=req.version, reason=req.reason
+    )
+    if result is None:
+        raise HTTPException(
+            444, f"Version v{req.version} for memory {memory_id} not found"
+        )
+    return {
+        "memory_id": memory_id,
+        "rolled_back_to": req.version,
+        "memory": result,
+        "current_version": _lt_store.get_current_version(memory_id),
+    }
 
 
 @router.get("/ltm/{memory_id}")

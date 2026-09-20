@@ -171,6 +171,27 @@ class LongTermMemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_audit_event
                 ON memory_audit(event, created_at)
             """)
+            # MemoryVersion版本化（codex两阶段记忆管线 memories/write/src/storage.rs）：
+            # 每次ADD/UPDATE/MERGE写历史快照，可查询/回滚——"进化改坏一行毁掉全部"的解药
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_versions (
+                    version_id TEXT PRIMARY KEY,
+                    memory_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    event TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    memory_type TEXT DEFAULT 'semantic',
+                    importance REAL DEFAULT 0.5,
+                    tags TEXT DEFAULT '[]',
+                    metadata TEXT DEFAULT '{}',
+                    reason TEXT DEFAULT '',
+                    created_at REAL NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_versions_memory
+                ON memory_versions(memory_id, version)
+            """)
             # FTS5 full-text search
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
@@ -352,6 +373,17 @@ class LongTermMemoryStore:
             }, ensure_ascii=False),
             reason="store",
         )
+        # MemoryVersion：新记忆=版本1（codex版本化，后续update/merge递增）
+        self._write_version(
+            memory_id=memory_id,
+            event="ADD",
+            content=content,
+            memory_type=memory_type,
+            importance=importance,
+            tags=tags or [],
+            metadata=resolved_metadata,
+            reason="store",
+        )
         self.last_write_outcome = "added"
         return mem
 
@@ -464,6 +496,17 @@ class LongTermMemoryStore:
             ),
             reason=f"fact_dedup:{dup_rule}",
         )
+        # MemoryVersion：并入也是版本事件（内容/importance/metadata变化可追溯可回滚）
+        self._write_version(
+            memory_id=duplicate_of,
+            event="MERGE",
+            content=row["content"],
+            memory_type=row["memory_type"],
+            importance=new_importance,
+            tags=json.loads(row["tags"] or "[]"),
+            metadata=old_metadata,
+            reason=f"fact_dedup:{dup_rule}",
+        )
         self.last_write_outcome = "merged"
         self.last_tag_decision = tag_dec
         logger.info(
@@ -508,6 +551,122 @@ class LongTermMemoryStore:
                  1 if is_deleted else 0, reason, time.time()),
             )
             conn.commit()
+
+    # ── MemoryVersion版本化（codex两阶段记忆管线 memories/write/src/storage.rs）──
+    # 每次ADD/UPDATE/MERGE写历史快照；版本表为真源（memories表不加列免迁移）；
+    # 回滚=经update_memory恢复指定版本快照（写新版本+审计，绝不覆写历史）。
+
+    def _next_version(self, memory_id: str) -> int:
+        """下一个版本号 = 既有最大版本+1。"""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM memory_versions WHERE memory_id = ?",
+                (memory_id,),
+            ).fetchone()
+        return int(row[0]) + 1
+
+    def _write_version(
+        self,
+        memory_id: str,
+        event: str,
+        content: str,
+        memory_type: str,
+        importance: float,
+        tags,  # list[str] 或 JSON字符串（update路径传updated行原值）
+        metadata,  # dict 或 JSON字符串
+        reason: str = "",
+    ) -> int:
+        """写一条版本快照，返回新版本号。
+
+        tags/metadata宽容接收list/dict或JSON字符串（调用方来自row时是str）。
+        版本写入失败不raise：版本化是增强能力，不能让记账故障毁掉记忆写入
+        （CowAgent subagent runner"记账失败永不阻塞spawn"同哲学）——但失败必须
+        可见：logger.error，不静默。
+        """
+        if isinstance(tags, str):
+            tags_json = tags
+        else:
+            tags_json = json.dumps(tags or [], ensure_ascii=False)
+        if isinstance(metadata, str):
+            metadata_json = metadata
+        else:
+            metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
+        try:
+            version = self._next_version(memory_id)
+            version_id = f"ver_{hashlib.sha256(f'{memory_id}:{version}:{time.time()}'.encode()).hexdigest()[:12]}"
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """INSERT INTO memory_versions
+                       (version_id, memory_id, version, event, content,
+                        memory_type, importance, tags, metadata, reason, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (version_id, memory_id, version, event, content,
+                     memory_type, float(importance), tags_json, metadata_json,
+                     reason, time.time()),
+                )
+                conn.commit()
+            return version
+        except Exception as e:  # noqa: BLE001 — 记账失败可见但不阻断记忆写入
+            logger.error("MemoryVersion write failed for %s (%s): %s", memory_id, event, e)
+            return 0
+
+    def get_versions(self, memory_id: str) -> list[dict]:
+        """查询某记忆的全部版本快照（DESC，最新在前）。tags/metadata解析为list/dict。"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM memory_versions WHERE memory_id = ? ORDER BY version DESC",
+                (memory_id,),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["tags"] = json.loads(d.get("tags") or "[]")
+            except json.JSONDecodeError:
+                d["tags"] = []
+            try:
+                d["metadata"] = json.loads(d.get("metadata") or "{}")
+            except json.JSONDecodeError:
+                d["metadata"] = {}
+            out.append(d)
+        return out
+
+    def get_current_version(self, memory_id: str) -> int:
+        """当前版本号（0=无版本记录，如版本化上线前的存量记忆）。"""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM memory_versions WHERE memory_id = ?",
+                (memory_id,),
+            ).fetchone()
+        return int(row[0])
+
+    def rollback_version(
+        self, memory_id: str, version: int, reason: str = "user_rollback"
+    ) -> Optional[dict]:
+        """回滚到指定历史版本（codex MemoryVersion语义）。
+
+        - 经update_memory执行：稀疏恢复快照字段，同时写UPDATE审计+新版本快照
+          ——历史链只增不改，回滚本身也是可审计事件
+        - 版本不存在/记忆不存在→None（mem0 §1.1失败可见，API层转404）
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            snap = conn.execute(
+                "SELECT * FROM memory_versions WHERE memory_id = ? AND version = ?",
+                (memory_id, version),
+            ).fetchone()
+        if snap is None:
+            return None
+        result = self.update_memory(
+            memory_id=memory_id,
+            content=snap["content"],
+            memory_type=snap["memory_type"],
+            importance=float(snap["importance"]),
+            tags=json.loads(snap["tags"] or "[]"),
+            reason=f"rollback_to_v{version}: {reason}"[:200],
+        )
+        return result
 
     def update_memory(
         self,
@@ -603,7 +762,18 @@ class LongTermMemoryStore:
             new_value=json.dumps(new_snapshot, ensure_ascii=False),
             reason=reason,
         )
-
+        # MemoryVersion：更新写新版本快照（codex版本化——回滚的数据源；
+        # tags/metadata传updated行的JSON字符串，_write_version宽容接收str/list）
+        self._write_version(
+            memory_id=memory_id,
+            event="UPDATE",
+            content=updated["content"],
+            memory_type=updated["memory_type"],
+            importance=float(updated["importance"]),
+            tags=updated["tags"],
+            metadata=updated["metadata"],
+            reason=reason,
+        )
         result = dict(updated)
         result["tags"] = json.loads(result.get("tags", "[]"))
         result["metadata"] = json.loads(result.get("metadata", "{}"))

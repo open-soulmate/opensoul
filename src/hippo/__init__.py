@@ -17,6 +17,15 @@ from src.hippo.long_term_memory import (
     _normalize_dict_floats,
 )
 from src.hippo.dream_distiller import DreamDistiller, DreamAction, DreamResult
+from src.hippo.memory_pipeline import (
+    ConsolidationDecision,
+    MemoryPipeline,
+    Phase1Candidate,
+    Phase1Result,
+    PipelineResult,
+    parse_phase1,
+    parse_phase2,
+)
 from src.hippo.decision_log import DecisionEntry, DecisionLog, get_decision_log
 from src.hippo.nl_filters import NLFilterResult, parse_nl_query, apply_post_filters
 from src.hippo.extractors.deermem_tags import (
@@ -43,6 +52,13 @@ __all__ = [
     "DreamDistiller",
     "DreamAction",
     "DreamResult",
+    "MemoryPipeline",
+    "Phase1Candidate",
+    "Phase1Result",
+    "PipelineResult",
+    "ConsolidationDecision",
+    "parse_phase1",
+    "parse_phase2",
     "DecisionEntry",
     "DecisionLog",
     "get_decision_log",

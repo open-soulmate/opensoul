@@ -55,11 +55,32 @@ async def _hippo_dream(**params: Any) -> dict:
     return result.to_dict()
 
 
+async def _hippo_memory_pipeline(**params: Any) -> dict:
+    """hippo.memory_pipeline：codex两阶段记忆管线后台作业
+    （11-openai-codex-source.md #1：Phase1提取→Phase2 consolidation agent→
+    MemoryVersion版本化→workspace diff；LLM管线的典型后台化场景）。
+
+    复用api/hippo.py的_memory_pipeline单例——同步端点与后台作业共享
+    pipeline_runs运行记录，不产生第二份状态。
+    """
+    from src.api.hippo import _memory_pipeline
+
+    result = await _memory_pipeline.run(
+        messages=list(params.get("messages") or []),
+        candidates=list(params.get("candidates") or []),
+        session_id=str(params.get("session_id", "")),
+        apply=bool(params.get("apply", True)),
+        use_llm_phase2=bool(params.get("use_llm_phase2", True)),
+    )
+    return result.to_dict()
+
+
 # handler注册表：job name → async callable(**params) -> JSON-serializable dict
 # 命名约定 <organ>.<action>：与OpenSoul器官分层一致，作业名即归属声明
 HANDLER_SPECS: dict[str, Callable[..., Awaitable[Any]]] = {
     "heredity.evaluate_triggers": _heredity_evaluate_triggers,
     "hippo.dream": _hippo_dream,
+    "hippo.memory_pipeline": _hippo_memory_pipeline,
 }
 
 
