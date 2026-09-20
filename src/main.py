@@ -200,6 +200,10 @@ async def lifespan(app: FastAPI):
         name TEXT NOT NULL, type TEXT DEFAULT '',
         description TEXT DEFAULT '', properties TEXT DEFAULT '{}',
         created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS relations (
+        id TEXT PRIMARY KEY, source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL, type TEXT NOT NULL,
+        properties TEXT DEFAULT '{}', created_at TEXT DEFAULT (datetime('now')))""")
 
     try:
         qdrant_client.ensure_collection()

@@ -1,5 +1,10 @@
 """Integration tests for OpenMarrow (骨髓) — backup, restore, export/import."""
 
+import tempfile
+
+# 备份测试源目录：用系统临时目录（任何环境都存在），不依赖特定机器路径
+_BACKUP_SRC = tempfile.gettempdir()
+
 
 class TestMarrowHealth:
     def test_health(self, client):
@@ -22,7 +27,7 @@ class TestMarrowBackup:
             json={
                 "name": "test_backup_integration",
                 "description": "Created by integration test",
-                "source_dirs": ["/home/climbing/opensoul/data"],
+                "source_dirs": [_BACKUP_SRC],
             },
         )
         assert resp.status_code == 200
@@ -66,7 +71,7 @@ class TestMarrowSchedules:
             "/api/marrow/schedules",
             json={
                 "name": "test_schedule",
-                "source_dirs": ["/home/climbing/opensoul/data"],
+                "source_dirs": [_BACKUP_SRC],
                 "interval": "daily",
                 "description": "Integration test schedule",
                 "tags": ["test"],
