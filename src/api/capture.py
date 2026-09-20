@@ -89,7 +89,9 @@ async def capture_health():
         await _ensure_table()
         rows = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures")
         total = (rows[0]["cnt"] if rows else 0) if rows else 0
-        pages = await db_pool.fetch("SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'page'")
+        pages = await db_pool.fetch(
+            "SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'page'"
+        )
         selections = await db_pool.fetch(
             "SELECT COUNT(*) as cnt FROM captures WHERE capture_type = 'selection'"
         )
@@ -336,6 +338,7 @@ async def promote_to_knowledge(capture_id: int, user_id: str = "default"):
         # fire-and-forget: meilisearch增量索引（失败不阻塞主流程）
         try:
             from src.services.meili_indexer import schedule_index
+
             schedule_index(knowledge_id)
         except Exception:
             pass

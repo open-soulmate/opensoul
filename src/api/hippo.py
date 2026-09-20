@@ -17,6 +17,7 @@ sessions = SessionManager()
 
 # Long-term memory singleton
 from src.hippo.long_term_memory import LongTermMemoryStore
+
 _lt_store = LongTermMemoryStore()
 
 
@@ -374,6 +375,7 @@ async def import_sessions(req: SessionImportRequest):
     dry_run=true时只统计不写入
     """
     from src.hippo.session_importer import SessionImporter
+
     importer = SessionImporter(ltm_store=_lt_store)
     result = importer.import_sessions(
         limit=req.limit,
@@ -450,7 +452,7 @@ async def ltm_search(req: LongTermSearchRequest):
     importance, word matches) before being passed to the retrieval engine.
     Response includes `nl_filters` showing what was extracted.
     """
-    from src.hippo.nl_filters import parse_nl_query, apply_post_filters
+    from src.hippo.nl_filters import apply_post_filters, parse_nl_query
 
     nl = parse_nl_query(req.query)
     effective_query = nl.clean_query if nl.clean_query else req.query
@@ -525,6 +527,7 @@ async def ltm_context(req: LongTermSearchRequest):
 
 # ── Long-term Memory CRUD + Audit (Khoj + mem0 pattern) ────
 
+
 class LTMUpdateRequest(BaseModel):
     content: str | None = None
     memory_type: str | None = None
@@ -585,6 +588,7 @@ async def ltm_audit_stats():
 # ── Dream Distillation (CowAgent + nanobot + kilocode echo blocker) ──
 
 from src.hippo.dream_distiller import DreamDistiller
+
 _dream_distiller = DreamDistiller(ltm_store=_lt_store)
 
 
@@ -662,6 +666,7 @@ async def ltm_dream_stats():
 # 防"pipeline"被路径参数捕获）。
 
 from src.hippo.memory_pipeline import MemoryPipeline
+
 _memory_pipeline = MemoryPipeline(ltm_store=_lt_store)
 
 
@@ -692,9 +697,7 @@ class LTMRollbackRequest(BaseModel):
 @router.post("/ltm/pipeline/extract")
 async def ltm_pipeline_extract(req: PipelineExtractRequest):
     """Phase1：会话历史→候选事实（codex每会话结构化提取）。LLM故障→error可见。"""
-    result = await _memory_pipeline.extract(
-        messages=req.messages, session_id=req.session_id
-    )
+    result = await _memory_pipeline.extract(messages=req.messages, session_id=req.session_id)
     return result.to_dict()
 
 
@@ -756,9 +759,7 @@ async def ltm_pipeline_stats():
 async def ltm_pipeline_prune(req: PipelinePruneRequest):
     """旧资源修剪（codex workspace修剪本地化）：过期transient工作记忆软删。
     task/project域被DeerMem删除门拦截→blocked计数可见（fail-closed不绕过）。"""
-    return _memory_pipeline.prune(
-        max_age_hours=req.max_age_hours, memory_type=req.memory_type
-    )
+    return _memory_pipeline.prune(max_age_hours=req.max_age_hours, memory_type=req.memory_type)
 
 
 @router.get("/ltm/{memory_id}/versions")
@@ -777,13 +778,9 @@ async def ltm_memory_versions(memory_id: str):
 async def ltm_memory_rollback(memory_id: str, req: LTMRollbackRequest):
     """回滚到指定历史版本（经update_memory写新版本+审计，历史链只增不改）。
     版本/记忆不存在→444（mem0 §1.1失败可见，不静默假成功）。"""
-    result = _lt_store.rollback_version(
-        memory_id=memory_id, version=req.version, reason=req.reason
-    )
+    result = _lt_store.rollback_version(memory_id=memory_id, version=req.version, reason=req.reason)
     if result is None:
-        raise HTTPException(
-            444, f"Version v{req.version} for memory {memory_id} not found"
-        )
+        raise HTTPException(444, f"Version v{req.version} for memory {memory_id} not found")
     return {
         "memory_id": memory_id,
         "rolled_back_to": req.version,
@@ -851,6 +848,7 @@ async def ltm_delete(memory_id: str, req: LTMDeleteRequest = LTMDeleteRequest())
 # 调研来源：14-tradingagents-source.md #1/#2/#3/#4 + SUMMARY.md P0-6。
 # 运行时写路径：src/api/chat.py路由决策自动记录；读路径①：src/gland/route_policy.py反馈。
 from src.hippo.decision_log import get_decision_log
+
 _decision_log = get_decision_log()
 
 
@@ -920,8 +918,11 @@ async def decision_context(
 ):
     """带真实反馈信号的few-shot上下文（同域全量/跨域反思两档 + as_of时间旅行过滤）。"""
     context = _decision_log.get_past_context(
-        domain=domain, n_same=n_same, n_cross=n_cross,
-        as_of=as_of, token_budget=token_budget,
+        domain=domain,
+        n_same=n_same,
+        n_cross=n_cross,
+        as_of=as_of,
+        token_budget=token_budget,
     )
     return {"context": context}
 

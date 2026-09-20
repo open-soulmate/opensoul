@@ -17,8 +17,10 @@ async def semantic_search(query: str, user_id: UUID, limit: int = 10) -> list[di
         query_vector = await get_embedding(query)
     except Exception as exc:
         import logging
+
         logging.getLogger(__name__).warning(
-            "semantic_search degraded (embedding unavailable): %s — returning empty vector results", exc
+            "semantic_search degraded (embedding unavailable): %s — returning empty vector results",
+            exc,
         )
         return []
     if not query_vector:

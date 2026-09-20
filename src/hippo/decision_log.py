@@ -24,6 +24,7 @@
   get_provider_stats()近期provider成功率做主备互换（决策记忆直接影响下一次决策）。
 - 读路径②：src/api/hippo.py /api/hippo/decisions/* 五个端点 + get_past_context()。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -162,8 +163,14 @@ class DecisionLog:
                 d[key] = {}
         return d
 
-    def _write_audit(self, decision_id: str, event: str, old_value: str = "",
-                     new_value: str = "", reason: str = ""):
+    def _write_audit(
+        self,
+        decision_id: str,
+        event: str,
+        old_value: str = "",
+        new_value: str = "",
+        reason: str = "",
+    ):
         audit_id = f"daud_{hashlib.sha256(f'{decision_id}:{event}:{time.time()}'.encode()).hexdigest()[:12]}"
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -196,10 +203,14 @@ class DecisionLog:
             conn.commit()
         for r in rows:
             self._write_audit(
-                r["decision_id"], "ROTATION",
-                old_value=json.dumps({"status": "resolved", "domain": r["domain"],
-                                      "decision": r["decision"][:200]}, ensure_ascii=False),
-                new_value="", reason="rotation_evict_oldest_resolved",
+                r["decision_id"],
+                "ROTATION",
+                old_value=json.dumps(
+                    {"status": "resolved", "domain": r["domain"], "decision": r["decision"][:200]},
+                    ensure_ascii=False,
+                ),
+                new_value="",
+                reason="rotation_evict_oldest_resolved",
             )
 
     # ── 写路径（Phase A: store_decision） ─────────────────────
@@ -211,7 +222,7 @@ class DecisionLog:
         agent_id: str = "",
         context: str = "",
         rating: str = "",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
         source_session: str = "",
     ) -> dict:
         """记录一条pending决策。
@@ -250,16 +261,28 @@ class DecisionLog:
                    (decision_id, decision, decision_hash, domain, agent_id, context,
                     rating, status, metadata, source_session, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
-                (decision_id, decision, d_hash, domain, agent_id, context,
-                 rating, json.dumps(metadata or {}, ensure_ascii=False),
-                 source_session, entry.created_at),
+                (
+                    decision_id,
+                    decision,
+                    d_hash,
+                    domain,
+                    agent_id,
+                    context,
+                    rating,
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                    source_session,
+                    entry.created_at,
+                ),
             )
             conn.commit()
         self._write_audit(
-            decision_id, "STORE",
+            decision_id,
+            "STORE",
             old_value="",
-            new_value=json.dumps({"decision": decision[:200], "domain": domain,
-                                  "status": "pending"}, ensure_ascii=False),
+            new_value=json.dumps(
+                {"decision": decision[:200], "domain": domain, "status": "pending"},
+                ensure_ascii=False,
+            ),
             reason="store_decision",
         )
         return entry.to_dict()
@@ -271,11 +294,11 @@ class DecisionLog:
         decision_id: str = "",
         domain: str = "",
         outcome: str = "",
-        metrics: Optional[dict] = None,
+        metrics: dict | None = None,
         reflection: str = "",
-        success: Optional[bool] = None,
+        success: bool | None = None,
         resolution_date: str = "",
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """把真实结果回填到同一条pending决策（TradingAgents update_with_outcome）。
 
         - decision_id为空时按domain找最早的pending条目（原版按(ticker,date)匹配泛化）。
@@ -319,26 +342,43 @@ class DecisionLog:
                    SET status = 'resolved', outcome = ?, outcome_metrics = ?,
                        reflection = ?, resolved_at = ?, resolution_date = ?
                    WHERE decision_id = ?""",
-                (outcome, json.dumps(merged_metrics, ensure_ascii=False),
-                 reflection, now, res_date, entry["decision_id"]),
+                (
+                    outcome,
+                    json.dumps(merged_metrics, ensure_ascii=False),
+                    reflection,
+                    now,
+                    res_date,
+                    entry["decision_id"],
+                ),
             )
             conn.commit()
 
         self._write_audit(
-            entry["decision_id"], "RESOLVE",
+            entry["decision_id"],
+            "RESOLVE",
             old_value=json.dumps({"status": "pending"}, ensure_ascii=False),
-            new_value=json.dumps({
-                "status": "resolved", "outcome": outcome[:200],
-                "metrics": merged_metrics, "resolution_date": res_date,
-            }, ensure_ascii=False),
+            new_value=json.dumps(
+                {
+                    "status": "resolved",
+                    "outcome": outcome[:200],
+                    "metrics": merged_metrics,
+                    "resolution_date": res_date,
+                },
+                ensure_ascii=False,
+            ),
             reason="update_with_outcome",
         )
         self._apply_rotation()
-        entry.update({
-            "status": "resolved", "outcome": outcome,
-            "outcome_metrics": merged_metrics, "reflection": reflection,
-            "resolved_at": now, "resolution_date": res_date,
-        })
+        entry.update(
+            {
+                "status": "resolved",
+                "outcome": outcome,
+                "outcome_metrics": merged_metrics,
+                "reflection": reflection,
+                "resolved_at": now,
+                "resolution_date": res_date,
+            }
+        )
         return entry
 
     def batch_update_with_outcomes(self, updates: list[dict]) -> list[dict]:
@@ -398,8 +438,9 @@ class DecisionLog:
     def _format_full(e: dict) -> str:
         """同域条目：全量格式（决策+结果+反思）——TradingAgents _format_full。"""
         metrics = e.get("outcome_metrics") or {}
-        metric_str = ", ".join(f"{k}={v}" for k, v in metrics.items()
-                               if isinstance(v, (int, float, bool, str)))[:200]
+        metric_str = ", ".join(
+            f"{k}={v}" for k, v in metrics.items() if isinstance(v, (int, float, bool, str))
+        )[:200]
         tag = f"[{e.get('resolution_date', '')} | {e.get('domain', '')} | {e.get('rating', '')} | {metric_str}]"
         parts = [tag, f"DECISION:\n{e.get('decision', '')}"]
         if e.get("outcome"):
@@ -438,8 +479,9 @@ class DecisionLog:
             [],
         )
         if as_of:
-            entries = [e for e in entries
-                       if e.get("resolution_date") and e["resolution_date"] <= as_of]
+            entries = [
+                e for e in entries if e.get("resolution_date") and e["resolution_date"] <= as_of
+            ]
         if not entries:
             return ""
 
@@ -461,8 +503,11 @@ class DecisionLog:
 
         parts: list[str] = []
         if same:
-            header = f"Past decisions in domain '{domain}' (most recent first, with real outcomes):" \
-                if domain else "Past decisions (most recent first, with real outcomes):"
+            header = (
+                f"Past decisions in domain '{domain}' (most recent first, with real outcomes):"
+                if domain
+                else "Past decisions (most recent first, with real outcomes):"
+            )
             parts.append(header)
             parts.extend(self._format_full(e) for e in same)
         if cross:
@@ -510,7 +555,10 @@ class DecisionLog:
                 if metrics.get("success") is False:
                     slot["failures"] += 1
         return {
-            prov: {**slot, "failure_rate": slot["failures"] / slot["attempts"] if slot["attempts"] else 0.0}
+            prov: {
+                **slot,
+                "failure_rate": slot["failures"] / slot["attempts"] if slot["attempts"] else 0.0,
+            }
             for prov, slot in agg.items()
         }
 
@@ -559,7 +607,7 @@ class DecisionLog:
 
 
 # ── 单例 ─────────────────────────────────────────────────────
-_decision_log: Optional[DecisionLog] = None
+_decision_log: DecisionLog | None = None
 
 
 def get_decision_log(db_path: str = "") -> DecisionLog:

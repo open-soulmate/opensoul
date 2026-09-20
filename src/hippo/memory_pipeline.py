@@ -25,13 +25,15 @@
 - use_llm_phase2=False或LLM失败：确定性整合（全部ADD_NEW，靠store既有
   gatekeeper+fact_dedup近重复并入兜底），meta.phase2_fallback_reason可见
 """
+
 import hashlib
 import json
 import logging
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
 
@@ -117,7 +119,7 @@ def _extract_json_array(text: str) -> str:
         end = t.index("```", start)
         return t[start:end].strip()
     if "[" in t and "]" in t:
-        return t[t.index("["): t.rindex("]") + 1]
+        return t[t.index("[") : t.rindex("]") + 1]
     return ""
 
 
@@ -329,7 +331,7 @@ class PipelineResult:
 class MemoryPipeline:
     """codex两阶段记忆管线（Phase1提取→Phase2整合→版本化落库→workspace diff）。"""
 
-    def __init__(self, ltm_store, llm_call: Optional[Callable] = None):
+    def __init__(self, ltm_store, llm_call: Callable | None = None):
         """
         Args:
             ltm_store: LongTermMemoryStore实例（写入/版本化的真源）
@@ -370,8 +372,7 @@ class MemoryPipeline:
             return res
         conv_text = self._format_messages(messages)
         user_prompt = (
-            f"## 会话历史\n{conv_text}\n\n"
-            "请按铁律提取值得进入长期记忆的候选事实，输出JSON数组。"
+            f"## 会话历史\n{conv_text}\n\n请按铁律提取值得进入长期记忆的候选事实，输出JSON数组。"
         )
         try:
             response = await self._call_llm(PHASE1_EXTRACT_PROMPT, user_prompt)
@@ -541,9 +542,9 @@ class MemoryPipeline:
 
     async def run(
         self,
-        messages: Optional[list[dict]] = None,
+        messages: list[dict] | None = None,
         session_id: str = "",
-        candidates: Optional[list[dict]] = None,
+        candidates: list[dict] | None = None,
         apply: bool = True,
         use_llm_phase2: bool = True,
     ) -> PipelineResult:
@@ -587,7 +588,10 @@ class MemoryPipeline:
         self._persist(result, decisions=decisions)
         logger.info(
             "Pipeline %s: mode=%s phase1=%d decisions=%s fallback=%s",
-            run_id, result.mode, result.phase1_count, counts,
+            run_id,
+            result.mode,
+            result.phase1_count,
+            counts,
             pmeta.get("phase2_fallback_reason", "-"),
         )
         return result
@@ -775,8 +779,7 @@ class MemoryPipeline:
         lines, total = [], 0
         for i, c in enumerate(candidates[:30]):
             line = (
-                f"candidate_index={i} ({c.memory_type}, imp={c.importance:.1f}) "
-                f"{c.content[:150]}"
+                f"candidate_index={i} ({c.memory_type}, imp={c.importance:.1f}) {c.content[:150]}"
             )
             if total + len(line) > 1800:
                 break

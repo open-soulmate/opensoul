@@ -32,7 +32,9 @@ server = MCPServer("opensoul") if MCP_AVAILABLE else None
 if MCP_AVAILABLE:
 
     @server.tool()
-    async def remember(title: str, content: str, user_id: str, tags: list[str] | None = None) -> str:
+    async def remember(
+        title: str, content: str, user_id: str, tags: list[str] | None = None
+    ) -> str:
         """Store a new piece of knowledge into long-term memory."""
         from uuid import UUID
 

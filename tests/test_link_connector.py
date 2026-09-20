@@ -181,7 +181,8 @@ class TestIntegrationManager:
 
     def test_send_webhook_with_signature(self):
         c = self.mgr.create_connector(
-            "Test", "webhook_out",
+            "Test",
+            "webhook_out",
             endpoint="https://example.com/hook",
             secret="my_secret",
         )

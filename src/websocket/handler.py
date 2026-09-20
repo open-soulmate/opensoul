@@ -29,6 +29,7 @@ class ConnectionManager:
                     await ws.send_json(message)
                 except Exception as exc:
                     logging.getLogger(__name__).debug("probe skipped: %s", exc)
+
     async def broadcast(self, message: dict):
         for user_id in self.active:
             await self.send_to_user(user_id, message)

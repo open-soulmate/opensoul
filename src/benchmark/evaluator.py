@@ -90,9 +90,7 @@ class CapabilityEvaluator:
     ) -> EvaluationResult:
         """Record an evaluation."""
         total_weight = sum(
-            self.dimensions[d].weight
-            for d in dimension_scores
-            if d in self.dimensions
+            self.dimensions[d].weight for d in dimension_scores if d in self.dimensions
         )
         weighted_sum = sum(
             dimension_scores.get(d, 0) * self.dimensions[d].weight
@@ -116,8 +114,15 @@ class CapabilityEvaluator:
                 """INSERT INTO evaluations
                    (eval_id, session_id, task_type, dimensions, overall_score, timestamp, notes)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (eval_id, session_id, task_type,
-                 json.dumps(dimension_scores), overall, time.time(), notes),
+                (
+                    eval_id,
+                    session_id,
+                    task_type,
+                    json.dumps(dimension_scores),
+                    overall,
+                    time.time(),
+                    notes,
+                ),
             )
             conn.commit()
 
@@ -193,12 +198,14 @@ class CapabilityEvaluator:
             if len(scores) >= min_samples:
                 avg = sum(scores) / len(scores)
                 if avg < 0.7:
-                    weak.append({
-                        "dimension": d,
-                        "name": self.dimensions.get(d, EvaluationDimension(d, d, "")).name,
-                        "avg_score": round(avg, 3),
-                        "sample_count": len(scores),
-                    })
+                    weak.append(
+                        {
+                            "dimension": d,
+                            "name": self.dimensions.get(d, EvaluationDimension(d, d, "")).name,
+                            "avg_score": round(avg, 3),
+                            "sample_count": len(scores),
+                        }
+                    )
 
         weak.sort(key=lambda x: x["avg_score"])
         return weak

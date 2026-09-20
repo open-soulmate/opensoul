@@ -34,7 +34,9 @@ async def _call_embedding_api(client: httpx.AsyncClient, texts: list[str]) -> li
     last_exc: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            resp = await client.post(url, headers=headers, json=payload, timeout=EMBEDDING_ATTEMPT_TIMEOUT)
+            resp = await client.post(
+                url, headers=headers, json=payload, timeout=EMBEDDING_ATTEMPT_TIMEOUT
+            )
             resp.raise_for_status()
             data = resp.json()["data"]
             return [item["embedding"] for item in sorted(data, key=lambda x: x["index"])]
@@ -86,16 +88,18 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
         return [[] for _ in texts]
     try:
         return await asyncio.wait_for(_embed_all(texts), timeout=EMBEDDING_TOTAL_BUDGET)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "Embedding batch timed out after %.0fs (%d texts) — degraded to empty vectors, "
             "vector index skipped, keyword index unaffected",
-            EMBEDDING_TOTAL_BUDGET, len(texts),
+            EMBEDDING_TOTAL_BUDGET,
+            len(texts),
         )
         return [[] for _ in texts]
     except Exception as exc:
         logger.warning(
             "Embedding batch failed (%d texts): %s — degraded to empty vectors",
-            len(texts), exc,
+            len(texts),
+            exc,
         )
         return [[] for _ in texts]

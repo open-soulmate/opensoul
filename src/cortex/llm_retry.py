@@ -92,9 +92,7 @@ def parse_retry_after(headers, now: float | None = None) -> float | None:
         return None
 
 
-def backoff_delay(
-    attempt: int, headers=None, jitter: bool = True
-) -> float:
+def backoff_delay(attempt: int, headers=None, jitter: bool = True) -> float:
     """Seconds to wait before retry attempt *attempt* (0-based).
 
     Server hint wins; otherwise exponential backoff 2s x 2^attempt capped

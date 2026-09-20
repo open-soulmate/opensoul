@@ -49,7 +49,9 @@ class ExperienceMemory:
             """)
         self._initialized = True
 
-    async def record(self, action: str, result: dict, verification: Verification, task_ctx: TaskContext):
+    async def record(
+        self, action: str, result: dict, verification: Verification, task_ctx: TaskContext
+    ):
         """记录一次行动结果"""
         await self._ensure_table()
         if not self.db:
@@ -61,10 +63,15 @@ class ExperienceMemory:
                (tenant_id, agent_id, action, intent_summary, outcome, error, fix, relevance_score, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                self.tenant_id, self.agent_id, action[:500],
+                self.tenant_id,
+                self.agent_id,
+                action[:500],
                 task_ctx.intent.goal if task_ctx.intent else "unknown",
-                outcome, verification.error, verification.fix,
-                1.0, time.time(),
+                outcome,
+                verification.error,
+                verification.fix,
+                1.0,
+                time.time(),
             ),
         )
         # 老化淘汰

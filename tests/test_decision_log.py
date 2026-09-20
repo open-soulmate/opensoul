@@ -4,6 +4,7 @@
 轮转保pending、provider成功率聚合、route_policy反馈互换规则、chat.py写路径helpers、
 API端点契约。
 """
+
 import json
 
 import pytest
@@ -25,13 +26,18 @@ def log(tmp_path, monkeypatch):
 class TestDecisionLogCore:
     def test_store_pending(self, log):
         entry = log.store_decision(
-            decision="route to online", domain="llm_routing", agent_id="chat",
-            context="q", metadata={"attempts": ["online"]},
+            decision="route to online",
+            domain="llm_routing",
+            agent_id="chat",
+            context="q",
+            metadata={"attempts": ["online"]},
         )
         assert entry["status"] == "pending"
         assert entry["decision_id"].startswith("dec_")
         assert entry["domain"] == "llm_routing"
-        assert log.get_pending_entries(domain="llm_routing")[0]["decision_id"] == entry["decision_id"]
+        assert (
+            log.get_pending_entries(domain="llm_routing")[0]["decision_id"] == entry["decision_id"]
+        )
 
     def test_store_empty_decision_rejected(self, log):
         with pytest.raises(ValueError):
@@ -94,11 +100,13 @@ class TestDecisionLogCore:
     def test_batch_update(self, log):
         e1 = log.store_decision(decision="b1", domain="batch")
         e2 = log.store_decision(decision="b2", domain="batch")
-        results = log.batch_update_with_outcomes([
-            {"decision_id": e1["decision_id"], "outcome": "o1", "success": True},
-            {"decision_id": e2["decision_id"], "outcome": "o2", "success": False},
-            {"decision_id": "dec_missing", "outcome": "x"},
-        ])
+        results = log.batch_update_with_outcomes(
+            [
+                {"decision_id": e1["decision_id"], "outcome": "o1", "success": True},
+                {"decision_id": e2["decision_id"], "outcome": "o2", "success": False},
+                {"decision_id": "dec_missing", "outcome": "x"},
+            ]
+        )
         assert [r["ok"] for r in results] == [True, True, False]
 
     def test_list_and_stats(self, log):
@@ -176,13 +184,15 @@ class TestPastContext:
 
     def test_as_of_excludes_missing_resolution_date(self, log):
         e = log.store_decision(decision="legacy-no-date", domain="llm_routing")
-        log.update_with_outcome(decision_id=e["decision_id"], outcome="old entry",
-                                success=True)
+        log.update_with_outcome(decision_id=e["decision_id"], outcome="old entry", success=True)
         # 直接SQL模拟旧条目无resolution_date（迁移前存量数据）
         import sqlite3
+
         with sqlite3.connect(log.db_path) as conn:
-            conn.execute("UPDATE decision_log SET resolution_date='' WHERE decision_id=?",
-                         (e["decision_id"],))
+            conn.execute(
+                "UPDATE decision_log SET resolution_date='' WHERE decision_id=?",
+                (e["decision_id"],),
+            )
             conn.commit()
         ctx = log.get_past_context(domain="llm_routing", as_of="2026-12-31")
         assert "legacy-no-date" not in ctx
@@ -191,11 +201,10 @@ class TestPastContext:
 
     def test_token_budget_truncation(self, log):
         for i in range(10):
-            e = log.store_decision(decision=f"long-decision-{i}-" + "x" * 200,
-                                   domain="budget_dom")
-            log.update_with_outcome(decision_id=e["decision_id"],
-                                    outcome="y" * 200, reflection="z" * 200,
-                                    success=True)
+            e = log.store_decision(decision=f"long-decision-{i}-" + "x" * 200, domain="budget_dom")
+            log.update_with_outcome(
+                decision_id=e["decision_id"], outcome="y" * 200, reflection="z" * 200, success=True
+            )
         ctx = log.get_past_context(domain="budget_dom", n_same=10, token_budget=200)
         assert len(ctx) <= 200 * 4 + 60  # 预算×4近似 + 截断标记
         assert ctx.endswith("...[decision context truncated]")
@@ -213,11 +222,16 @@ class TestRotation:
         monkeypatch.setattr(dl_mod, "_decision_log", inst)
         pending = inst.store_decision(decision="never-done", domain="rot")
         import time
+
         for i in range(4):
             e = inst.store_decision(decision=f"resolved-{i}", domain="rot")
             time.sleep(0.01)  # 保证resolved_at有序
-            inst.update_with_outcome(decision_id=e["decision_id"], outcome=f"o{i}",
-                                     success=True, resolution_date=f"2026-09-0{i + 1}")
+            inst.update_with_outcome(
+                decision_id=e["decision_id"],
+                outcome=f"o{i}",
+                success=True,
+                resolution_date=f"2026-09-0{i + 1}",
+            )
         resolved = inst.list_decisions(status="resolved", domain="rot")
         assert len(resolved) <= 2
         # 最旧的被淘汰，最新保留
@@ -235,6 +249,7 @@ class TestRotation:
         inst = DecisionLog(db_path=str(tmp_path / "rot0.db"), max_resolved=0)
         monkeypatch.setattr(dl_mod, "_decision_log", inst)
         import time
+
         for i in range(5):
             e = inst.store_decision(decision=f"r-{i}", domain="rot0")
             time.sleep(0.005)
@@ -256,7 +271,8 @@ class TestProviderStats:
                 decision_id=e["decision_id"],
                 outcome="failover",
                 metrics={
-                    "success": True, "used_provider": "ollama",
+                    "success": True,
+                    "used_provider": "ollama",
                     "attempts_detail": [
                         {"provider": "online", "ok": False, "error": "402"},
                         {"provider": "ollama", "ok": True},
@@ -274,8 +290,10 @@ class TestProviderStats:
     def test_fallback_single_provider_metrics(self, log):
         e = log.store_decision(decision="legacy-shape", domain="llm_routing")
         log.update_with_outcome(
-            decision_id=e["decision_id"], outcome="ok",
-            metrics={"success": True, "used_provider": "online"}, success=True,
+            decision_id=e["decision_id"],
+            outcome="ok",
+            metrics={"success": True, "used_provider": "online"},
+            success=True,
         )
         stats = log.get_provider_stats(domain="llm_routing")
         assert stats["online"]["attempts"] == 1
@@ -283,9 +301,12 @@ class TestProviderStats:
 
     def test_window_and_domain_isolation(self, log):
         e = log.store_decision(decision="other-domain", domain="not_routing")
-        log.update_with_outcome(decision_id=e["decision_id"], outcome="x",
-                                metrics={"attempts_detail": [{"provider": "p", "ok": False}]},
-                                success=False)
+        log.update_with_outcome(
+            decision_id=e["decision_id"],
+            outcome="x",
+            metrics={"attempts_detail": [{"provider": "p", "ok": False}]},
+            success=False,
+        )
         assert log.get_provider_stats(domain="llm_routing") == {}
 
 
@@ -298,13 +319,19 @@ class TestRoutePolicyFeedback:
 
     def test_swap_when_prefer_failing_backup_better(self, log, monkeypatch):
         import src.gland.route_policy as rp
+
         # online全部失败(n=6, rate=100%)，ollama全部成功(n=6, rate=0%) → 互换
         for i in range(6):
             e = log.store_decision(decision=f"online-fail-ollama-ok-{i}", domain="llm_routing")
             log.update_with_outcome(
-                decision_id=e["decision_id"], outcome="seed",
-                metrics={"attempts_detail": [{"provider": "online", "ok": False},
-                                             {"provider": "ollama", "ok": True}]},
+                decision_id=e["decision_id"],
+                outcome="seed",
+                metrics={
+                    "attempts_detail": [
+                        {"provider": "online", "ok": False},
+                        {"provider": "ollama", "ok": True},
+                    ]
+                },
                 success=True,
             )
         monkeypatch.setattr(rp, "get_mode", lambda: "balance")
@@ -317,10 +344,12 @@ class TestRoutePolicyFeedback:
 
     def test_intelligence_mode_never_swapped(self, log, monkeypatch):
         import src.gland.route_policy as rp
+
         for i in range(8):
             e = log.store_decision(decision=f"intel-fail-{i}", domain="llm_routing")
             log.update_with_outcome(
-                decision_id=e["decision_id"], outcome="seed",
+                decision_id=e["decision_id"],
+                outcome="seed",
                 metrics={"attempts_detail": [{"provider": "online", "ok": False}]},
                 success=True,
             )
@@ -333,6 +362,7 @@ class TestRoutePolicyFeedback:
 
     def test_no_data_behavior_unchanged(self, tmp_path, monkeypatch):
         import src.gland.route_policy as rp
+
         fresh = DecisionLog(db_path=str(tmp_path / "empty.db"))
         monkeypatch.setattr(dl_mod, "_decision_log", fresh)
         monkeypatch.setattr(rp, "get_mode", lambda: "balance")
@@ -344,32 +374,42 @@ class TestRoutePolicyFeedback:
 
     def test_backup_also_bad_no_swap(self, tmp_path, monkeypatch):
         import src.gland.route_policy as rp
+
         inst = DecisionLog(db_path=str(tmp_path / "bothbad.db"))
         monkeypatch.setattr(dl_mod, "_decision_log", inst)
         for i in range(6):
             e = inst.store_decision(decision=f"both-bad-{i}", domain="llm_routing")
             inst.update_with_outcome(
-                decision_id=e["decision_id"], outcome="seed",
-                metrics={"attempts_detail": [
-                    {"provider": "online", "ok": False},
-                    {"provider": "ollama", "ok": False},
-                ]}, success=True,
+                decision_id=e["decision_id"],
+                outcome="seed",
+                metrics={
+                    "attempts_detail": [
+                        {"provider": "online", "ok": False},
+                        {"provider": "ollama", "ok": False},
+                    ]
+                },
+                success=True,
             )
         swapped, note = rp._decision_feedback_swap("online", dict(self.ONLINE), dict(self.OLLAMA))
         assert swapped is False  # 备选同样烂→不换
 
     def test_prefer_failing_but_under_threshold_no_swap(self, tmp_path, monkeypatch):
         import src.gland.route_policy as rp
+
         inst = DecisionLog(db_path=str(tmp_path / "mild.db"))
         monkeypatch.setattr(dl_mod, "_decision_log", inst)
         for i in range(10):
             e = inst.store_decision(decision=f"mild-{i}", domain="llm_routing")
             inst.update_with_outcome(
-                decision_id=e["decision_id"], outcome="seed",
-                metrics={"attempts_detail": [
-                    {"provider": "online", "ok": i >= 4},  # 4/10失败=40%<50%阈值
-                    {"provider": "ollama", "ok": True},
-                ]}, success=True,
+                decision_id=e["decision_id"],
+                outcome="seed",
+                metrics={
+                    "attempts_detail": [
+                        {"provider": "online", "ok": i >= 4},  # 4/10失败=40%<50%阈值
+                        {"provider": "ollama", "ok": True},
+                    ]
+                },
+                success=True,
             )
         swapped, _ = rp._decision_feedback_swap("online", dict(self.ONLINE), dict(self.OLLAMA))
         assert swapped is False
@@ -394,8 +434,10 @@ class TestRoutePolicyFeedback:
 class TestChatDecisionHelpers:
     def test_begin_then_end_failover(self, log):
         from src.api import chat as chat_mod
+
         dec_id = chat_mod._route_decision_begin(
-            "test question", {"mode": "balance", "prefer": "online"},
+            "test question",
+            {"mode": "balance", "prefer": "online"},
             [{"provider": "online", "model": "gpt"}, {"provider": "ollama", "model": "r1"}],
         )
         assert dec_id
@@ -403,10 +445,13 @@ class TestChatDecisionHelpers:
         assert len(pending) == 1 and pending[0]["decision_id"] == dec_id
         assert "mode=balance" in pending[0]["decision"]
 
-        chat_mod._route_decision_end(dec_id, [
-            {"provider": "online", "ok": False, "error": "402 Payment Required"},
-            {"provider": "ollama", "ok": True},
-        ])
+        chat_mod._route_decision_end(
+            dec_id,
+            [
+                {"provider": "online", "ok": False, "error": "402 Payment Required"},
+                {"provider": "ollama", "ok": True},
+            ],
+        )
         resolved = log.list_decisions(status="resolved", domain="llm_routing")
         assert len(resolved) == 1
         m = resolved[0]["outcome_metrics"]
@@ -419,10 +464,13 @@ class TestChatDecisionHelpers:
 
     def test_end_all_failed(self, log):
         from src.api import chat as chat_mod
-        dec_id = chat_mod._route_decision_begin("q", {"mode": "cost", "prefer": "local"},
-                                                [{"provider": "ollama", "model": "r1"}])
-        chat_mod._route_decision_end(dec_id, [{"provider": "ollama", "ok": False,
-                                               "error": "ConnectError"}])
+
+        dec_id = chat_mod._route_decision_begin(
+            "q", {"mode": "cost", "prefer": "local"}, [{"provider": "ollama", "model": "r1"}]
+        )
+        chat_mod._route_decision_end(
+            dec_id, [{"provider": "ollama", "ok": False, "error": "ConnectError"}]
+        )
         resolved = log.list_decisions(status="resolved", domain="llm_routing")
         assert resolved[0]["outcome_metrics"]["success"] is False
         assert "全部provider失败" in resolved[0]["reflection"]
@@ -447,29 +495,43 @@ class TestDecisionAPI:
     def client(self, log):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         import src.api.hippo as hippo_api
+
         app = FastAPI()
         app.include_router(hippo_api.router, prefix="/api/hippo")
         return TestClient(app)
 
     def test_store_list_outcome_flow(self, client):
-        r = client.post("/api/hippo/decisions", json={
-            "decision": "use tool X", "domain": "tool_choice", "agent_id": "test",
-            "context": "task-1",
-        })
+        r = client.post(
+            "/api/hippo/decisions",
+            json={
+                "decision": "use tool X",
+                "domain": "tool_choice",
+                "agent_id": "test",
+                "context": "task-1",
+            },
+        )
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "pending"
         dec_id = body["decision_id"]
 
-        r2 = client.get("/api/hippo/decisions", params={"status": "pending", "domain": "tool_choice"})
+        r2 = client.get(
+            "/api/hippo/decisions", params={"status": "pending", "domain": "tool_choice"}
+        )
         assert r2.status_code == 200
         assert r2.json()["count"] == 1
 
-        r3 = client.post(f"/api/hippo/decisions/{dec_id}/outcome", json={
-            "outcome": "X succeeded", "metrics": {"duration_ms": 120},
-            "reflection": "X适合此类任务", "success": True,
-        })
+        r3 = client.post(
+            f"/api/hippo/decisions/{dec_id}/outcome",
+            json={
+                "outcome": "X succeeded",
+                "metrics": {"duration_ms": 120},
+                "reflection": "X适合此类任务",
+                "success": True,
+            },
+        )
         assert r3.status_code == 200
         out = r3.json()
         assert out["status"] == "resolved"
@@ -498,14 +560,24 @@ class TestDecisionAPI:
         assert r2.json()["deduped"] is True
 
     def test_stats_context_audit_endpoints(self, client):
-        r = client.post("/api/hippo/decisions", json={
-            "decision": "ctx-decision-marker", "domain": "ctx_dom", "rating": "A",
-        })
+        r = client.post(
+            "/api/hippo/decisions",
+            json={
+                "decision": "ctx-decision-marker",
+                "domain": "ctx_dom",
+                "rating": "A",
+            },
+        )
         dec_id = r.json()["decision_id"]
-        client.post(f"/api/hippo/decisions/{dec_id}/outcome", json={
-            "outcome": "ctx-outcome-marker", "reflection": "ctx-reflection-marker",
-            "success": True, "resolution_date": "2026-09-10",
-        })
+        client.post(
+            f"/api/hippo/decisions/{dec_id}/outcome",
+            json={
+                "outcome": "ctx-outcome-marker",
+                "reflection": "ctx-reflection-marker",
+                "success": True,
+                "resolution_date": "2026-09-10",
+            },
+        )
 
         rs = client.get("/api/hippo/decisions/stats")
         assert rs.status_code == 200
@@ -518,8 +590,9 @@ class TestDecisionAPI:
         assert "ctx-decision-marker" in ctx and "ctx-reflection-marker" in ctx
 
         # as_of时间旅行：as_of早于resolution_date→排除
-        rc2 = client.get("/api/hippo/decisions/context",
-                         params={"domain": "ctx_dom", "as_of": "2026-09-01"})
+        rc2 = client.get(
+            "/api/hippo/decisions/context", params={"domain": "ctx_dom", "as_of": "2026-09-01"}
+        )
         assert "ctx-decision-marker" not in rc2.json()["context"]
 
         ra = client.get("/api/hippo/decisions/audit", params={"decision_id": dec_id})

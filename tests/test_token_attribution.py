@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """P1 上下文逐项token归因测试 — claude-code SDKContextUsage移植
 
 调研来源：feature-matrix/10-claude-code-source.md #7（total/raw_max/percentage/
@@ -6,28 +5,29 @@ over_limit{tokens_over,kind} + mcp_tools[]/memory_files[]/agents[]/skills[]逐�
 
 无网络依赖：纯模块测试 + chat路径helper直接调用 + 端点函数直接调用。
 """
+
 import asyncio
 
 import pytest
 
+import src.cortex.token_attribution as ta
 from src.cortex.token_attribution import (
     DEFAULT_COMPACTION_RATIO,
-    ContextAttributor,
-    ContextItem,
     KIND_BUILTIN_TOOL,
+    KIND_MCP_TOOL,
     KIND_MEMORY,
     KIND_MESSAGE,
-    KIND_MCP_TOOL,
     KIND_RAG,
     KIND_SKILL,
     KIND_SYSTEM_PROMPT,
+    ContextAttributor,
+    ContextItem,
     build_context_usage,
     estimate_tokens,
     items_from_openai_tools,
     reset_attributor,
     resolve_context_window,
 )
-import src.cortex.token_attribution as ta
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +40,7 @@ def _fresh_attributor():
 # ════════════════════════════════════════════════════════════════
 # estimate_tokens — CJK≈1token/字符，其余chars//4（与acp-proxy镜像公式一致）
 # ════════════════════════════════════════════════════════════════
+
 
 class TestEstimateTokens:
     def test_ascii_chars_div4(self):
@@ -73,14 +74,22 @@ class TestEstimateTokens:
 # build_context_usage — SDKContextUsage形态
 # ════════════════════════════════════════════════════════════════
 
+
 def _items():
     return [
         ContextItem(kind=KIND_MCP_TOOL, name="feishu_search", source="mcp", tokens=900),
         ContextItem(kind=KIND_BUILTIN_TOOL, name="read_file", source="builtin", tokens=300),
         ContextItem(kind=KIND_MEMORY, name="hippo_memory[0]", source="hippo", tokens=200),
-        ContextItem(kind=KIND_SKILL, name="excel-skill", source="skill_manager", tokens=1500,
-                    extra={"plugin_name": "builtin"}),
-        ContextItem(kind=KIND_SYSTEM_PROMPT, name="soulmate_base_prompt", source="soulmate", tokens=2500),
+        ContextItem(
+            kind=KIND_SKILL,
+            name="excel-skill",
+            source="skill_manager",
+            tokens=1500,
+            extra={"plugin_name": "builtin"},
+        ),
+        ContextItem(
+            kind=KIND_SYSTEM_PROMPT, name="soulmate_base_prompt", source="soulmate", tokens=2500
+        ),
         ContextItem(kind=KIND_MESSAGE, name="conversation_history", source="session", tokens=1200),
         ContextItem(kind=KIND_RAG, name="rag_chunk[0]", source="search", tokens=400),
     ]
@@ -126,7 +135,9 @@ class TestBuildContextUsage:
         # 总量7040 > 10000*0.6=6000 且 <=10000 → compaction_window
         usage = build_context_usage(_items(), max_tokens=10000)
         assert usage["over_limit"]["kind"] == "compaction_window"
-        assert usage["over_limit"]["tokens_over"] == usage["total_tokens"] - int(10000 * DEFAULT_COMPACTION_RATIO)
+        assert usage["over_limit"]["tokens_over"] == usage["total_tokens"] - int(
+            10000 * DEFAULT_COMPACTION_RATIO
+        )
 
     def test_hard_limit_kind(self):
         usage = build_context_usage(_items(), max_tokens=5000)
@@ -153,9 +164,14 @@ class TestBuildContextUsage:
 class TestItemsFromOpenaiTools:
     def _tools(self):
         return [
-            {"type": "function", "function": {"name": "read_file",
-                                               "description": "读取文件内容" * 20,
-                                               "parameters": {"type": "object"}}},
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "读取文件内容" * 20,
+                    "parameters": {"type": "object"},
+                },
+            },
             {"type": "function", "function": {"name": "terminal", "description": "exec"}},
         ]
 
@@ -186,10 +202,15 @@ class TestItemsFromOpenaiTools:
 # ContextAttributor — 记录/环形缓冲/摘要/账本
 # ════════════════════════════════════════════════════════════════
 
+
 class TestContextAttributor:
     def _usage(self, total=1000):
-        return {"total_tokens": total, "percentage": 1.0, "over_limit": None,
-                "top_consumers": [{"kind": "skill", "name": "s1", "tokens": total, "source": "x"}]}
+        return {
+            "total_tokens": total,
+            "percentage": 1.0,
+            "over_limit": None,
+            "top_consumers": [{"kind": "skill", "name": "s1", "tokens": total, "source": "x"}],
+        }
 
     def test_record_and_recent_newest_first(self):
         a = ContextAttributor()
@@ -213,11 +234,25 @@ class TestContextAttributor:
 
     def test_summary_aggregates_top_consumers(self):
         a = ContextAttributor()
-        a.record({"total_tokens": 1000, "over_limit": None,
-                  "top_consumers": [{"kind": "skill", "name": "excel", "tokens": 600, "source": "sm"}]})
-        a.record({"total_tokens": 3000, "over_limit": {"tokens_over": 100, "kind": "hard_limit"},
-                  "top_consumers": [{"kind": "skill", "name": "excel", "tokens": 800, "source": "sm"},
-                                     {"kind": "mcp_tool", "name": "feishu", "tokens": 700, "source": "mcp"}]})
+        a.record(
+            {
+                "total_tokens": 1000,
+                "over_limit": None,
+                "top_consumers": [
+                    {"kind": "skill", "name": "excel", "tokens": 600, "source": "sm"}
+                ],
+            }
+        )
+        a.record(
+            {
+                "total_tokens": 3000,
+                "over_limit": {"tokens_over": 100, "kind": "hard_limit"},
+                "top_consumers": [
+                    {"kind": "skill", "name": "excel", "tokens": 800, "source": "sm"},
+                    {"kind": "mcp_tool", "name": "feishu", "tokens": 700, "source": "mcp"},
+                ],
+            }
+        )
         s = a.summary()
         assert s["total_records"] == 2
         assert s["over_limit_records"] == 1
@@ -238,8 +273,9 @@ class TestContextAttributor:
         path = str(tmp_path / "attr" / "ledger.jsonl")
         writer = ContextAttributor(ledger_path=path)
         writer.record(self._usage(500), session_id="sx", model="deepseek-r1")
-        reader = ContextAttributor(ledger_path=path)
+        ContextAttributor(ledger_path=path)
         import json
+
         lines = open(path, encoding="utf-8").read().strip().splitlines()
         assert len(lines) == 1
         rec = json.loads(lines[0])
@@ -257,9 +293,11 @@ class TestContextAttributor:
 # chat路径接线 — _attribute_chat_context + 端点函数
 # ════════════════════════════════════════════════════════════════
 
+
 class TestChatPathWiring:
     def test_helper_records_memory_rag_question_items(self):
         from src.api.chat import _attribute_chat_context
+
         usage = _attribute_chat_context(
             question="什么是门禁系统？",
             context_parts=["chunk-A" * 50, "chunk-B" * 30],
@@ -278,6 +316,7 @@ class TestChatPathWiring:
 
     def test_helper_records_degraded_path_question_only(self):
         from src.api.chat import _attribute_chat_context
+
         usage = _attribute_chat_context("你好", [], "", model=None)
         assert usage is not None
         assert usage["memory_files"] == []
@@ -287,15 +326,19 @@ class TestChatPathWiring:
 
     def test_helper_fail_safe_never_raises(self):
         from src.api.chat import _attribute_chat_context
+
         # memory_ctx传非字符串触发内部异常→返回None不抛
         assert _attribute_chat_context("q", [], None) is not None or True  # None安全
+
         class _Boom:
             def splitlines(self):
                 raise RuntimeError("boom")
+
         assert _attribute_chat_context("q", [], _Boom()) is None
 
     def test_endpoint_function_returns_recent_and_summary(self):
-        from src.api.chat import token_attribution, _attribute_chat_context
+        from src.api.chat import _attribute_chat_context, token_attribution
+
         _attribute_chat_context("测试问题", ["c" * 100], "- mem", model="deepseek-chat")
         result = asyncio.run(token_attribution(limit=5))
         assert result["summary"]["total_records"] == 1
@@ -304,6 +347,7 @@ class TestChatPathWiring:
 
     def test_endpoint_function_empty_state(self):
         from src.api.chat import token_attribution
+
         result = asyncio.run(token_attribution())
         assert result["recent"] == []
         assert result["summary"]["total_records"] == 0

@@ -33,6 +33,7 @@ class IntrusionDetectionMiddleware(BaseHTTPMiddleware):
         if self._detector is None:
             try:
                 from src.api.immune import intrusion
+
                 self._detector = intrusion
             except Exception:
                 return None
@@ -98,24 +99,30 @@ class IntrusionDetectionMiddleware(BaseHTTPMiddleware):
         if critical or len(high) >= 3:
             logger.warning(
                 "Intrusion blocked: ip=%s path=%s threats=%d (%.1fms)",
-                ip, path, len(threats), elapsed_ms,
+                ip,
+                path,
+                len(threats),
+                elapsed_ms,
             )
             # Emit event for blocked request
             try:
                 from src.nerve.event_bridge import push_event
-                push_event({
-                    "organ": "immune",
-                    "emoji": "🛡",
-                    "type": "request_blocked",
-                    "summary": f"🚫 Request blocked from {ip}: {path} ({len(threats)} threats)",
-                    "detail": {
-                        "ip": ip,
-                        "path": path,
-                        "method": method,
-                        "threat_count": len(threats),
-                        "threat_types": list(set(t.attack_type.value for t in threats)),
-                    },
-                })
+
+                push_event(
+                    {
+                        "organ": "immune",
+                        "emoji": "🛡",
+                        "type": "request_blocked",
+                        "summary": f"🚫 Request blocked from {ip}: {path} ({len(threats)} threats)",
+                        "detail": {
+                            "ip": ip,
+                            "path": path,
+                            "method": method,
+                            "threat_count": len(threats),
+                            "threat_types": list(set(t.attack_type.value for t in threats)),
+                        },
+                    }
+                )
             except Exception as exc:
                 logging.getLogger(__name__).debug("probe skipped: %s", exc)
             return JSONResponse(
@@ -131,7 +138,9 @@ class IntrusionDetectionMiddleware(BaseHTTPMiddleware):
         if threats and elapsed_ms < 100:
             logger.info(
                 "Threats detected (passing): ip=%s path=%s threats=%d",
-                ip, path, len(threats),
+                ip,
+                path,
+                len(threats),
             )
 
         response = await call_next(request)

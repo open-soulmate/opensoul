@@ -5,6 +5,7 @@ Phase1/Phase2宽容解析、管线端到端（LLM路径/import直供/降级/dry-
 workspace diff、prune旧资源修剪、pipeline_runs持久化、job handler接线。
 无live server依赖：tmp_path SQLite + FakeLLM。
 """
+
 import asyncio
 import json
 import time
@@ -28,8 +29,10 @@ def run(coro):
 
 def make_llm(response_text):
     """Fake LLM：原样返回response_text（str或OpenAI风格dict——解包回归测试用）。"""
+
     async def _llm(system_prompt, user_prompt):
         return response_text
+
     return _llm
 
 
@@ -40,9 +43,7 @@ class FailingLLM:
 
 @pytest.fixture
 def store(tmp_path):
-    return LongTermMemoryStore(
-        db_path=str(tmp_path / "ltm.db"), gatekeeper_enabled=True
-    )
+    return LongTermMemoryStore(db_path=str(tmp_path / "ltm.db"), gatekeeper_enabled=True)
 
 
 @pytest.fixture
@@ -51,6 +52,7 @@ def pipeline(store):
 
 
 # ── MemoryVersion版本化 ──────────────────────────────────────────
+
 
 class TestMemoryVersion:
     def test_store_writes_v1(self, store):
@@ -101,8 +103,10 @@ class TestMemoryVersion:
         mem = store.store(content="完全相同的事实条目", memory_type="semantic", importance=0.5)
         # 同内容再写dup_policy=merge→fact_dedup并入→MERGE版本事件
         merged = store.store(
-            content="完全相同的事实条目", memory_type="semantic",
-            importance=0.8, dup_policy="merge",
+            content="完全相同的事实条目",
+            memory_type="semantic",
+            importance=0.8,
+            dup_policy="merge",
         )
         assert merged is not None
         assert merged.memory_id == mem.memory_id
@@ -125,14 +129,25 @@ class TestMemoryVersion:
 
 # ── Phase1解析 ───────────────────────────────────────────────────
 
+
 class TestPhase1Parse:
     def test_valid_json(self):
-        resp = json.dumps([
-            {"content": "用户使用Arch Linux", "memory_type": "semantic",
-             "importance": 0.7, "tags": ["os"], "scope": "user",
-             "durability": "durable", "authority": "descriptive",
-             "evidence": "我用的是Arch", "reason": "环境事实"},
-        ], ensure_ascii=False)
+        resp = json.dumps(
+            [
+                {
+                    "content": "用户使用Arch Linux",
+                    "memory_type": "semantic",
+                    "importance": 0.7,
+                    "tags": ["os"],
+                    "scope": "user",
+                    "durability": "durable",
+                    "authority": "descriptive",
+                    "evidence": "我用的是Arch",
+                    "reason": "环境事实",
+                },
+            ],
+            ensure_ascii=False,
+        )
         cands = parse_phase1(resp)
         assert len(cands) == 1
         assert cands[0].content == "用户使用Arch Linux"
@@ -159,11 +174,13 @@ class TestPhase1Parse:
         assert cands[0].content == "有效"
 
     def test_importance_clamp_and_type_fallback(self):
-        resp = json.dumps([
-            {"content": "高值", "importance": 99},
-            {"content": "坏类型", "memory_type": "banana"},
-            {"content": "坏重要度", "importance": "not-a-number"},
-        ])
+        resp = json.dumps(
+            [
+                {"content": "高值", "importance": 99},
+                {"content": "坏类型", "memory_type": "banana"},
+                {"content": "坏重要度", "importance": "not-a-number"},
+            ]
+        )
         cands = parse_phase1(resp)
         assert cands[0].importance == 1.0
         assert cands[1].memory_type == "semantic"
@@ -172,20 +189,33 @@ class TestPhase1Parse:
 
 # ── Phase2解析 ───────────────────────────────────────────────────
 
+
 def _cands(n=4):
     return [Phase1Candidate(content=f"候选{i}", importance=0.6) for i in range(n)]
 
 
 class TestPhase2Parse:
     def test_valid_decisions_all_ops(self):
-        resp = json.dumps([
-            {"candidate_index": 0, "op": "ADD_NEW", "reason": "新事实"},
-            {"candidate_index": 1, "op": "MERGE_INTO", "target_memory_id": "ltm_a",
-             "merged_content": "合并后", "reason": "重复"},
-            {"candidate_index": 2, "op": "UPDATE", "target_memory_id": "ltm_b",
-             "merged_content": "更新后", "reason": "过时"},
-            {"candidate_index": 3, "op": "REJECT", "reason": "低价值"},
-        ])
+        resp = json.dumps(
+            [
+                {"candidate_index": 0, "op": "ADD_NEW", "reason": "新事实"},
+                {
+                    "candidate_index": 1,
+                    "op": "MERGE_INTO",
+                    "target_memory_id": "ltm_a",
+                    "merged_content": "合并后",
+                    "reason": "重复",
+                },
+                {
+                    "candidate_index": 2,
+                    "op": "UPDATE",
+                    "target_memory_id": "ltm_b",
+                    "merged_content": "更新后",
+                    "reason": "过时",
+                },
+                {"candidate_index": 3, "op": "REJECT", "reason": "低价值"},
+            ]
+        )
         decisions, meta = parse_phase2(resp, _cands())
         assert [d.op for d in decisions] == ["ADD_NEW", "MERGE_INTO", "UPDATE", "REJECT"]
         assert decisions[1].target_memory_id == "ltm_a"
@@ -200,19 +230,23 @@ class TestPhase2Parse:
         assert meta["missing_target_fallback"] == 1
 
     def test_out_of_range_index_skipped(self):
-        resp = json.dumps([
-            {"candidate_index": 0, "op": "ADD_NEW"},
-            {"candidate_index": 99, "op": "ADD_NEW"},
-        ])
+        resp = json.dumps(
+            [
+                {"candidate_index": 0, "op": "ADD_NEW"},
+                {"candidate_index": 99, "op": "ADD_NEW"},
+            ]
+        )
         decisions, meta = parse_phase2(resp, _cands())
         assert len(decisions) == 1
         assert meta["skipped_out_of_range"] == 1
 
     def test_invalid_op_skipped(self):
-        resp = json.dumps([
-            {"candidate_index": 0, "op": "TELEPORT"},
-            {"candidate_index": 1, "op": "add_new"},  # 小写宽容
-        ])
+        resp = json.dumps(
+            [
+                {"candidate_index": 0, "op": "TELEPORT"},
+                {"candidate_index": 1, "op": "add_new"},  # 小写宽容
+            ]
+        )
         decisions, meta = parse_phase2(resp, _cands())
         assert len(decisions) == 1
         assert decisions[0].op == "ADD_NEW"
@@ -228,13 +262,30 @@ class TestPhase2Parse:
 
 # ── 管线端到端 ───────────────────────────────────────────────────
 
-PHASE1_RESP = json.dumps([
-    {"content": "用户偏好用中文回复", "memory_type": "semantic", "importance": 0.8,
-     "tags": ["preference"], "scope": "user", "durability": "durable",
-     "authority": "descriptive", "evidence": "以后请用中文回复", "reason": "用户明确要求"},
-    {"content": "项目用Python 3.12", "memory_type": "semantic", "importance": 0.6,
-     "scope": "user", "durability": "durable", "authority": "descriptive"},
-], ensure_ascii=False)
+PHASE1_RESP = json.dumps(
+    [
+        {
+            "content": "用户偏好用中文回复",
+            "memory_type": "semantic",
+            "importance": 0.8,
+            "tags": ["preference"],
+            "scope": "user",
+            "durability": "durable",
+            "authority": "descriptive",
+            "evidence": "以后请用中文回复",
+            "reason": "用户明确要求",
+        },
+        {
+            "content": "项目用Python 3.12",
+            "memory_type": "semantic",
+            "importance": 0.6,
+            "scope": "user",
+            "durability": "durable",
+            "authority": "descriptive",
+        },
+    ],
+    ensure_ascii=False,
+)
 
 
 class TestPipelineRun:
@@ -243,10 +294,12 @@ class TestPipelineRun:
             ltm_store=store,
             llm_call=make_llm(PHASE1_RESP),  # Phase1响应；Phase2同样返回（解析为空→降级）
         )
-        result = run(llm.run(
-            messages=[{"role": "user", "content": "以后请用中文回复，项目用Python 3.12"}],
-            session_id="sess-1",
-        ))
+        result = run(
+            llm.run(
+                messages=[{"role": "user", "content": "以后请用中文回复，项目用Python 3.12"}],
+                session_id="sess-1",
+            )
+        )
         assert result.mode == "llm"
         assert result.phase1_count == 2
         assert result.error == ""
@@ -263,12 +316,17 @@ class TestPipelineRun:
     def test_phase2_llm_merge_into(self, store):
         existing = store.store(content="用户偏好英文回复", memory_type="semantic")
         p1 = json.dumps([{"content": "用户改口了，现在偏好中文回复", "importance": 0.8}])
-        p2 = json.dumps([
-            {"candidate_index": 0, "op": "MERGE_INTO",
-             "target_memory_id": existing.memory_id,
-             "merged_content": "用户偏好中文回复（早期记录为英文，已变更）",
-             "reason": "同主题更新"},
-        ])
+        p2 = json.dumps(
+            [
+                {
+                    "candidate_index": 0,
+                    "op": "MERGE_INTO",
+                    "target_memory_id": existing.memory_id,
+                    "merged_content": "用户偏好中文回复（早期记录为英文，已变更）",
+                    "reason": "同主题更新",
+                },
+            ]
+        )
         responses = iter([p1, p2])
         pipe = MemoryPipeline(ltm_store=store)
         # 两次调用依序返回Phase1/Phase2响应
@@ -280,10 +338,12 @@ class TestPipelineRun:
                 return p2
 
         pipe._llm_call = two_phase_llm
-        result = run(pipe.run(
-            messages=[{"role": "user", "content": "我现在偏好中文回复"}],
-            session_id="sess-merge",
-        ))
+        result = run(
+            pipe.run(
+                messages=[{"role": "user", "content": "我现在偏好中文回复"}],
+                session_id="sess-merge",
+            )
+        )
         assert result.phase2_meta["phase2"] == "llm"
         entry = next(d for d in result.diff if d["memory_id"] == existing.memory_id)
         assert entry["op"] == "merged"
@@ -299,11 +359,18 @@ class TestPipelineRun:
             {"content": "部署端口改成了3000", "importance": 0.7},
             {"content": "天空是蓝色的", "importance": 0.2},
         ]
-        p2 = json.dumps([
-            {"candidate_index": 0, "op": "UPDATE", "target_memory_id": old.memory_id,
-             "merged_content": "部署端口是3000（原8080已废弃）", "reason": "配置变更"},
-            {"candidate_index": 1, "op": "REJECT", "reason": "常识无长期价值"},
-        ])
+        p2 = json.dumps(
+            [
+                {
+                    "candidate_index": 0,
+                    "op": "UPDATE",
+                    "target_memory_id": old.memory_id,
+                    "merged_content": "部署端口是3000（原8080已废弃）",
+                    "reason": "配置变更",
+                },
+                {"candidate_index": 1, "op": "REJECT", "reason": "常识无长期价值"},
+            ]
+        )
         pipe = MemoryPipeline(ltm_store=store, llm_call=make_llm(p2))
         result = run(pipe.run(candidates=candidates, session_id="s", use_llm_phase2=True))
         diff_by_cand = {d["candidate"]: d for d in result.diff}
@@ -319,11 +386,13 @@ class TestPipelineRun:
         assert not any(m["content"] == "天空是蓝色的" for m in mems)
 
     def test_import_mode_candidates_direct(self, store, pipeline):
-        result = run(pipeline.run(
-            candidates=[{"content": "直供候选事实X", "importance": 0.7}],
-            session_id="sess-import",
-            use_llm_phase2=False,
-        ))
+        result = run(
+            pipeline.run(
+                candidates=[{"content": "直供候选事实X", "importance": 0.7}],
+                session_id="sess-import",
+                use_llm_phase2=False,
+            )
+        )
         assert result.mode == "import"
         assert result.phase1_count == 1
         assert result.phase2_meta["phase2"] == "deterministic"
@@ -367,43 +436,53 @@ class TestPipelineRun:
 
     def test_dry_run_no_writes(self, store, pipeline):
         before = len(store.list_memories(limit=1000))
-        result = run(pipeline.run(
-            candidates=[{"content": "dry-run不应落库", "importance": 0.7}],
-            apply=False, use_llm_phase2=False,
-        ))
+        result = run(
+            pipeline.run(
+                candidates=[{"content": "dry-run不应落库", "importance": 0.7}],
+                apply=False,
+                use_llm_phase2=False,
+            )
+        )
         assert result.diff[0]["op"] == "planned_add_new"
         assert len(store.list_memories(limit=1000)) == before
 
     def test_deterministic_duplicate_merges(self, store, pipeline):
         store.store(content="完全重复的管线事实", memory_type="semantic")
-        result = run(pipeline.run(
-            candidates=[{"content": "完全重复的管线事实", "importance": 0.9}],
-            use_llm_phase2=False,
-        ))
+        result = run(
+            pipeline.run(
+                candidates=[{"content": "完全重复的管线事实", "importance": 0.9}],
+                use_llm_phase2=False,
+            )
+        )
         entry = result.diff[0]
         assert entry["op"] == "merged"  # fact_dedup并入而非追加
         assert entry["version_after"] >= 2
-        matching = [m for m in store.list_memories(limit=100)
-                    if m["content"] == "完全重复的管线事实"]
+        matching = [
+            m for m in store.list_memories(limit=100) if m["content"] == "完全重复的管线事实"
+        ]
         assert len(matching) == 1  # 无重复条目
 
     def test_merge_target_not_found_rejected(self, store, pipeline):
-        decisions = [ConsolidationDecision(
-            op="MERGE_INTO",
-            candidate=Phase1Candidate(content="孤儿候选"),
-            target_memory_id="ltm_missing_target",
-            merged_content="x",
-            reason="目标缺失测试",
-        )]
+        decisions = [
+            ConsolidationDecision(
+                op="MERGE_INTO",
+                candidate=Phase1Candidate(content="孤儿候选"),
+                target_memory_id="ltm_missing_target",
+                merged_content="x",
+                reason="目标缺失测试",
+            )
+        ]
         diff = pipeline.apply(decisions, run_id="t")
         assert diff[0]["op"] == "rejected"
         assert "target_not_found" in diff[0]["reason"]
 
     def test_run_persisted_and_stats(self, store, pipeline):
-        run(pipeline.run(
-            candidates=[{"content": "持久化测试事实A", "importance": 0.6}],
-            use_llm_phase2=False,
-        ))
+        run(
+            pipeline.run(
+                candidates=[{"content": "持久化测试事实A", "importance": 0.6}],
+                use_llm_phase2=False,
+            )
+        )
         runs = pipeline.get_runs()
         assert len(runs) >= 1
         latest = runs[0]
@@ -419,6 +498,7 @@ class TestPipelineRun:
 
 # ── prune旧资源修剪 ──────────────────────────────────────────────
 
+
 class TestPrune:
     def test_prune_old_transient_working(self, store, pipeline):
         old_time = time.time() - 100 * 3600  # 100小时前
@@ -430,6 +510,7 @@ class TestPrune:
         )
         # 手动把created_at改老（SQLite直接改）
         import sqlite3
+
         with sqlite3.connect(store.db_path) as conn:
             conn.execute(
                 "UPDATE memories SET created_at = ? WHERE memory_id = ?",
@@ -455,11 +536,11 @@ class TestPrune:
         assert not any(m["memory_id"] == mem.memory_id for m in active)
         assert any(m["content"] == "任务：进行中的工作记忆" for m in active)
         # durable semantic未受影响（prune只看working）
-        assert any(m["memory_id"] == durable.memory_id
-                   for m in store.list_memories(limit=100))
+        assert any(m["memory_id"] == durable.memory_id for m in store.list_memories(limit=100))
 
     def test_prune_protected_scope_blocked(self, store, pipeline):
         import sqlite3
+
         mem = store.store(
             content="项目：门禁系统架构决策（受保护域）",
             memory_type="working",
@@ -480,6 +561,7 @@ class TestPrune:
 
 # ── job handler接线 ──────────────────────────────────────────────
 
+
 class TestJobHandlerWiring:
     def test_handler_registered(self, pipeline):
         assert "hippo.memory_pipeline" in HANDLER_SPECS
@@ -488,14 +570,17 @@ class TestJobHandlerWiring:
 
     def test_handler_executes_pipeline(self, store, pipeline, monkeypatch):
         import src.api.hippo as api_hippo
+
         monkeypatch.setattr(api_hippo, "_memory_pipeline", pipeline)
         handler = HANDLER_SPECS["hippo.memory_pipeline"]
-        result = run(handler(
-            candidates=[{"content": "作业队列管线测试事实", "importance": 0.7}],
-            session_id="job-sess",
-            apply=True,
-            use_llm_phase2=False,
-        ))
+        result = run(
+            handler(
+                candidates=[{"content": "作业队列管线测试事实", "importance": 0.7}],
+                session_id="job-sess",
+                apply=True,
+                use_llm_phase2=False,
+            )
+        )
         assert result["mode"] == "import"
         assert result["diff"][0]["op"] == "added"
         contents = [m["content"] for m in store.list_memories(limit=100)]
@@ -514,15 +599,25 @@ class _FakeQueue:
 # live实证bug：chat()返回OpenAI原始响应体choices[0].message.content，
 # 旧代码result.get("content")落空→str(整个响应体)→解析0条且无error。
 
+
 class TestProviderResponseUnwrap:
     def test_extract_chat_text_openai_body(self):
         from src.gland.router import extract_chat_text
-        body = {"choices": [{"finish_reason": "stop", "index": 0,
-                              "message": {"content": "正文内容", "role": "assistant"}}]}
+
+        body = {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "index": 0,
+                    "message": {"content": "正文内容", "role": "assistant"},
+                }
+            ]
+        }
         assert extract_chat_text(body) == "正文内容"
 
     def test_extract_chat_text_flat_str_and_unknown(self):
         from src.gland.router import extract_chat_text
+
         assert extract_chat_text({"content": "直接内容"}) == "直接内容"
         assert extract_chat_text({"text": "text字段"}) == "text字段"
         assert extract_chat_text("已是字符串") == "已是字符串"
@@ -532,10 +627,12 @@ class TestProviderResponseUnwrap:
     def test_pipeline_openai_shaped_llm_response(self, store):
         openai_body = {"choices": [{"message": {"content": PHASE1_RESP, "role": "assistant"}}]}
         pipe = MemoryPipeline(ltm_store=store, llm_call=make_llm(openai_body))
-        result = run(pipe.run(
-            messages=[{"role": "user", "content": "以后请用中文回复，项目用Python 3.12"}],
-            session_id="s-unwrap",
-        ))
+        result = run(
+            pipe.run(
+                messages=[{"role": "user", "content": "以后请用中文回复，项目用Python 3.12"}],
+                session_id="s-unwrap",
+            )
+        )
         assert result.error == ""
         assert result.phase1_count == 2  # 解包后Phase1候选正确解析（修复前=0）
         contents = [m["content"] for m in store.list_memories(limit=100)]
@@ -547,10 +644,18 @@ class TestProviderResponseUnwrap:
 
     def test_dream_openai_shaped_response(self, store):
         from src.hippo.dream_distiller import DreamDistiller
-        dream_actions = json.dumps([
-            {"action": "ADD", "content": "解包修复后入库的记忆", "memory_type": "semantic",
-             "importance": 0.6, "reason": "unwrap回归"},
-        ])
+
+        dream_actions = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "解包修复后入库的记忆",
+                    "memory_type": "semantic",
+                    "importance": 0.6,
+                    "reason": "unwrap回归",
+                },
+            ]
+        )
         openai_body = {"choices": [{"message": {"content": dream_actions, "role": "assistant"}}]}
         dd = DreamDistiller(ltm_store=store, llm_call=make_llm(openai_body))
         result = run(dd.dream(messages=[{"role": "user", "content": "记住：解包修复后入库的记忆"}]))

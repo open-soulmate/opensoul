@@ -5,7 +5,8 @@ import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.api.gland import _ensure_bootstrapped, gateway as llm_gateway
+from src.api.gland import _ensure_bootstrapped
+from src.api.gland import gateway as llm_gateway
 from src.benchmark.engine import BENCHMARK_TARGETS, benchmark_engine
 from src.benchmark.eval_loop import (
     CodeScorer,
@@ -337,9 +338,7 @@ async def run_eval_experiment(req: ExperimentRunRequest):
         judge_fn, identity = make_router_judge(llm_gateway, model=req.judge_model)
         scorers.append(JudgeScorer(judge_fn, model_identity=identity))
     if not scorers:
-        raise HTTPException(
-            status_code=400, detail="scorer must be one of: auto, code, judge"
-        )
+        raise HTTPException(status_code=400, detail="scorer must be one of: auto, code, judge")
 
     runner_fn = make_router_runner(
         llm_gateway,

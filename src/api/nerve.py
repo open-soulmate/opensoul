@@ -54,6 +54,7 @@ class EventBus:
             except asyncio.QueueFull:
                 pass  # drop if subscriber is too slow
         return event
+
     def register_stream(self) -> tuple[str, asyncio.Queue]:
         """Register a new SSE stream subscriber. Returns (stream_id, queue)."""
         stream_id = str(uuid.uuid4())
@@ -289,6 +290,7 @@ async def nerve_stats():
 
 class BatchPublishRequest(BaseModel):
     """Batch publish request — send multiple events in a single HTTP call."""
+
     events: list[PublishRequest] = Field(min_length=1, max_length=500)
 
 
@@ -321,6 +323,7 @@ async def publish_batch(req: BatchPublishRequest):
 
 class StreamEventRequest(BaseModel):
     """Single event upload via the streaming endpoint."""
+
     id: str = ""
     source: str = ""
     event_type: str = ""

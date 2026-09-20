@@ -43,9 +43,10 @@ import re
 import sqlite3
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("opensoul.benchmark.eval_loop")
 
@@ -153,7 +154,7 @@ class EvalStore:
             conn.commit()
         return dataset_id
 
-    def get_dataset(self, dataset_id: str) -> Optional[dict]:
+    def get_dataset(self, dataset_id: str) -> dict | None:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -168,9 +169,7 @@ class EvalStore:
     def list_datasets(self) -> list[dict]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM eval_datasets ORDER BY created_at"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM eval_datasets ORDER BY created_at").fetchall()
         out = []
         for row in rows:
             data = dict(row)
@@ -216,7 +215,7 @@ class EvalStore:
         return len(cases)
 
     def list_cases(
-        self, dataset_id: str, seed: Optional[int] = None, limit: Optional[int] = None
+        self, dataset_id: str, seed: int | None = None, limit: int | None = None
     ) -> list[EvalCase]:
         """List cases. seed != None → deterministic shuffled order (langfuse
         确定性采样: same seed → same sample → comparable experiments)."""
@@ -281,7 +280,7 @@ class EvalStore:
             )
             conn.commit()
 
-    def get_experiment(self, experiment_id: str) -> Optional[dict]:
+    def get_experiment(self, experiment_id: str) -> dict | None:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -337,7 +336,7 @@ class CodeScorer:
     def __init__(
         self,
         check: str = "contains",
-        case_fn: Optional[Callable[[EvalCase, str], bool]] = None,
+        case_fn: Callable[[EvalCase, str], bool] | None = None,
     ):
         if check not in self.VALID_MODES:
             raise ValueError(f"check must be one of {self.VALID_MODES}")
@@ -357,12 +356,18 @@ class CodeScorer:
         if self.case_fn is not None:
             ok = bool(self.case_fn(case, output))
             return ScoreResult(
-                self.name, True, self.source, ok, 1.0 if ok else 0.0,
+                self.name,
+                True,
+                self.source,
+                ok,
+                1.0 if ok else 0.0,
                 "custom check " + ("passed" if ok else "failed"),
             )
         if not case.expected:
             return ScoreResult(
-                self.name, False, self.source,
+                self.name,
+                False,
+                self.source,
                 reason="case has no expected value; code scorer abstains",
             )
         if self.check == "contains":
@@ -374,7 +379,11 @@ class CodeScorer:
         else:  # equals
             ok = case.expected == output
         return ScoreResult(
-            self.name, True, self.source, ok, 1.0 if ok else 0.0,
+            self.name,
+            True,
+            self.source,
+            ok,
+            1.0 if ok else 0.0,
             f"{self.check} check " + ("passed" if ok else "failed"),
         )
 
@@ -391,7 +400,7 @@ JUDGE_SYSTEM_PROMPT = (
 )
 
 
-def _parse_judge_verdict(raw: str, pass_threshold: float) -> Optional[tuple[float, bool, str]]:
+def _parse_judge_verdict(raw: str, pass_threshold: float) -> tuple[float, bool, str] | None:
     """Lenient verdict parsing: strict JSON first (fenced or bare), then
     regex fallback for 'score: 7/10'-style prose. None = unparseable."""
     if not raw:
@@ -439,7 +448,7 @@ class JudgeScorer:
     def __init__(
         self,
         judge_fn: Callable[[list[dict]], Coroutine[Any, Any, str]],
-        model_identity: Optional[dict] = None,
+        model_identity: dict | None = None,
         pass_threshold: float = 5.0,
     ):
         self.judge_fn = judge_fn
@@ -448,9 +457,7 @@ class JudgeScorer:
 
     @property
     def digest(self) -> str:
-        payload = json.dumps(
-            {"scorer": self.name, **self.model_identity}, sort_keys=True
-        )
+        payload = json.dumps({"scorer": self.name, **self.model_identity}, sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
     def build_messages(self, case: EvalCase, output: str) -> list[dict]:
@@ -469,19 +476,17 @@ class JudgeScorer:
         try:
             raw = await self.judge_fn(self.build_messages(case, output or ""))
         except Exception as exc:  # judge unavailable → abstain, don't fake
-            return ScoreResult(
-                self.name, False, self.source, reason=f"judge error: {exc}"
-            )
+            return ScoreResult(self.name, False, self.source, reason=f"judge error: {exc}")
         parsed = _parse_judge_verdict(raw or "", self.pass_threshold)
         if parsed is None:
             return ScoreResult(
-                self.name, False, self.source,
+                self.name,
+                False,
+                self.source,
                 reason=f"unparseable verdict: {(raw or '')[:200]}",
             )
         score10, passed, reason = parsed
-        return ScoreResult(
-            self.name, True, self.source, passed, round(score10 / 10.0, 4), reason
-        )
+        return ScoreResult(self.name, True, self.source, passed, round(score10 / 10.0, 4), reason)
 
 
 # ── Experiment runner ─────────────────────────────────────────────────
@@ -501,7 +506,7 @@ class ExperimentRunner:
         scorers: list,
         k: int = 1,
         policy_name: str = "default",
-        policy_meta: Optional[dict] = None,
+        policy_meta: dict | None = None,
         seed: int = 42,
         storm_window: int = 3,
         baseline_id: str = "",
@@ -528,15 +533,14 @@ class ExperimentRunner:
         """What changed between compared runs (agno policy_fingerprint):
         model + prompt + tool config — NOT the environment."""
         payload = json.dumps(
-            {"name": self.policy_name, **self.policy_meta}, sort_keys=True,
+            {"name": self.policy_name, **self.policy_meta},
+            sort_keys=True,
             ensure_ascii=False,
         )
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
     def env_fingerprint(self) -> str:
-        return self.store.env_fingerprint(
-            self.dataset_id, [s.digest for s in self.scorers], self.k
-        )
+        return self.store.env_fingerprint(self.dataset_id, [s.digest for s in self.scorers], self.k)
 
     async def run(self) -> dict:
         if not self.store.get_dataset(self.dataset_id):
@@ -581,8 +585,11 @@ class ExperimentRunner:
                 except Exception as exc:
                     err_type = type(exc).__name__
                     attempt.update(
-                        output_size=0, error=err_type,
-                        scored=False, passed=False, reason=str(exc)[:300],
+                        output_size=0,
+                        error=err_type,
+                        scored=False,
+                        passed=False,
+                        reason=str(exc)[:300],
                     )
                     case_rec["attempts"].append(attempt)
                     error_streak.append(err_type)
@@ -590,7 +597,7 @@ class ExperimentRunner:
                     # window: same error type N times in a row = systemic fault
                     # (dead provider, invalid key), not N independent failures.
                     if len(error_streak) >= self.storm_window:
-                        window = error_streak[-self.storm_window:]
+                        window = error_streak[-self.storm_window :]
                         if len(set(window)) == 1:
                             results["circuit_broken"] = True
                             results["circuit_reason"] = (
@@ -602,7 +609,7 @@ class ExperimentRunner:
                     continue
 
                 error_streak.clear()
-                final: Optional[ScoreResult] = None
+                final: ScoreResult | None = None
                 for sc in self.scorers:
                     res = await sc.score(case, output or "")
                     if res.scored:
@@ -610,13 +617,16 @@ class ExperimentRunner:
                         break  # first scorer that SCORES decides (code before judge)
                 if final is None:
                     attempt.update(
-                        scored=False, passed=False,
+                        scored=False,
+                        passed=False,
                         reason="all scorers abstained",
                     )
                 else:
                     attempt.update(
-                        scored=True, passed=final.passed,
-                        score=final.score, scorer=final.scorer,
+                        scored=True,
+                        passed=final.passed,
+                        score=final.score,
+                        scorer=final.scorer,
                         reason=final.reason,
                     )
                     case_rec["scored_count"] += 1
@@ -643,9 +653,7 @@ class ExperimentRunner:
                 case_rec["attempts"].append(attempt)
 
             if case_rec["scored_count"]:
-                case_rec["pass_rate"] = round(
-                    case_rec["pass_count"] / case_rec["scored_count"], 3
-                )
+                case_rec["pass_rate"] = round(case_rec["pass_count"] / case_rec["scored_count"], 3)
                 case_rec["avg_score"] = round(sum(scores) / len(scores), 3)
             results["cases"][case.case_id] = case_rec
             if results["circuit_broken"]:
@@ -681,7 +689,9 @@ class ExperimentRunner:
             "errored_attempts": errored,
             "mean_pass_rate": round(
                 sum(r["pass_rate"] for r in scored_cases) / len(scored_cases), 3
-            ) if scored_cases else None,
+            )
+            if scored_cases
+            else None,
             "learning_zone_size": len(results["learning_zone"]),
             "circuit_broken": results["circuit_broken"],
         }
@@ -700,8 +710,7 @@ def diff_against_baseline(baseline: dict, current: dict) -> dict:
         )
     diff = {
         "baseline_id": baseline.get("experiment_id"),
-        "policy_changed": baseline.get("policy_fingerprint")
-        != current.get("policy_fingerprint"),
+        "policy_changed": baseline.get("policy_fingerprint") != current.get("policy_fingerprint"),
         "improved": [],
         "regressed": [],
         "unchanged": [],
@@ -732,7 +741,7 @@ def diff_against_baseline(baseline: dict, current: dict) -> dict:
 def make_router_runner(
     gateway,
     system_prompt: str = "",
-    model: Optional[str] = None,
+    model: str | None = None,
     temperature: float = 0.2,
     max_tokens: int = 2048,
 ) -> Callable[[EvalCase], Coroutine[Any, Any, str]]:
@@ -759,7 +768,7 @@ def make_router_runner(
 
 def make_router_judge(
     gateway,
-    model: Optional[str] = None,
+    model: str | None = None,
     temperature: float = 0.0,
 ) -> tuple[Callable[[list[dict]], Coroutine[Any, Any, str]], dict]:
     """LLM-as-Judge adapter via gland router + its identity dict (for digest)."""
@@ -769,5 +778,9 @@ def make_router_judge(
         choice = (result.get("choices") or [{}])[0]
         return (choice.get("message") or {}).get("content") or ""
 
-    identity = {"adapter": "gland_router", "model": model or "router-default", "temperature": temperature}
+    identity = {
+        "adapter": "gland_router",
+        "model": model or "router-default",
+        "temperature": temperature,
+    }
     return judge_fn, identity

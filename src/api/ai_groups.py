@@ -15,10 +15,14 @@ from src.api.ws_chat import run_agent_proxy
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai-groups", tags=["ai-groups"])
+
+
 @router.get("/health")
 async def ai_groups_health():
     """AIGroups health check."""
     return {"status": "ok", "component": "AIGroups"}
+
+
 DB_PATH = Path.home() / "opensoul" / "data" / "ai_groups.db"
 
 
@@ -209,6 +213,7 @@ class ScoreTaskRequest(BaseModel):
 
 class AutoEvaluateRequest(BaseModel):
     """自动评估请求 — 由前端在任务执行完成后调用"""
+
     capability: str = ""  # 能力维度，空则自动推断
     success: bool = True  # 执行是否成功
     source: str = ""  # 执行来源 (local/remote)
@@ -309,9 +314,7 @@ def calculate_task_avg_score(task_id: str) -> float | None:
     """计算任务平均分（去掉最高最低分）"""
     conn = get_db()
     try:
-        rows = conn.execute(
-            "SELECT score FROM agent_scores WHERE task_id=?", (task_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT score FROM agent_scores WHERE task_id=?", (task_id,)).fetchall()
         scores = [r["score"] for r in rows]
         if len(scores) == 0:
             return None
@@ -494,16 +497,16 @@ class ExecuteTaskRequest(BaseModel):
 
 def _resolve_agent_binary(agent_id: str, model: str = "") -> str:
     """将AI群组agent_id映射到实际CLI agent二进制名。
-    
+
     群组里的agent_id如 executor-1/advisor-1 不是真实binary名，
     需要根据model字段或agent_id关键词推断应该调用哪个CLI agent。
     """
     import shutil
-    
+
     # 直接匹配 — agent_id本身就是binary名
     if shutil.which(agent_id):
         return agent_id
-    
+
     # 根据model字段推断
     model_lower = model.lower()
     model_to_agent = {
@@ -525,7 +528,7 @@ def _resolve_agent_binary(agent_id: str, model: str = "") -> str:
     for keyword, binary in model_to_agent.items():
         if keyword in model_lower and shutil.which(binary):
             return binary
-    
+
     # 根据agent_id关键词推断
     id_lower = agent_id.lower()
     id_to_agent = {
@@ -540,11 +543,11 @@ def _resolve_agent_binary(agent_id: str, model: str = "") -> str:
     for keyword, binary in id_to_agent.items():
         if keyword in id_lower and shutil.which(binary):
             return binary
-    
+
     # 默认用hermes
     if shutil.which("hermes"):
         return "hermes"
-    
+
     return agent_id  # 最后回退
 
 
@@ -561,7 +564,8 @@ async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
 
         # 查找agent的model信息用于resolve
         agent_row = conn.execute(
-            "SELECT * FROM ai_group_agents WHERE group_id=? AND agent_id=?", (group_id, req.agent_id)
+            "SELECT * FROM ai_group_agents WHERE group_id=? AND agent_id=?",
+            (group_id, req.agent_id),
         ).fetchone()
         agent_model = agent_row["model"] if agent_row else ""
 
@@ -597,14 +601,19 @@ async def execute_task(group_id: str, task_id: str, req: ExecuteTaskRequest):
                 req.agent_id,
                 "result",
                 response_text[:2000],  # 截断过长内容
-                json.dumps({"source": source, "success": success, "full_length": len(response_text)}, ensure_ascii=False),
+                json.dumps(
+                    {"source": source, "success": success, "full_length": len(response_text)},
+                    ensure_ascii=False,
+                ),
                 result_now,
             ),
         )
 
         # ── 自动评分：基于结果质量启发式打分 + 更新能力画像 ──
         goal_text = task["goal"] if "goal" in task.keys() else req.goal
-        auto_score, auto_reason, capability = _auto_score_from_result(response_text, success, goal_text)
+        auto_score, auto_reason, capability = _auto_score_from_result(
+            response_text, success, goal_text
+        )
         conn.execute(
             "UPDATE ai_group_tasks SET quality_score=?, status='scored', updated_at=? WHERE id=?",
             (auto_score, result_now, task_id),
@@ -1069,7 +1078,9 @@ def score_task(group_id: str, task_id: str, req: ScoreTaskRequest):
                 "",
                 "score",
                 f"评分 {req.score}/10: {req.reason}",
-                json.dumps({"score": req.score, "target_agent_id": assigned_agent}, ensure_ascii=False),
+                json.dumps(
+                    {"score": req.score, "target_agent_id": assigned_agent}, ensure_ascii=False
+                ),
                 now,
             ),
         )
@@ -1156,15 +1167,93 @@ def get_agent_capabilities(group_id: str, agent_id: str):
 # ── Capability keyword mapping ──────────────────────────────────────
 # Maps Chinese/English task keywords to capability dimensions
 _CAPABILITY_KEYWORDS: dict[str, list[str]] = {
-    "coding": ["代码", "编程", "开发", "实现", "编写", "code", "programming", "develop", "implement", "build", "写代码", "函数", "接口", "api", "bug", "修复", "fix"],
-    "writing": ["文档", "写作", "报告", "方案", "文章", "write", "document", "report", "article", "撰写", "编写文档", "README"],
-    "analysis": ["分析", "研究", "调研", "对比", "评估", "analyze", "research", "evaluate", "compare", "数据", "统计"],
-    "design": ["设计", "架构", "规划", "UI", "UX", "design", "architecture", "plan", "界面", "交互"],
-    "devops": ["部署", "运维", "配置", "容器", "docker", "deploy", "config", "server", "服务器", "nginx", "CI", "CD"],
+    "coding": [
+        "代码",
+        "编程",
+        "开发",
+        "实现",
+        "编写",
+        "code",
+        "programming",
+        "develop",
+        "implement",
+        "build",
+        "写代码",
+        "函数",
+        "接口",
+        "api",
+        "bug",
+        "修复",
+        "fix",
+    ],
+    "writing": [
+        "文档",
+        "写作",
+        "报告",
+        "方案",
+        "文章",
+        "write",
+        "document",
+        "report",
+        "article",
+        "撰写",
+        "编写文档",
+        "README",
+    ],
+    "analysis": [
+        "分析",
+        "研究",
+        "调研",
+        "对比",
+        "评估",
+        "analyze",
+        "research",
+        "evaluate",
+        "compare",
+        "数据",
+        "统计",
+    ],
+    "design": [
+        "设计",
+        "架构",
+        "规划",
+        "UI",
+        "UX",
+        "design",
+        "architecture",
+        "plan",
+        "界面",
+        "交互",
+    ],
+    "devops": [
+        "部署",
+        "运维",
+        "配置",
+        "容器",
+        "docker",
+        "deploy",
+        "config",
+        "server",
+        "服务器",
+        "nginx",
+        "CI",
+        "CD",
+    ],
     "testing": ["测试", "验证", "检查", "test", "verify", "check", "质量", "QA", "单元测试"],
     "data": ["数据", "数据库", "SQL", "data", "database", "查询", "ETL", "pipeline"],
     "security": ["安全", "加密", "权限", "认证", "security", "auth", "encrypt", "RBAC"],
-    "frontend": ["前端", "页面", "组件", "React", "CSS", "HTML", "frontend", "page", "component", "UI组件"],
+    "frontend": [
+        "前端",
+        "页面",
+        "组件",
+        "React",
+        "CSS",
+        "HTML",
+        "frontend",
+        "page",
+        "component",
+        "UI组件",
+    ],
     "backend": ["后端", "服务", "微服务", "API", "backend", "service", "FastAPI", "Express"],
 }
 
@@ -1249,15 +1338,23 @@ async def smart_assign(group_id: str, req: SmartAssignRequest):
                 # No capability data → neutral score (new agent)
                 suitability = 5.0
 
-            scored_agents.append({
-                "agent_id": agent_id,
-                "agent_name": agent.get("name", agent_id),
-                "role": role,
-                "suitability": round(suitability, 2),
-                "matched_capabilities": [t for t in tags if any(t in c["capability"] for c in caps)] if caps else [],
-                "overall_rank": round(sum(c["avg_score"] for c in caps) / len(caps), 2) if caps else 0,
-                "task_count": sum(c["task_count"] for c in caps) if caps else 0,
-            })
+            scored_agents.append(
+                {
+                    "agent_id": agent_id,
+                    "agent_name": agent.get("name", agent_id),
+                    "role": role,
+                    "suitability": round(suitability, 2),
+                    "matched_capabilities": [
+                        t for t in tags if any(t in c["capability"] for c in caps)
+                    ]
+                    if caps
+                    else [],
+                    "overall_rank": round(sum(c["avg_score"] for c in caps) / len(caps), 2)
+                    if caps
+                    else 0,
+                    "task_count": sum(c["task_count"] for c in caps) if caps else 0,
+                }
+            )
 
         # Sort by suitability descending
         scored_agents.sort(key=lambda a: a["suitability"], reverse=True)
@@ -1273,39 +1370,49 @@ async def smart_assign(group_id: str, req: SmartAssignRequest):
         if executors:
             # Pick the best executor
             best = executors[0]
-            assignments.append({
-                "agent_id": best["agent_id"],
-                "subgoal": req.goal,
-                "reason": f"最佳匹配: 能力评分{best['suitability']}, 已完成{best['task_count']}个任务",
-            })
+            assignments.append(
+                {
+                    "agent_id": best["agent_id"],
+                    "subgoal": req.goal,
+                    "reason": f"最佳匹配: 能力评分{best['suitability']}, 已完成{best['task_count']}个任务",
+                }
+            )
             reasoning.append(f"执行者选择 {best['agent_name']} (匹配度{best['suitability']})")
 
             # If task is complex (long goal), add a second executor for parallel work
             if len(req.goal) > 50 and len(executors) > 1:
                 second = executors[1]
-                assignments.append({
-                    "agent_id": second["agent_id"],
-                    "subgoal": f"辅助完成: {req.goal}",
-                    "reason": f"辅助执行: 能力评分{second['suitability']}",
-                })
-                reasoning.append(f"辅助执行者 {second['agent_name']} (匹配度{second['suitability']})")
+                assignments.append(
+                    {
+                        "agent_id": second["agent_id"],
+                        "subgoal": f"辅助完成: {req.goal}",
+                        "reason": f"辅助执行: 能力评分{second['suitability']}",
+                    }
+                )
+                reasoning.append(
+                    f"辅助执行者 {second['agent_name']} (匹配度{second['suitability']})"
+                )
 
         if advisors:
             best_advisor = advisors[0]
-            assignments.append({
-                "agent_id": best_advisor["agent_id"],
-                "subgoal": f"审查任务执行结果: {req.goal}",
-                "reason": f"审查: 能力评分{best_advisor['suitability']}",
-            })
+            assignments.append(
+                {
+                    "agent_id": best_advisor["agent_id"],
+                    "subgoal": f"审查任务执行结果: {req.goal}",
+                    "reason": f"审查: 能力评分{best_advisor['suitability']}",
+                }
+            )
             reasoning.append(f"审查者 {best_advisor['agent_name']}")
 
         if verifiers:
             best_verifier = verifiers[0]
-            assignments.append({
-                "agent_id": best_verifier["agent_id"],
-                "subgoal": f"验证任务完成质量: {req.goal}",
-                "reason": f"验证: 能力评分{best_verifier['suitability']}",
-            })
+            assignments.append(
+                {
+                    "agent_id": best_verifier["agent_id"],
+                    "subgoal": f"验证任务完成质量: {req.goal}",
+                    "reason": f"验证: 能力评分{best_verifier['suitability']}",
+                }
+            )
             reasoning.append(f"验证者 {best_verifier['agent_name']}")
 
         return {
@@ -1319,6 +1426,7 @@ async def smart_assign(group_id: str, req: SmartAssignRequest):
 
 
 # ── Auto-Evaluate: close the feedback loop ─────────────────────────
+
 
 def _auto_score_from_result(result_text: str, success: bool, goal: str) -> tuple[int, str, str]:
     """基于执行结果自动评分，返回 (score, reason, capability)。
@@ -1446,7 +1554,9 @@ async def auto_evaluate_task(group_id: str, task_id: str, req: AutoEvaluateReque
                 "Auto-Evaluator",
                 "score",
                 f"📊 自动评分: {score}/10\n能力维度: {capability}\n{reason}",
-                json.dumps({"auto": True, "score": score, "capability": capability}, ensure_ascii=False),
+                json.dumps(
+                    {"auto": True, "score": score, "capability": capability}, ensure_ascii=False
+                ),
                 now,
             ),
         )

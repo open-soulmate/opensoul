@@ -81,7 +81,7 @@ class SkillLearner:
         task_description: str,
         tool_calls: list[dict],
         success: bool,
-    ) -> Optional[Skill]:
+    ) -> Skill | None:
         """Extract a reusable skill from a successful execution."""
         if not success or not tool_calls:
             return None
@@ -96,10 +96,7 @@ class SkillLearner:
             ("web_search", "read_file"),
             ("browser_exec", "terminal"),
         ]
-        is_pattern = any(
-            all(t in tools_used for t in pattern)
-            for pattern in meaningful_patterns
-        )
+        is_pattern = any(all(t in tools_used for t in pattern) for pattern in meaningful_patterns)
         if len(tools_used) < 2 and not is_pattern:
             return None
 
@@ -125,10 +122,21 @@ class SkillLearner:
                     parameters, usage_count, success_count, avg_duration_ms,
                     created_at, last_used_at, tags, source_session)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (skill.skill_id, skill.name, skill.description, skill.category,
-                 skill.code_template, json.dumps(skill.parameters),
-                 1, 1, 0, time.time(), time.time(),
-                 json.dumps(skill.tags), session_id),
+                (
+                    skill.skill_id,
+                    skill.name,
+                    skill.description,
+                    skill.category,
+                    skill.code_template,
+                    json.dumps(skill.parameters),
+                    1,
+                    1,
+                    0,
+                    time.time(),
+                    time.time(),
+                    json.dumps(skill.tags),
+                    session_id,
+                ),
             )
             conn.commit()
 
@@ -252,8 +260,5 @@ class SkillLearner:
         return {
             "total_skills": total,
             "by_category": {c[0]: c[1] for c in by_category},
-            "top_skills": [
-                {"name": s[0], "uses": s[1], "successes": s[2]}
-                for s in top
-            ],
+            "top_skills": [{"name": s[0], "uses": s[1], "successes": s[2]} for s in top],
         }

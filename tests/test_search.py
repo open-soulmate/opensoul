@@ -54,9 +54,7 @@ class TestSearchPost:
 
     def test_search_post_with_limit(self, client):
         """POST with custom limit should be respected."""
-        resp = client.post(
-            "/api/search/", json={"query": "test", "mode": "fulltext", "limit": 3}
-        )
+        resp = client.post("/api/search/", json={"query": "test", "mode": "fulltext", "limit": 3})
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["results"]) <= 3

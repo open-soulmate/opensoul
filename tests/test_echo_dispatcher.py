@@ -54,9 +54,7 @@ class TestChannelConfig:
 
 class TestMessage:
     def test_defaults(self):
-        msg = Message(
-            msg_id="m1", channel=Channel.CONSOLE, title="T", content="C", timestamp=1.0
-        )
+        msg = Message(msg_id="m1", channel=Channel.CONSOLE, title="T", content="C", timestamp=1.0)
         assert msg.status == "pending"
         assert msg.error == ""
         assert msg.target == ""
@@ -282,7 +280,9 @@ class TestWechatWorkDispatch:
 
     def test_wechat_success(self):
         d = MessageDispatcher()
-        d.configure_channel(Channel.WECHAT_WORK, endpoint="https://qyapi.weixin.qq.com/cgi-bin/webhook/send")
+        d.configure_channel(
+            Channel.WECHAT_WORK, endpoint="https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+        )
         with patch("urllib.request.urlopen") as mock_open:
             mock_resp = MagicMock()
             mock_resp.read.return_value = json.dumps({"errcode": 0, "errmsg": "ok"}).encode()
@@ -293,10 +293,14 @@ class TestWechatWorkDispatch:
 
     def test_wechat_api_error(self):
         d = MessageDispatcher()
-        d.configure_channel(Channel.WECHAT_WORK, endpoint="https://qyapi.weixin.qq.com/cgi-bin/webhook/send")
+        d.configure_channel(
+            Channel.WECHAT_WORK, endpoint="https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+        )
         with patch("urllib.request.urlopen") as mock_open:
             mock_resp = MagicMock()
-            mock_resp.read.return_value = json.dumps({"errcode": 93000, "errmsg": "invalid webhook"}).encode()
+            mock_resp.read.return_value = json.dumps(
+                {"errcode": 93000, "errmsg": "invalid webhook"}
+            ).encode()
             mock_open.return_value.__enter__ = MagicMock(return_value=mock_resp)
             mock_open.return_value.__exit__ = MagicMock(return_value=False)
             result = d.send(Channel.WECHAT_WORK, "Title", "Body")

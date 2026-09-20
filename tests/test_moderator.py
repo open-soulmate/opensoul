@@ -126,7 +126,9 @@ class TestRedactMessages:
 
 class TestFailSafe:
     def test_broken_custom_pattern_does_not_disarm(self):
-        mod = ContentModerator(custom_patterns={"broken": {"pattern": "([unclosed", "label": "x", "risk": "high"}})
+        mod = ContentModerator(
+            custom_patterns={"broken": {"pattern": "([unclosed", "label": "x", "risk": "high"}}
+        )
         # broken pattern skipped at compile time, built-in patterns still armed
         key = "sk-" + "aB1" * 16
         result = mod.moderate(key)

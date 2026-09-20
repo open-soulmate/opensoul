@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Skill供应链防御 — kilocode skill/discovery.ts移植（P1）
 
 调研来源：feature-matrix/kilocode-source-supplement.md #7
@@ -36,7 +35,9 @@ class SkillSecurityError(Exception):
     """供应链防御拒绝 — fail-closed，携带typed reason（对齐agno typed-error模式）"""
 
     def __init__(self, reason: str, detail: str = ""):
-        self.reason = reason  # unsafe_name / path_escape / origin_mismatch / invalid_skill / swap_failed
+        self.reason = (
+            reason  # unsafe_name / path_escape / origin_mismatch / invalid_skill / swap_failed
+        )
         self.detail = detail
         super().__init__(f"{reason}: {detail}")
 
@@ -91,7 +92,9 @@ def validate_registry_name(skill_name: str) -> str:
         raise SkillSecurityError("unsafe_name", f"registry名含空段/畸形分隔: {skill_name!r}")
     for seg in segments:
         if not _REGISTRY_SEGMENT_RE.match(seg):
-            raise SkillSecurityError("unsafe_name", f"registry名含非法段: {seg!r} (in {skill_name!r})")
+            raise SkillSecurityError(
+                "unsafe_name", f"registry名含非法段: {seg!r} (in {skill_name!r})"
+            )
     # 最后段=skill目录名，须过更严格的单段校验（不允许@开头的scope只出现在中间段）
     return validate_skill_name(segments[-1])
 
@@ -143,7 +146,9 @@ def read_origin(skill_dir: Path) -> OriginRecord | None:
         return None
 
 
-def verify_origin(skill_dir: Path, incoming_origin: str, force: bool = False) -> OriginRecord | None:
+def verify_origin(
+    skill_dir: Path, incoming_origin: str, force: bool = False
+) -> OriginRecord | None:
     """origin钉死：更新源必须与已安装origin一致，否则fail-closed拒绝。
 
     kilocode："文件下载origin钉死在index源"——同skill换源=供应链攻击信号，
@@ -186,8 +191,9 @@ class SecurityPlanCheck:
     fingerprint: str = ""
 
 
-def security_plan(staging_dir: Path, expected_origin: str = "", live_dir: Path | None = None,
-                  force: bool = False) -> SecurityPlanCheck:
+def security_plan(
+    staging_dir: Path, expected_origin: str = "", live_dir: Path | None = None, force: bool = False
+) -> SecurityPlanCheck:
     """kilocode逐skill安全计划：staging目录在晋升live前的整体校验。
 
     1. SKILL.md必须存在
@@ -221,14 +227,18 @@ def security_plan(staging_dir: Path, expected_origin: str = "", live_dir: Path |
             p = root_p / entry
             if not contained(staging_dir, p):
                 check.ok = False
-                check.errors.append({"type": "path_escape", "detail": f"{p} 逃逸出staging {staging_dir}"})
+                check.errors.append(
+                    {"type": "path_escape", "detail": f"{p} 逃逸出staging {staging_dir}"}
+                )
                 return check
         # symlink目标单独检查（os.walk不入symlink目录，但symlink文件会被followlinks=False排除在walk外，需显式查）
         for entry in list(root_p.iterdir()):
             if entry.is_symlink():
                 if not contained(staging_dir, entry):
                     check.ok = False
-                    check.errors.append({"type": "path_escape", "detail": f"symlink {entry} 指向staging外"})
+                    check.errors.append(
+                        {"type": "path_escape", "detail": f"symlink {entry} 指向staging外"}
+                    )
                     return check
 
     check.fingerprint = skill_fingerprint(staging_dir)
@@ -282,8 +292,13 @@ def atomic_swap(staging_dir: Path, dest_dir: Path, skip_if_identical: bool = Tru
         stage_fp = skill_fingerprint(staging_dir)
         if live_fp and live_fp == stage_fp:
             shutil.rmtree(staging_dir, ignore_errors=True)
-            return SwapReport(swapped=False, dest=str(dest_dir), replaced=False, skipped=True,
-                              reason="版本指纹一致，跳过替换")
+            return SwapReport(
+                swapped=False,
+                dest=str(dest_dir),
+                replaced=False,
+                skipped=True,
+                reason="版本指纹一致，跳过替换",
+            )
 
     backup = dest_dir.parent / f".{dest_dir.name}.backup-{int(time.time() * 1000)}"
     try:
@@ -296,7 +311,9 @@ def atomic_swap(staging_dir: Path, dest_dir: Path, skip_if_identical: bool = Tru
             try:
                 os.rename(backup, dest_dir)
             except OSError as e2:
-                raise SkillSecurityError("swap_failed", f"rename失败={e}，且回滚失败={e2}，backup保留在{backup}")
+                raise SkillSecurityError(
+                    "swap_failed", f"rename失败={e}，且回滚失败={e2}，backup保留在{backup}"
+                )
         raise SkillSecurityError("swap_failed", f"原子交换失败已回滚: {e}")
     # 成功：清理backup（保留一个失败不会污染live，成功后不再需要）
     if backup.exists():
@@ -364,11 +381,22 @@ def promote_staging(
     """
     name = staging_dir.name
     dest = live_parent / name
-    result = InstallResult(success=False, skill=name, dest=str(dest), origin=origin,
-                           fingerprint="", swapped=False, skipped=False)
+    result = InstallResult(
+        success=False,
+        skill=name,
+        dest=str(dest),
+        origin=origin,
+        fingerprint="",
+        swapped=False,
+        skipped=False,
+    )
     try:
-        check = security_plan(staging_dir, expected_origin=origin,
-                              live_dir=dest if dest.exists() else None, force=force)
+        check = security_plan(
+            staging_dir,
+            expected_origin=origin,
+            live_dir=dest if dest.exists() else None,
+            force=force,
+        )
         if not check.ok:
             result.errors = check.errors
             shutil.rmtree(staging_dir, ignore_errors=True)
@@ -377,13 +405,16 @@ def promote_staging(
             verify_origin(dest, origin, force=force)  # origin钉死：二次确认（force由调用方决定）
         result.fingerprint = check.fingerprint
         # origin清单写进staging再swap — live内永远带provenance
-        write_origin(staging_dir, OriginRecord(
-            origin=origin,
-            source_type=source_type,
-            version=version,
-            installed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            content_hash=check.fingerprint,
-        ))
+        write_origin(
+            staging_dir,
+            OriginRecord(
+                origin=origin,
+                source_type=source_type,
+                version=version,
+                installed_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                content_hash=check.fingerprint,
+            ),
+        )
         live_parent.mkdir(parents=True, exist_ok=True)
         swap = atomic_swap(staging_dir, dest, skip_if_identical=True)
         result.swapped = swap.swapped
@@ -405,14 +436,16 @@ def inventory(live_parent: Path) -> list[dict]:
         if not d.is_dir() or d.name.startswith("."):
             continue
         rec = read_origin(d)
-        items.append({
-            "skill": d.name,
-            "path": str(d),
-            "origin": rec.origin if rec else "",
-            "source_type": rec.source_type if rec else "",
-            "version": rec.version if rec else "",
-            "installed_at": rec.installed_at if rec else "",
-            "content_hash": rec.content_hash if rec else skill_fingerprint(d),
-            "has_origin_manifest": rec is not None,
-        })
+        items.append(
+            {
+                "skill": d.name,
+                "path": str(d),
+                "origin": rec.origin if rec else "",
+                "source_type": rec.source_type if rec else "",
+                "version": rec.version if rec else "",
+                "installed_at": rec.installed_at if rec else "",
+                "content_hash": rec.content_hash if rec else skill_fingerprint(d),
+                "has_origin_manifest": rec is not None,
+            }
+        )
     return items

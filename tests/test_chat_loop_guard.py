@@ -8,6 +8,7 @@
 核心回归证明：同一session连续8次相同回答在旧实现下永远返回None（无状态），
 新实现第8次返回loop_warning（状态跨请求累积）。
 """
+
 from pathlib import Path
 
 from src.api import chat as chat_mod
@@ -45,7 +46,7 @@ class TestGuardPersistence:
         for i in range(_CHAT_LOOP_GUARDS_MAX + 44):
             _get_chat_loop_guard(f"bulk-{i}")
         assert len(_CHAT_LOOP_GUARDS) <= _CHAT_LOOP_GUARDS_MAX
-        assert "bulk-0" not in _CHAT_LOOP_GUARDS       # 最旧被淘汰
+        assert "bulk-0" not in _CHAT_LOOP_GUARDS  # 最旧被淘汰
         assert f"bulk-{_CHAT_LOOP_GUARDS_MAX + 43}" in _CHAT_LOOP_GUARDS
 
 
@@ -100,7 +101,9 @@ class TestCallSiteWiring:
     """源码级接线证据：import顶部、调用点传session_key、两条流式路径补齐"""
 
     def _src(self) -> str:
-        return (Path(__file__).parent.parent / "src" / "api" / "chat.py").read_text(encoding="utf-8")
+        return (Path(__file__).parent.parent / "src" / "api" / "chat.py").read_text(
+            encoding="utf-8"
+        )
 
     def test_top_level_import(self):
         assert "from src.cortex.loop_guard import LoopGuard" in self._src()

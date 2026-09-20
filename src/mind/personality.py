@@ -149,6 +149,7 @@ class PersonalityManager:
                 self._user[p.personality_id] = p
         except Exception as exc:
             logging.getLogger(__name__).debug("probe skipped: %s", exc)
+
     def _save_user(self):
         path = os.path.join(self._data_dir, "personalities.json")
         data = [asdict(p) for p in self._user.values()]

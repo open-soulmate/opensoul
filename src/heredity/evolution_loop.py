@@ -204,12 +204,24 @@ class EvolutionStore:
                     created_at, reviewed_at, applied_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    p.proposal_id, p.kind, p.title, p.rationale, p.confidence,
+                    p.proposal_id,
+                    p.kind,
+                    p.title,
+                    p.rationale,
+                    p.confidence,
                     json.dumps(p.evidence_refs, ensure_ascii=False),
                     json.dumps(p.proposed_change, ensure_ascii=False),
-                    p.proposer, p.status, p.dedup_digest, p.duplicate_of,
-                    p.reject_reason, p.reviewed_by, p.review_comment, p.snapshot_path,
-                    p.created_at, p.reviewed_at, p.applied_at,
+                    p.proposer,
+                    p.status,
+                    p.dedup_digest,
+                    p.duplicate_of,
+                    p.reject_reason,
+                    p.reviewed_by,
+                    p.review_comment,
+                    p.snapshot_path,
+                    p.created_at,
+                    p.reviewed_at,
+                    p.applied_at,
                 ),
             )
 
@@ -235,7 +247,7 @@ class EvolutionStore:
             applied_at=row["applied_at"] or 0.0,
         )
 
-    def get_proposal(self, proposal_id: str) -> Optional[EvolutionProposal]:
+    def get_proposal(self, proposal_id: str) -> EvolutionProposal | None:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM evolution_proposals WHERE proposal_id = ?",
@@ -243,7 +255,7 @@ class EvolutionStore:
             ).fetchone()
         return self._row_to_proposal(row) if row else None
 
-    def find_by_digest(self, digest: str, statuses: tuple) -> Optional[EvolutionProposal]:
+    def find_by_digest(self, digest: str, statuses: tuple) -> EvolutionProposal | None:
         if not statuses:
             return None
         placeholders = ",".join("?" * len(statuses))
@@ -304,9 +316,13 @@ class EvolutionStore:
                    (proposal_id, event, actor, old_value, new_value, reason, created_at)
                    VALUES (?,?,?,?,?,?,?)""",
                 (
-                    proposal_id, event, actor,
-                    (old_value or "")[:500], (new_value or "")[:500],
-                    (reason or "")[:500], time.time(),
+                    proposal_id,
+                    event,
+                    actor,
+                    (old_value or "")[:500],
+                    (new_value or "")[:500],
+                    (reason or "")[:500],
+                    time.time(),
                 ),
             )
 
@@ -404,7 +420,7 @@ class EvolutionEngine:
     @staticmethod
     def _digest(kind: str, title: str) -> str:
         normalized = " ".join((title or "").lower().split())
-        return hashlib.sha256(f"{kind}|{normalized}".encode("utf-8")).hexdigest()[:16]
+        return hashlib.sha256(f"{kind}|{normalized}".encode()).hexdigest()[:16]
 
     @staticmethod
     def _new_id() -> str:
@@ -441,8 +457,12 @@ class EvolutionEngine:
         )
         self.store.insert_proposal(p)
         self.store.write_ledger(
-            p.proposal_id, LEDGER_REJECTED, actor="guard",
-            old_value=STATUS_PENDING, new_value=STATUS_REJECTED, reason=reason,
+            p.proposal_id,
+            LEDGER_REJECTED,
+            actor="guard",
+            old_value=STATUS_PENDING,
+            new_value=STATUS_REJECTED,
+            reason=reason,
         )
         return {**p.to_dict(), "duplicate": False}
 
@@ -453,8 +473,8 @@ class EvolutionEngine:
         title: str,
         rationale: str = "",
         confidence: float = 0.5,
-        evidence_refs: Optional[list] = None,
-        proposed_change: Optional[dict] = None,
+        evidence_refs: list | None = None,
+        proposed_change: dict | None = None,
         proposer: str = "agent",
     ) -> dict:
         evidence_refs = list(evidence_refs or [])
@@ -472,24 +492,46 @@ class EvolutionEngine:
         # claude-code ProposeSkills：无evidence的提议直接拒绝
         if not evidence_refs:
             return self._reject(
-                kind, title, rationale, confidence, evidence_refs, proposed_change,
-                proposer, "evidence_required", digest=digest,
+                kind,
+                title,
+                rationale,
+                confidence,
+                evidence_refs,
+                proposed_change,
+                proposer,
+                "evidence_required",
+                digest=digest,
             )
 
         # CowAgent硬护栏：目标落在保护区的提案自动拒绝（审批也不可放行）
         target = str(proposed_change.get("target", ""))
         if proposed_change and target and is_protected_target(target):
             return self._reject(
-                kind, title, rationale, confidence, evidence_refs, proposed_change,
-                proposer, f"protected_target:{target}", digest=digest,
+                kind,
+                title,
+                rationale,
+                confidence,
+                evidence_refs,
+                proposed_change,
+                proposer,
+                f"protected_target:{target}",
+                digest=digest,
             )
 
         # kilocode防记忆回声：同digest已applied → 拒绝并指向原提案
         applied_dup = self.store.find_by_digest(digest, (STATUS_APPLIED,))
         if applied_dup:
             return self._reject(
-                kind, title, rationale, confidence, evidence_refs, proposed_change,
-                proposer, "memory_echo", digest=digest, duplicate_of=applied_dup.proposal_id,
+                kind,
+                title,
+                rationale,
+                confidence,
+                evidence_refs,
+                proposed_change,
+                proposer,
+                "memory_echo",
+                digest=digest,
+                duplicate_of=applied_dup.proposal_id,
             )
 
         # 去重：同digest仍在pending → 返回既有提案，不重复建单
@@ -500,8 +542,15 @@ class EvolutionEngine:
         # MetaGPT预算控制 / CowAgent budget：pending积压上限
         if self.store.count_by_status(STATUS_PENDING) >= self.max_pending:
             return self._reject(
-                kind, title, rationale, confidence, evidence_refs, proposed_change,
-                proposer, f"budget_exceeded:max_pending={self.max_pending}", digest=digest,
+                kind,
+                title,
+                rationale,
+                confidence,
+                evidence_refs,
+                proposed_change,
+                proposer,
+                f"budget_exceeded:max_pending={self.max_pending}",
+                digest=digest,
             )
 
         p = EvolutionProposal(
@@ -519,8 +568,11 @@ class EvolutionEngine:
         )
         self.store.insert_proposal(p)
         self.store.write_ledger(
-            p.proposal_id, LEDGER_DECLARED, actor=proposer,
-            new_value=f"{kind}:{p.title}", reason=rationale[:500] if rationale else "",
+            p.proposal_id,
+            LEDGER_DECLARED,
+            actor=proposer,
+            new_value=f"{kind}:{p.title}",
+            reason=rationale[:500] if rationale else "",
         )
         return {**p.to_dict(), "duplicate": False}
 
@@ -617,8 +669,11 @@ class EvolutionEngine:
             applied_at=time.time(),
         )
         self.store.write_ledger(
-            proposal_id, LEDGER_APPLIED, actor=actor or "system",
-            old_value=anchor_old, new_value=anchor_new,
+            proposal_id,
+            LEDGER_APPLIED,
+            actor=actor or "system",
+            old_value=anchor_old,
+            new_value=anchor_new,
             reason=f"target={path}",
         )
         updated = self.store.get_proposal(proposal_id)
@@ -626,11 +681,17 @@ class EvolutionEngine:
 
     def _apply_failed(self, p: EvolutionProposal, actor: str, reason: str) -> dict:
         self.store.update_proposal(
-            p.proposal_id, status=STATUS_APPLY_FAILED, reject_reason=reason,
+            p.proposal_id,
+            status=STATUS_APPLY_FAILED,
+            reject_reason=reason,
         )
         self.store.write_ledger(
-            p.proposal_id, LEDGER_APPLY_FAILED, actor=actor or "system",
-            old_value=p.status, new_value=STATUS_APPLY_FAILED, reason=reason,
+            p.proposal_id,
+            LEDGER_APPLY_FAILED,
+            actor=actor or "system",
+            old_value=p.status,
+            new_value=STATUS_APPLY_FAILED,
+            reason=reason,
         )
         updated = self.store.get_proposal(p.proposal_id)
         return updated.to_dict() if updated else {}
@@ -641,7 +702,9 @@ class EvolutionEngine:
         if not p:
             raise ValueError(f"proposal not found: {proposal_id}")
         if p.status != STATUS_APPLIED:
-            raise ValueError(f"proposal {proposal_id} is {p.status}, only applied can be rolled back")
+            raise ValueError(
+                f"proposal {proposal_id} is {p.status}, only applied can be rolled back"
+            )
         if not p.snapshot_path or not Path(p.snapshot_path).exists():
             raise ValueError(f"snapshot missing for {proposal_id}, cannot rollback")
 
@@ -653,7 +716,9 @@ class EvolutionEngine:
 
         self.store.update_proposal(proposal_id, status=STATUS_ROLLED_BACK)
         self.store.write_ledger(
-            proposal_id, LEDGER_ROLLED_BACK, actor=actor or "system",
+            proposal_id,
+            LEDGER_ROLLED_BACK,
+            actor=actor or "system",
             old_value=str(change.get("anchor_new", ""))[:500],
             new_value=str(change.get("anchor_old", ""))[:500],
             reason=reason or "manual rollback",
@@ -667,7 +732,7 @@ class EvolutionEngine:
         idle_seconds: float = 0.0,
         context_pressure: float = 0.0,
         budget_remaining: float = 1.0,
-        recent_errors: Optional[list] = None,
+        recent_errors: list | None = None,
         auto_propose: bool = False,
     ) -> dict:
         recent_errors = list(recent_errors or [])
@@ -699,8 +764,11 @@ class EvolutionEngine:
                 details=f"consecutive={consecutive};error={last_error}",
             )
             self.store.write_ledger(
-                trigger_id, LEDGER_TRIGGERED, actor="trigger",
-                new_value="error_storm_breaker", reason=last_error,
+                trigger_id,
+                LEDGER_TRIGGERED,
+                actor="trigger",
+                new_value="error_storm_breaker",
+                reason=last_error,
             )
             return {
                 "fired": ["error_storm_breaker"],
@@ -727,7 +795,9 @@ class EvolutionEngine:
                 details=f"idle={idle_seconds}s;pressure={context_pressure};budget={budget_remaining}",
             )
             self.store.write_ledger(
-                trigger_id, LEDGER_TRIGGERED, actor="trigger",
+                trigger_id,
+                LEDGER_TRIGGERED,
+                actor="trigger",
                 new_value="idle_evolution",
                 reason=f"idle={idle_seconds}s,pressure={context_pressure}",
             )
@@ -740,8 +810,11 @@ class EvolutionEngine:
                 details=f"last_error={last_error};tail_consecutive={consecutive}",
             )
             self.store.write_ledger(
-                trigger_id, LEDGER_TRIGGERED, actor="trigger",
-                new_value="error_pattern", reason=last_error,
+                trigger_id,
+                LEDGER_TRIGGERED,
+                actor="trigger",
+                new_value="error_pattern",
+                reason=last_error,
             )
             fired.append(("error_pattern", trigger_id))
 
@@ -776,8 +849,12 @@ class EvolutionEngine:
     # ── ⑥ 观测（用户极度重视可观测性：一条SQL看清进化管线全貌） ──
     def get_stats(self) -> dict:
         statuses = (
-            STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED,
-            STATUS_APPLIED, STATUS_APPLY_FAILED, STATUS_ROLLED_BACK,
+            STATUS_PENDING,
+            STATUS_APPROVED,
+            STATUS_REJECTED,
+            STATUS_APPLIED,
+            STATUS_APPLY_FAILED,
+            STATUS_ROLLED_BACK,
         )
         proposals = {s: self.store.count_by_status(s) for s in statuses}
         pending = proposals[STATUS_PENDING]

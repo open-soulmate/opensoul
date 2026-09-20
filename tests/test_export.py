@@ -13,7 +13,9 @@ class TestExportHealth:
 class TestExportEndpoints:
     def test_export_json(self, client):
         """Export JSON requires user_id param."""
-        resp = client.get("/api/export/json", params={"user_id": "00000000-0000-0000-0000-000000000000"})
+        resp = client.get(
+            "/api/export/json", params={"user_id": "00000000-0000-0000-0000-000000000000"}
+        )
         # 500 if user doesn't exist in DB (expected in test env)
         assert resp.status_code in (200, 401, 422, 500)
         if resp.status_code == 200:
@@ -24,7 +26,9 @@ class TestExportEndpoints:
 
     def test_export_markdown(self, client):
         """Export markdown requires user_id param."""
-        resp = client.get("/api/export/markdown", params={"user_id": "00000000-0000-0000-0000-000000000000"})
+        resp = client.get(
+            "/api/export/markdown", params={"user_id": "00000000-0000-0000-0000-000000000000"}
+        )
         # 500 if user doesn't exist in DB (expected in test env)
         assert resp.status_code in (200, 401, 422, 500)
         if resp.status_code == 200:

@@ -220,7 +220,9 @@ class TestJudgeScorer:
             return "{}"
 
         sc = JudgeScorer(judge)
-        msgs = sc.build_messages(EvalCase(case_id="a", prompt="task-p", rubric="be right"), "OUTPUT_HERE")
+        msgs = sc.build_messages(
+            EvalCase(case_id="a", prompt="task-p", rubric="be right"), "OUTPUT_HERE"
+        )
         system, user = msgs[0]["content"], msgs[1]["content"]
         assert system == JUDGE_SYSTEM_PROMPT
         assert "UNTRUSTED" in system
@@ -277,6 +279,7 @@ class TestJudgeScorer:
 
 def _make_easy_runner():
     """Runner stub: passes cases mentioning task 0/2 (expected '42'), fails others."""
+
     async def fn(case: EvalCase):
         return "42 done" if "task 0" in case.prompt or "task 2" in case.prompt else "no idea"
 
@@ -286,9 +289,7 @@ def _make_easy_runner():
 class TestExperimentRunner:
     def test_basic_pass_rate(self, store):
         ds = _mk_dataset(store, n=3, expected="42")
-        runner = ExperimentRunner(
-            store, ds, _make_easy_runner(), [CodeScorer()], k=1
-        )
+        runner = ExperimentRunner(store, ds, _make_easy_runner(), [CodeScorer()], k=1)
         results = run(runner.run())
         assert results["cases"]["c0"]["pass_rate"] == 1.0  # "42 done"
         assert results["cases"]["c1"]["pass_rate"] == 0.0  # "no idea"
@@ -331,9 +332,7 @@ class TestExperimentRunner:
         async def dead(case):
             raise ConnectionError("provider dead")
 
-        runner = ExperimentRunner(
-            store, ds, dead, [CodeScorer()], k=2, storm_window=3
-        )
+        runner = ExperimentRunner(store, ds, dead, [CodeScorer()], k=2, storm_window=3)
         results = run(runner.run())
         assert results["circuit_broken"] is True
         assert "ConnectionError" in results["circuit_reason"]
@@ -394,14 +393,24 @@ class TestExperimentRunner:
             return "42" if case.case_id == "c0" else "no"
 
         base = ExperimentRunner(
-            store, ds, old_policy, [CodeScorer()], k=2,
-            policy_name="v1", policy_meta={"model": "a"},
+            store,
+            ds,
+            old_policy,
+            [CodeScorer()],
+            k=2,
+            policy_name="v1",
+            policy_meta={"model": "a"},
         ).run()
         base_results = run(base)
 
         cur = ExperimentRunner(
-            store, ds, new_policy, [CodeScorer()], k=2,
-            policy_name="v2", policy_meta={"model": "b"},
+            store,
+            ds,
+            new_policy,
+            [CodeScorer()],
+            k=2,
+            policy_name="v2",
+            policy_meta={"model": "b"},
             baseline_id=base_results["experiment_id"],
         )
         results = run(cur.run())
@@ -417,12 +426,14 @@ class TestExperimentRunner:
         async def ok(case):
             return "42"
 
-        base_results = run(
-            ExperimentRunner(store, ds, ok, [CodeScorer()], k=2).run()
-        )
+        base_results = run(ExperimentRunner(store, ds, ok, [CodeScorer()], k=2).run())
         # env changes: different k
         runner = ExperimentRunner(
-            store, ds, ok, [CodeScorer()], k=3,
+            store,
+            ds,
+            ok,
+            [CodeScorer()],
+            k=3,
             baseline_id=base_results["experiment_id"],
         )
         with pytest.raises(EnvMismatchError):
@@ -520,8 +531,13 @@ class TestScorerChainAndTrajectory:
             return "42"
 
         runner = ExperimentRunner(
-            store, ds, ok, [CodeScorer()], k=2,
-            session_prefix="evaltest", trajectory_store=fake_ts,
+            store,
+            ds,
+            ok,
+            [CodeScorer()],
+            k=2,
+            session_prefix="evaltest",
+            trajectory_store=fake_ts,
         )
         results = run(runner.run())
         assert len(fake_ts.scores) == 2

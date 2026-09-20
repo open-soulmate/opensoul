@@ -31,6 +31,7 @@ Core design (consolidated from goose structured.rs + kilocode compaction-chunks.
    extracted before compaction and re-appended after summary, so agent can
    still "hear" the user's last request even after aggressive summarization.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,6 +59,7 @@ SUMMARY_OUTPUT_TOKENS = 4_096
 @dataclass
 class FileActivity:
     """File activity record from goose structured summary."""
+
     path: str
     summary: str = ""
     key_code: str | None = None
@@ -72,6 +74,7 @@ class StructuredSummary:
     omitted fields default to empty, objects/numbers are stringified rather than
     failing, blank entries are dropped.
     """
+
     user_intent: list[str] = field(default_factory=list)
     technical_concepts: list[str] = field(default_factory=list)
     files: list[FileActivity] = field(default_factory=list)
@@ -110,6 +113,7 @@ class StructuredSummary:
     @classmethod
     def _from_dict(cls, data: dict) -> StructuredSummary:
         """Lenient deserialization — stringify objects/numbers, wrap scalars."""
+
         def lenient_list(val) -> list[str]:
             if val is None:
                 return []
@@ -148,9 +152,15 @@ class StructuredSummary:
 
         # Extract known fields
         known_keys = {
-            "user_intent", "technical_concepts", "files", "errors_and_fixes",
-            "problem_solving", "user_messages", "pending_tasks",
-            "current_work", "next_step",
+            "user_intent",
+            "technical_concepts",
+            "files",
+            "errors_and_fixes",
+            "problem_solving",
+            "user_messages",
+            "pending_tasks",
+            "current_work",
+            "next_step",
         }
         extra = {k: v for k, v in data.items() if k not in known_keys}
 
@@ -169,6 +179,7 @@ class StructuredSummary:
 
     def _normalize(self) -> None:
         """Drop blank entries so response of blanks counts as empty."""
+
         def blank(s: str) -> bool:
             return not s.strip()
 
@@ -179,7 +190,8 @@ class StructuredSummary:
         self.user_messages = [s for s in self.user_messages if not blank(s)]
         self.pending_tasks = [s for s in self.pending_tasks if not blank(s)]
         self.files = [
-            f for f in self.files
+            f
+            for f in self.files
             if not blank(f.path) or not blank(f.summary) or f.key_code is not None
         ]
         if self.current_work is not None and blank(self.current_work):
@@ -271,6 +283,7 @@ def _fence_code(code: str) -> str:
 def _backtick_runs(text: str) -> list[str]:
     """Extract consecutive backtick runs."""
     import re
+
     return re.findall(r"`+", text)
 
 
@@ -319,7 +332,7 @@ def _fenced_json_blocks(text: str) -> list[str]:
         idx = text.find(marker, idx)
         if idx == -1:
             break
-        candidate = _leading_object(text[idx + len(marker):])
+        candidate = _leading_object(text[idx + len(marker) :])
         if candidate:
             blocks.append(candidate)
         idx += 1
@@ -351,13 +364,14 @@ def _leading_object(text: str) -> str | None:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                return text[:i + 1]
+                return text[: i + 1]
     return None
 
 
 @dataclass
 class MessageChunk:
     """Chunk of messages for parallel summarization."""
+
     index: int
     messages: list[dict]
 
@@ -365,6 +379,7 @@ class MessageChunk:
 @dataclass
 class CompactionResult:
     """Result of compaction operation."""
+
     status: str  # "continue" | "compact" | "stop"
     summary: str | None = None
     error: str | None = None
@@ -410,9 +425,7 @@ class ContextCompressor:
         """Chunk budget — 60% of context, min 1000 tokens (kilocode)."""
         return max(self.min_budget_tokens, int(context_limit * self.budget_ratio))
 
-    def _split(
-        self, messages: list[dict], budget: int
-    ) -> list[MessageChunk]:
+    def _split(self, messages: list[dict], budget: int) -> list[MessageChunk]:
         """Split messages into chunks that fit budget (kilocode split logic)."""
         chunks = []
         buf = []
@@ -459,39 +472,43 @@ class ContextCompressor:
 
     def _chunk_prompt(self, chunk: MessageChunk, total: int) -> str:
         """Summarization prompt for individual chunk (kilocode prompt)."""
-        return "\n".join([
-            f"Summarize conversation chunk {chunk.index + 1} of {total}.",
-            "Only summarize facts present in this chunk.",
-            "Preserve concrete file paths, commands, errors, decisions, and unresolved tasks.",
-            "Use terse Markdown bullets. Do not mention chunking or compaction.",
-            "Output a JSON object with these fields (ordered most-important-first):",
-            '```json',
-            '{',
-            '  "user_intent": ["..."],',
-            '  "technical_concepts": ["..."],',
-            '  "files": [{"path": "...", "summary": "...", "key_code": "..."}],',
-            '  "errors_and_fixes": ["..."],',
-            '  "problem_solving": ["..."],',
-            '  "user_messages": ["..."],',
-            '  "pending_tasks": ["..."],',
-            '  "current_work": "...",',
-            '  "next_step": "..."',
-            '}',
-            '```',
-        ])
+        return "\n".join(
+            [
+                f"Summarize conversation chunk {chunk.index + 1} of {total}.",
+                "Only summarize facts present in this chunk.",
+                "Preserve concrete file paths, commands, errors, decisions, and unresolved tasks.",
+                "Use terse Markdown bullets. Do not mention chunking or compaction.",
+                "Output a JSON object with these fields (ordered most-important-first):",
+                "```json",
+                "{",
+                '  "user_intent": ["..."],',
+                '  "technical_concepts": ["..."],',
+                '  "files": [{"path": "...", "summary": "...", "key_code": "..."}],',
+                '  "errors_and_fixes": ["..."],',
+                '  "problem_solving": ["..."],',
+                '  "user_messages": ["..."],',
+                '  "pending_tasks": ["..."],',
+                '  "current_work": "...",',
+                '  "next_step": "..."',
+                "}",
+                "```",
+            ]
+        )
 
     def _reduce_prompt(self, summaries: list[str]) -> str:
         """Merge prompt for reducing partial summaries (kilocode messages())."""
         parts = []
         for i, summary in enumerate(summaries):
             parts.append(f'<partial-summary index="{i + 1}">\n{summary}\n</partial-summary>')
-        return "\n\n".join([
-            "Merge the following partial summaries into one coherent summary.",
-            "Preserve all critical information: file paths, commands, errors, decisions, pending tasks.",
-            "Order items by importance (most important first in each list).",
-            "Output a JSON object with the same schema as the partial summaries.",
-            "\n".join(parts),
-        ])
+        return "\n\n".join(
+            [
+                "Merge the following partial summaries into one coherent summary.",
+                "Preserve all critical information: file paths, commands, errors, decisions, pending tasks.",
+                "Order items by importance (most important first in each list).",
+                "Output a JSON object with the same schema as the partial summaries.",
+                "\n".join(parts),
+            ]
+        )
 
     async def _summarize_chunk(
         self, chunk: MessageChunk, total: int
@@ -584,13 +601,17 @@ class ContextCompressor:
                     # Only preserve text-only messages
                     if isinstance(content, str) and content.strip():
                         preserved_user = content
-                        messages_to_compact = messages[:i] + messages[i + 1:]
+                        messages_to_compact = messages[:i] + messages[i + 1 :]
                         break
 
         # Split into chunks
         chunks = self._split(messages_to_compact, budget)
-        logger.info("Compaction: %d messages → %d chunks (budget=%d tokens)",
-                    len(messages_to_compact), len(chunks), budget)
+        logger.info(
+            "Compaction: %d messages → %d chunks (budget=%d tokens)",
+            len(messages_to_compact),
+            len(chunks),
+            budget,
+        )
 
         # Summarize chunks (sequential for now; async concurrency needs asyncio.gather)
         partial_summaries = []

@@ -485,7 +485,9 @@ async def marketplace_install_skill(
         (source_id, skill_id, skill_id),
     ).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Skill not found in marketplace (run sync first)")
+        raise HTTPException(
+            status_code=404, detail="Skill not found in marketplace (run sync first)"
+        )
     _, skill_name, pinned_origin, src_url, src_type = row
     force = bool(body.force) if body else False
 
@@ -502,7 +504,10 @@ async def marketplace_install_skill(
     accepted, _rejected = plan_registry_entries(index)
     planned = next((p for p in accepted if p.entry.name == skill_name), None)
     if planned is None:
-        return {"success": False, "error": "skill未通过registry安全计划（name/路径/origin校验拒绝）"}
+        return {
+            "success": False,
+            "error": "skill未通过registry安全计划（name/路径/origin校验拒绝）",
+        }
     if pinned_origin and planned.origin != pinned_origin and not force:
         return {
             "success": False,
@@ -727,8 +732,12 @@ async def get_marketplace_stats(user_id: UUID = Depends(get_current_user)):
     """Get marketplace statistics"""
     try:
         db = get_marketplace_db()
-        skill_sources = db.execute("SELECT COUNT(*) FROM skill_sources WHERE enabled = 1").fetchone()[0]
-        agent_sources = db.execute("SELECT COUNT(*) FROM agent_sources WHERE enabled = 1").fetchone()[0]
+        skill_sources = db.execute(
+            "SELECT COUNT(*) FROM skill_sources WHERE enabled = 1"
+        ).fetchone()[0]
+        agent_sources = db.execute(
+            "SELECT COUNT(*) FROM agent_sources WHERE enabled = 1"
+        ).fetchone()[0]
         total_skills = db.execute("SELECT COUNT(*) FROM marketplace_skills").fetchone()[0]
         total_agents = db.execute("SELECT COUNT(*) FROM marketplace_agents").fetchone()[0]
         return {

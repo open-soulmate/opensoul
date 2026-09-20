@@ -7,6 +7,7 @@ Covers all detection strategies from the 5 source implementations:
 - Progressive response (DeerFlow warn/intervene/force_stop)
 - Cooldown mechanism (anything-llm 60s window)
 """
+
 import time
 
 import pytest
@@ -19,8 +20,8 @@ from src.cortex.loop_guard import (
     ToolCallSignature,
 )
 
-
 # ── ToolCallSignature ───────────────────────────────────────────────────
+
 
 class TestToolCallSignature:
     def test_from_dict_args(self):
@@ -54,6 +55,7 @@ class TestToolCallSignature:
 
 
 # ── Basic check behavior ────────────────────────────────────────────────
+
 
 class TestBasicCheck:
     def test_empty_check_returns_ok(self):
@@ -90,6 +92,7 @@ class TestBasicCheck:
 
 
 # ── Tool repetition (ag2 + goose) ───────────────────────────────────────
+
 
 class TestToolRepetition:
     def test_consecutive_warn_at_threshold(self):
@@ -143,6 +146,7 @@ class TestToolRepetition:
 
 # ── Repeated combination (Khoj) ─────────────────────────────────────────
 
+
 class TestRepeatedCombination:
     def test_non_consecutive_repeat_warns(self):
         """Same tool+args called again after other calls → WARN."""
@@ -180,6 +184,7 @@ class TestRepeatedCombination:
 
 
 # ── Text similarity (anything-llm) ──────────────────────────────────────
+
 
 class TestTextSimilarity:
     def test_similar_text_detection(self):
@@ -226,6 +231,7 @@ class TestTextSimilarity:
 
 # ── Cooldown mechanism (anything-llm) ───────────────────────────────────
 
+
 class TestCooldown:
     def test_cooldown_suppresses_alarms(self):
         """After alarm fires, subsequent alarms suppressed for cooldown period."""
@@ -240,10 +246,14 @@ class TestCooldown:
         guard.check(tool_calls=[{"name": "t", "arguments": {}}])
         result2 = guard.check(tool_calls=[{"name": "t", "arguments": {}}])
         # During cooldown, intervene is suppressed
-        assert result2.severity != LoopSeverity.INTERVENE or result2.detection_type != DetectionType.TOOL_REPETITION
+        assert (
+            result2.severity != LoopSeverity.INTERVENE
+            or result2.detection_type != DetectionType.TOOL_REPETITION
+        )
 
 
 # ── Stats (observability) ───────────────────────────────────────────────
+
 
 class TestStats:
     def test_stats_tracking(self):

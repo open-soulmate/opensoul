@@ -73,10 +73,12 @@ class DAGVisualizer:
         # Linear chain if no dependencies
         if not edges and len(steps) > 1:
             for i in range(len(steps) - 1):
-                edges.append(DAGEdge(
-                    source=steps[i].get("id", f"step_{i}"),
-                    target=steps[i + 1].get("id", f"step_{i+1}"),
-                ))
+                edges.append(
+                    DAGEdge(
+                        source=steps[i].get("id", f"step_{i}"),
+                        target=steps[i + 1].get("id", f"step_{i + 1}"),
+                    )
+                )
 
         layout = DAGLayout(
             nodes=nodes,
@@ -95,8 +97,10 @@ class DAGVisualizer:
 
         lines = ["graph TD"]
         status_icons = {
-            "pending": "⏳", "running": "🔄",
-            "completed": "✅", "failed": "❌",
+            "pending": "⏳",
+            "running": "🔄",
+            "completed": "✅",
+            "failed": "❌",
         }
 
         for node in layout.nodes:
@@ -145,8 +149,10 @@ class DAGVisualizer:
         roots = [n.node_id for n in layout.nodes if n.node_id not in all_targets]
         visited: set[str] = set()
         status_icons = {
-            "pending": "⏳", "running": "🔄",
-            "completed": "✅", "failed": "❌",
+            "pending": "⏳",
+            "running": "🔄",
+            "completed": "✅",
+            "failed": "❌",
         }
 
         def dfs(node_id: str, prefix: str = "", is_last: bool = True):

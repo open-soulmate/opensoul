@@ -70,6 +70,7 @@ class CourseEngine:
                 self._courses[c.course_id] = c
             except Exception as exc:
                 logging.getLogger(__name__).debug("probe skipped: %s", exc)
+
     def _save_course(self, course: Course):
         path = self.storage_dir / f"{course.course_id}.json"
         data = asdict(course)

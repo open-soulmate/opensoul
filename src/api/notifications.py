@@ -140,7 +140,9 @@ def _auto_forward_to_echo(notif: dict) -> None:
             except (ValueError, Exception):
                 pass  # Skip invalid or failed channels
     except Exception as exc:
-        logging.getLogger(__name__).debug("probe skipped: %s", exc)  # Non-fatal — don't break notifications if Echo is down
+        logging.getLogger(__name__).debug(
+            "probe skipped: %s", exc
+        )  # Non-fatal — don't break notifications if Echo is down
 
 
 def push_notification(

@@ -161,6 +161,7 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
 
 # ── Data Models ──────────────────────────────────────────────────────────
 
+
 class ProcessInfo(BaseModel):
     pid: int
     user: str
@@ -265,6 +266,7 @@ class FileSystemListRequest(BaseModel):
 
 # ── Software Adapter Base ────────────────────────────────────────────────
 
+
 class SoftwareAdapter(ABC):
     """Base class for software discovery adapters.
 
@@ -326,9 +328,7 @@ async def _run_cmd(args: list[str], timeout: float = 10.0) -> tuple[str, str, in
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,  # isolate so kill() gets all children
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return (
             stdout.decode("utf-8", errors="replace"),
             stderr.decode("utf-8", errors="replace"),
@@ -406,7 +406,6 @@ async def scan_cli_tools() -> list[CLITool]:
     path_dirs = os.environ.get("PATH", "").split(":")
     seen: set[str] = set()
     results: list[CLITool] = []
-
 
     for dir_path in path_dirs:
         if not dir_path or not os.path.isdir(dir_path):
@@ -576,9 +575,7 @@ class CLIToolAdapter(SoftwareAdapter):
             tool_path = shutil.which(tool_name)
             if not tool_path:
                 return {"error": f"Tool '{tool_name}' not found on PATH"}
-            stdout, stderr, rc = await _run_cmd(
-                [tool_path, "--help"], timeout=5.0
-            )
+            stdout, stderr, rc = await _run_cmd([tool_path, "--help"], timeout=5.0)
             return {
                 "tool": tool_name,
                 "help": stdout[:2000] if rc == 0 else stderr[:2000],
@@ -622,9 +619,7 @@ class ServiceAdapter(SoftwareAdapter):
                     ["ss", "-tnp", "sport", "=", str(port)], timeout=5.0
                 )
             else:
-                stdout, stderr, rc = await _run_cmd(
-                    ["ss", "-tnp"], timeout=5.0
-                )
+                stdout, stderr, rc = await _run_cmd(["ss", "-tnp"], timeout=5.0)
             if rc == 0:
                 return {"connections": stdout.strip()}
             return {"error": stderr.strip()}
@@ -796,10 +791,21 @@ class DatabaseAdapter(SoftwareAdapter):
     """
 
     # SQL keywords that indicate write operations
-    _WRITE_KEYWORDS = frozenset({
-        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
-        "TRUNCATE", "REPLACE", "GRANT", "REVOKE", "EXECUTE",
-    })
+    _WRITE_KEYWORDS = frozenset(
+        {
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "DROP",
+            "ALTER",
+            "CREATE",
+            "TRUNCATE",
+            "REPLACE",
+            "GRANT",
+            "REVOKE",
+            "EXECUTE",
+        }
+    )
 
     def __init__(self):
         super().__init__("database", "Query SQLite/PostgreSQL databases (read-only)")
@@ -877,25 +883,30 @@ class DatabaseAdapter(SoftwareAdapter):
                 tables = []
                 for row in rows:
                     tbl = row["table_name"]
-                    cols = await conn.fetch("""
+                    cols = await conn.fetch(
+                        """
                         SELECT column_name, data_type, is_nullable, column_default
                         FROM information_schema.columns
                         WHERE table_schema = 'public' AND table_name = $1
                         ORDER BY ordinal_position
-                    """, tbl)
-                    tables.append({
-                        "name": tbl,
-                        "type": row["table_type"],
-                        "columns": [
-                            {
-                                "name": c["column_name"],
-                                "type": c["data_type"],
-                                "nullable": c["is_nullable"] == "YES",
-                                "default": c["column_default"],
-                            }
-                            for c in cols
-                        ],
-                    })
+                    """,
+                        tbl,
+                    )
+                    tables.append(
+                        {
+                            "name": tbl,
+                            "type": row["table_type"],
+                            "columns": [
+                                {
+                                    "name": c["column_name"],
+                                    "type": c["data_type"],
+                                    "nullable": c["is_nullable"] == "YES",
+                                    "default": c["column_default"],
+                                }
+                                for c in cols
+                            ],
+                        }
+                    )
                 return tables
         except Exception as e:
             return [{"error": f"PostgreSQL scan failed: {e}"}]
@@ -1008,7 +1019,7 @@ class DatabaseAdapter(SoftwareAdapter):
                 rows = await conn.fetch(sql, *params)
                 if rows:
                     columns = list(rows[0].keys())
-                    limited = rows[:self._max_queries]
+                    limited = rows[: self._max_queries]
                     return {
                         "columns": columns,
                         "rows": [dict(r) for r in limited],
@@ -1048,16 +1059,23 @@ class DatabaseAdapter(SoftwareAdapter):
             try:
                 pool = await self._get_pg_pool()
                 async with pool.acquire() as conn:
-                    cols = await conn.fetch("""
+                    cols = await conn.fetch(
+                        """
                         SELECT column_name, data_type, is_nullable, column_default
                         FROM information_schema.columns
                         WHERE table_schema = 'public' AND table_name = $1
                         ORDER BY ordinal_position
-                    """, table)
+                    """,
+                        table,
+                    )
                     return {
                         "table": table,
                         "columns": [
-                            {"name": c["column_name"], "type": c["data_type"], "nullable": c["is_nullable"] == "YES"}
+                            {
+                                "name": c["column_name"],
+                                "type": c["data_type"],
+                                "nullable": c["is_nullable"] == "YES",
+                            }
                             for c in cols
                         ],
                     }
@@ -1221,14 +1239,16 @@ class FileSystemAdapter(SoftwareAdapter):
         return result
 
     def _add_change(self, change_type: str, path: str) -> None:
-        self._change_log.append({
-            "type": change_type,
-            "path": str(path),
-            "time": time.time(),
-        })
+        self._change_log.append(
+            {
+                "type": change_type,
+                "path": str(path),
+                "time": time.time(),
+            }
+        )
         # Trim to max size
         if len(self._change_log) > self._max_change_log:
-            self._change_log = self._change_log[-self._max_change_log:]
+            self._change_log = self._change_log[-self._max_change_log :]
 
     async def _do_list(self, params: dict[str, Any]) -> Any:
         directory = params.get("directory") or self._directory
@@ -1252,13 +1272,15 @@ class FileSystemAdapter(SoftwareAdapter):
                 full_path = os.path.join(directory, entry)
                 try:
                     stat = os.stat(full_path)
-                    results.append({
-                        "name": entry,
-                        "path": full_path,
-                        "is_dir": os.path.isdir(full_path),
-                        "size": stat.st_size,
-                        "modified": stat.st_mtime,
-                    })
+                    results.append(
+                        {
+                            "name": entry,
+                            "path": full_path,
+                            "is_dir": os.path.isdir(full_path),
+                            "size": stat.st_size,
+                            "modified": stat.st_mtime,
+                        }
+                    )
                 except OSError:
                     results.append({"name": entry, "path": full_path, "error": "stat failed"})
                 if len(results) >= max_results:
@@ -1340,7 +1362,12 @@ class FileSystemAdapter(SoftwareAdapter):
         else:
             results = [{"path": fp} for fp in matched_files]
 
-        return {"directory": directory, "pattern": pattern, "count": len(results), "results": results}
+        return {
+            "directory": directory,
+            "pattern": pattern,
+            "count": len(results),
+            "results": results,
+        }
 
     async def _do_info(self, params: dict[str, Any]) -> Any:
         file_path = params.get("path")
@@ -1485,12 +1512,15 @@ async def api_rest_configure(req: RestConfigureRequest):
     if not adapter:
         raise HTTPException(status_code=500, detail="REST adapter not registered")
     try:
-        result = await adapter.execute("configure", {
-            "base_url": req.base_url,
-            "headers": req.headers,
-            "auth_token": req.auth_token,
-            "timeout": req.timeout,
-        })
+        result = await adapter.execute(
+            "configure",
+            {
+                "base_url": req.base_url,
+                "headers": req.headers,
+                "auth_token": req.auth_token,
+                "timeout": req.timeout,
+            },
+        )
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -1508,11 +1538,14 @@ async def api_rest_probe(req: RestProbeRequest):
     if not adapter:
         raise HTTPException(status_code=500, detail="REST adapter not registered")
     try:
-        result = await adapter.execute("probe", {
-            "base_url": req.base_url,
-            "headers": req.headers,
-            "auth_token": req.auth_token,
-        })
+        result = await adapter.execute(
+            "probe",
+            {
+                "base_url": req.base_url,
+                "headers": req.headers,
+                "auth_token": req.auth_token,
+            },
+        )
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -1530,13 +1563,16 @@ async def api_rest_request(req: RestRequestModel):
     if not adapter:
         raise HTTPException(status_code=500, detail="REST adapter not registered")
     try:
-        result = await adapter.execute("request", {
-            "method": req.method,
-            "path": req.path,
-            "headers": req.headers,
-            "body": req.body,
-            "timeout": req.timeout,
-        })
+        result = await adapter.execute(
+            "request",
+            {
+                "method": req.method,
+                "path": req.path,
+                "headers": req.headers,
+                "body": req.body,
+                "timeout": req.timeout,
+            },
+        )
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -1557,11 +1593,14 @@ async def api_database_configure(req: DatabaseConfigureRequest):
     if not adapter:
         raise HTTPException(status_code=500, detail="Database adapter not registered")
     try:
-        result = await adapter.execute("configure", {
-            "db_type": req.db_type,
-            "connection_string": req.connection_string,
-            "max_queries": req.max_queries,
-        })
+        result = await adapter.execute(
+            "configure",
+            {
+                "db_type": req.db_type,
+                "connection_string": req.connection_string,
+                "max_queries": req.max_queries,
+            },
+        )
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -1579,11 +1618,14 @@ async def api_database_query(req: DatabaseQueryRequest):
     if not adapter:
         raise HTTPException(status_code=500, detail="Database adapter not registered")
     try:
-        result = await adapter.execute("query", {
-            "sql": req.sql,
-            "params": req.params,
-            "timeout": req.timeout,
-        })
+        result = await adapter.execute(
+            "query",
+            {
+                "sql": req.sql,
+                "params": req.params,
+                "timeout": req.timeout,
+            },
+        )
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -1636,11 +1678,14 @@ async def api_filesystem_configure(req: FileSystemConfigureRequest):
     if not adapter:
         raise HTTPException(status_code=500, detail="FileSystem adapter not registered")
     try:
-        result = await adapter.execute("configure", {
-            "directory": req.directory,
-            "watch": req.watch,
-            "max_depth": req.max_depth,
-        })
+        result = await adapter.execute(
+            "configure",
+            {
+                "directory": req.directory,
+                "watch": req.watch,
+                "max_depth": req.max_depth,
+            },
+        )
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -1653,7 +1698,9 @@ async def api_filesystem_configure(req: FileSystemConfigureRequest):
 
 @router.get("/adapters/filesystem/list")
 async def api_filesystem_list(
-    directory: str | None = Query(None, description="Directory to list (uses configured dir if omitted)"),
+    directory: str | None = Query(
+        None, description="Directory to list (uses configured dir if omitted)"
+    ),
     pattern: str = Query("*", description="Glob pattern to filter files"),
     include_hidden: bool = Query(False, description="Include hidden files"),
     max_results: int = Query(200, description="Max files to return"),

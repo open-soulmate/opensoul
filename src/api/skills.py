@@ -80,7 +80,9 @@ def _validate_skill_dir(skill_dir: Path) -> list[dict]:
         return [{"type": "parse_error", "detail": str(e)}]
     for field in REQUIRED_SKILL_FIELDS:
         if not info.get(field):
-            errors.append({"type": "missing_field", "detail": f"{skill_dir.name}: frontmatter缺{field}"})
+            errors.append(
+                {"type": "missing_field", "detail": f"{skill_dir.name}: frontmatter缺{field}"}
+            )
     return errors
 
 
@@ -99,7 +101,9 @@ def _scan_standard_skills() -> tuple[list[dict], list[dict]]:
                 continue
             errs = _validate_skill_dir(d)
             if errs:
-                validation.append({"skill": d.name, "path": str(d), "source": source, "errors": errs})
+                validation.append(
+                    {"skill": d.name, "path": str(d), "source": source, "errors": errs}
+                )
                 continue  # 不合法的不进skills列表，但记录在校验报告
             info = _parse_skill_md(d / "SKILL.md")
             info["installed"] = True  # .agents/skills内即为标准安装位
@@ -202,8 +206,9 @@ def _sync_to_shared(skill_path: Path, skill_name: str) -> bool:
         shutil.rmtree(staging, ignore_errors=True)
         logger.warning("skill迁移copy失败已清理staging: %s (%s)", skill_name, e)
         return False
-    result = promote_staging(payload, SHARED_SKILLS_DIR,
-                             origin=str(skill_path), source_type="agent-dir")
+    result = promote_staging(
+        payload, SHARED_SKILLS_DIR, origin=str(skill_path), source_type="agent-dir"
+    )
     shutil.rmtree(staging, ignore_errors=True)  # 容器清理（负载已被rename走或失败被清）
     if not result.success:
         logger.warning("skill_guard拒绝迁移%s: %s", skill_name, result.errors)
@@ -254,7 +259,10 @@ async def validate_skills():
     report["invalid"].extend(validation)
 
     # shared + agent层也跑校验
-    for base_label, base_dirs in [("shared", [SHARED_SKILLS_DIR]), ("agent", [d for _, d in AGENT_SKILL_DIRS])]:
+    for base_label, base_dirs in [
+        ("shared", [SHARED_SKILLS_DIR]),
+        ("agent", [d for _, d in AGENT_SKILL_DIRS]),
+    ]:
         for base_dir in base_dirs:
             if not base_dir.exists():
                 continue
@@ -263,10 +271,14 @@ async def validate_skills():
                     continue
                 errs = _validate_skill_dir(d)
                 if errs:
-                    report["invalid"].append({"skill": d.name, "path": str(d), "source": base_label, "errors": errs})
+                    report["invalid"].append(
+                        {"skill": d.name, "path": str(d), "source": base_label, "errors": errs}
+                    )
                 else:
                     info = _parse_skill_md(d / "SKILL.md")
-                    report["valid"].append({"name": info["name"], "source": base_label, "standard": ""})
+                    report["valid"].append(
+                        {"name": info["name"], "source": base_label, "standard": ""}
+                    )
 
     report["stats"] = {
         "valid_count": len(report["valid"]),
@@ -320,13 +332,22 @@ async def install_skill(skill_name: str, user_id: UUID = Depends(get_current_use
         )
         installed_dir = staging / repo_name
         if proc.returncode == 0 and installed_dir.is_dir():
-            result = promote_staging(installed_dir, SHARED_SKILLS_DIR,
-                                     origin=f"hermes:{skill_name}", source_type="registry")
+            result = promote_staging(
+                installed_dir,
+                SHARED_SKILLS_DIR,
+                origin=f"hermes:{skill_name}",
+                source_type="registry",
+            )
             shutil.rmtree(staging, ignore_errors=True)
             if not result.success:
                 return {"success": False, "error": f"skill_guard拒绝: {result.errors}"}
-            return {"success": True, "output": proc.stdout[-500:], "origin": result.origin,
-                    "swapped": result.swapped, "guard": "skill_guard"}
+            return {
+                "success": True,
+                "output": proc.stdout[-500:],
+                "origin": result.origin,
+                "swapped": result.swapped,
+                "guard": "skill_guard",
+            }
         shutil.rmtree(staging, ignore_errors=True)
 
         # Fallback: try pip/npm if it looks like a package — git clone进staging，不直接落live
@@ -342,13 +363,19 @@ async def install_skill(skill_name: str, user_id: UUID = Depends(get_current_use
                 timeout=60,
             )
             if proc.returncode == 0:
-                result = promote_staging(clone_target, SHARED_SKILLS_DIR,
-                                         origin=repo_url, source_type="git")
+                result = promote_staging(
+                    clone_target, SHARED_SKILLS_DIR, origin=repo_url, source_type="git"
+                )
                 shutil.rmtree(staging, ignore_errors=True)
                 if not result.success:
                     return {"success": False, "error": f"skill_guard拒绝: {result.errors}"}
-                return {"success": True, "output": "Cloned from GitHub", "origin": repo_url,
-                        "swapped": result.swapped, "guard": "skill_guard"}
+                return {
+                    "success": True,
+                    "output": "Cloned from GitHub",
+                    "origin": repo_url,
+                    "swapped": result.swapped,
+                    "guard": "skill_guard",
+                }
             shutil.rmtree(staging, ignore_errors=True)
 
         return {"success": False, "error": proc.stderr[-500:] or "Install failed"}

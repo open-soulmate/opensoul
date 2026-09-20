@@ -12,6 +12,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
 @router.get("/health")
 async def git_api_health():
     """GitAPI health check."""

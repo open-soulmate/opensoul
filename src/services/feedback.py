@@ -5,8 +5,8 @@ feedback entries from regular knowledge entries.
 """
 
 import json
-import uuid
 import logging
+import uuid
 
 from src.database.postgres import db_pool
 from src.models.feedback import FeedbackEntry, FeedbackExtractRequest
@@ -47,46 +47,52 @@ async def extract_knowledge(data: FeedbackExtractRequest, llm_call=None) -> list
 def _rule_based_extract(text: str) -> list[FeedbackEntry]:
     """Extract knowledge using pattern matching."""
     entries = []
-    lines = text.split('\n')
+    lines = text.split("\n")
 
     for i, line in enumerate(lines):
         lower = line.lower().strip()
 
         # Pattern: user correction (highest priority)
-        if any(kw in lower for kw in ['不对', '错了', '不是这样', '应该是', 'wrong', 'incorrect']):
+        if any(kw in lower for kw in ["不对", "错了", "不是这样", "应该是", "wrong", "incorrect"]):
             context = _get_context(lines, i, 3)
-            entries.append(FeedbackEntry(
-                type="pattern",
-                title=f"用户纠正: {line.strip()[:60]}",
-                content=context,
-                confidence="high",
-                evidence=line.strip(),
-                tags=["user-correction", "high-priority"],
-            ))
+            entries.append(
+                FeedbackEntry(
+                    type="pattern",
+                    title=f"用户纠正: {line.strip()[:60]}",
+                    content=context,
+                    confidence="high",
+                    evidence=line.strip(),
+                    tags=["user-correction", "high-priority"],
+                )
+            )
 
         # Pattern: architecture decision
-        if any(kw in lower for kw in ['决定', '选择', '用这个方案', '采用', 'decided', 'chosen']):
+        if any(kw in lower for kw in ["决定", "选择", "用这个方案", "采用", "decided", "chosen"]):
             context = _get_context(lines, i, 2)
-            entries.append(FeedbackEntry(
-                type="decision",
-                title=f"决策: {line.strip()[:60]}",
-                content=context,
-                confidence="medium",
-                evidence=line.strip(),
-                tags=["decision"],
-            ))
+            entries.append(
+                FeedbackEntry(
+                    type="decision",
+                    title=f"决策: {line.strip()[:60]}",
+                    content=context,
+                    confidence="medium",
+                    evidence=line.strip(),
+                    tags=["decision"],
+                )
+            )
 
         # Pattern: new knowledge (discovery)
-        if any(kw in lower for kw in ['发现', '原来', '其实', '注意', 'found out', 'turns out']):
+        if any(kw in lower for kw in ["发现", "原来", "其实", "注意", "found out", "turns out"]):
             context = _get_context(lines, i, 2)
-            entries.append(FeedbackEntry(
-                type="knowledge",
-                title=f"发现: {line.strip()[:60]}",
-                content=context,
-                confidence="medium",
-                evidence=line.strip(),
-                tags=["discovery"],
-            ))
+            entries.append(
+                FeedbackEntry(
+                    type="knowledge",
+                    title=f"发现: {line.strip()[:60]}",
+                    content=context,
+                    confidence="medium",
+                    evidence=line.strip(),
+                    tags=["discovery"],
+                )
+            )
 
     return entries
 
@@ -112,8 +118,8 @@ async def _llm_extract(text: str, llm_call) -> list[FeedbackEntry]:
         result = await llm_call(prompt)
         # Parse JSON from response
         result = result.strip()
-        if result.startswith('```'):
-            result = result.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+        if result.startswith("```"):
+            result = result.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         items = json.loads(result)
         return [FeedbackEntry(**item) for item in items if isinstance(item, dict)]
     except Exception as e:
@@ -125,7 +131,7 @@ def _get_context(lines: list[str], idx: int, window: int) -> str:
     """Get surrounding context for a line."""
     start = max(0, idx - window)
     end = min(len(lines), idx + window + 1)
-    return '\n'.join(lines[start:end]).strip()
+    return "\n".join(lines[start:end]).strip()
 
 
 def _deduplicate(entries: list[FeedbackEntry]) -> list[FeedbackEntry]:
@@ -161,20 +167,22 @@ async def store_entries(
             "SELECT id FROM knowledge WHERE user_id = ? AND title = ? AND metadata LIKE ?",
             user_id,
             entry.title,
-            f'%"feedback_type"%',
+            '%"feedback_type"%',
         )
         if existing:
             skipped += 1
             continue
 
         entry_id = str(uuid.uuid4())
-        metadata = json.dumps({
-            "feedback_type": entry.type,
-            "confidence": entry.confidence,
-            "evidence": entry.evidence,
-            "session_id": session_id,
-            "extracted_at": __import__("datetime").datetime.utcnow().isoformat(),
-        })
+        metadata = json.dumps(
+            {
+                "feedback_type": entry.type,
+                "confidence": entry.confidence,
+                "evidence": entry.evidence,
+                "session_id": session_id,
+                "extracted_at": __import__("datetime").datetime.utcnow().isoformat(),
+            }
+        )
 
         await db_pool.execute(
             "INSERT INTO knowledge (id, user_id, title, content, source, content_type, metadata) "
@@ -241,17 +249,19 @@ async def list_entries(
             "SELECT t.name FROM tags t JOIN knowledge_tags kt ON t.id = kt.tag_id WHERE kt.knowledge_id = ?",
             row["id"],
         )
-        results.append({
-            "id": row["id"],
-            "user_id": row["user_id"],
-            "title": row["title"],
-            "content": row["content"],
-            "feedback_type": meta.get("feedback_type", ""),
-            "confidence": meta.get("confidence", ""),
-            "evidence": meta.get("evidence", ""),
-            "source": row["source"],
-            "tags": [t["name"] for t in tags_row],
-            "created_at": row["created_at"],
-        })
+        results.append(
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "title": row["title"],
+                "content": row["content"],
+                "feedback_type": meta.get("feedback_type", ""),
+                "confidence": meta.get("confidence", ""),
+                "evidence": meta.get("evidence", ""),
+                "source": row["source"],
+                "tags": [t["name"] for t in tags_row],
+                "created_at": row["created_at"],
+            }
+        )
 
     return results

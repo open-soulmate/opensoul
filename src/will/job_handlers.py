@@ -16,8 +16,10 @@ handler采用懒import（函数体内import src.api.*）：
 api.heredity/api.hippo在main.py启动时已加载，此处延迟import
 避免will→api→will的模块级循环导入（will/__init__已被api/will.py导入）。
 """
+
 import logging
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.will.job_queue import JobQueue

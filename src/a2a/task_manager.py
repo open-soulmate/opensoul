@@ -280,7 +280,12 @@ class TaskManager:
                 return await asyncio.wait_for(self._handle_acp_chat(text, task), timeout=10.0)
 
             # Build conversation history from task
-            messages = [{"role": "system", "content": "你是OpenSoul智能助手，基于知识库回答用户问题。请用简洁专业的中文回复。"}]
+            messages = [
+                {
+                    "role": "system",
+                    "content": "你是OpenSoul智能助手，基于知识库回答用户问题。请用简洁专业的中文回复。",
+                }
+            ]
             for msg in task.history[-10:]:  # Last 10 messages for context
                 role = "user" if msg.role == "user" else "assistant"
                 text_parts = [p.get("text", "") for p in msg.parts if p.get("type") == "text"]
@@ -316,6 +321,7 @@ class TaskManager:
         """Fallback chat using ACP proxy service."""
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=120) as client:
                 resp = await client.post(
                     "http://localhost:8092/acp/send",

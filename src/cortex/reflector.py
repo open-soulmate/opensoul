@@ -29,7 +29,11 @@ class Reflector:
         # 2. 语法检查
         if result.get("file_written"):
             syntax_ok = await self._check_syntax(result["file_path"])
-            checks.append(CheckItem("语法校验", syntax_ok, None if syntax_ok else f"语法错误: {result['file_path']}"))
+            checks.append(
+                CheckItem(
+                    "语法校验", syntax_ok, None if syntax_ok else f"语法错误: {result['file_path']}"
+                )
+            )
 
         # 3. 功能检查
         if result.get("test_output"):
@@ -39,7 +43,9 @@ class Reflector:
         # 4. 意图匹配检查
         if result.get("diff") and task_ctx.intent:
             intent_match = await self._check_intent_match(result["diff"], task_ctx.intent)
-            checks.append(CheckItem("意图匹配", intent_match, None if intent_match else "改动与预期意图不符"))
+            checks.append(
+                CheckItem("意图匹配", intent_match, None if intent_match else "改动与预期意图不符")
+            )
 
         if not checks:
             checks.append(CheckItem("无检查项", True))
@@ -77,6 +83,7 @@ class Reflector:
                 return True
         elif suffix == ".json":
             import json as _json
+
             try:
                 _json.loads(content)
                 return True

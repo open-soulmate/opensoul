@@ -31,11 +31,11 @@ class SessionImporter:
         self.db_path = db_path
         if ltm_store is None:
             from src.hippo.long_term_memory import LongTermMemoryStore
+
             ltm_store = LongTermMemoryStore()
         self.ltm = ltm_store
 
-    def _fetch_sessions(self, limit: int, min_messages: int,
-                        exclude_prefixes: tuple) -> list[dict]:
+    def _fetch_sessions(self, limit: int, min_messages: int, exclude_prefixes: tuple) -> list[dict]:
         """读取候选会话（含消息内容）"""
         if not Path(self.db_path).exists():
             return []
@@ -63,16 +63,18 @@ class SessionImporter:
                 ).fetchall()
                 if len(msgs) < min_messages:
                     continue
-                sessions.append({
-                    "id": sid,
-                    "agent_id": row["agent_id"],
-                    "title": row["title"] or "未命名会话",
-                    "created_at": row["created_at"],
-                    "messages": [
-                        {"role": m["role"], "content": m["content"] or "", "ts": m["timestamp"]}
-                        for m in msgs
-                    ],
-                })
+                sessions.append(
+                    {
+                        "id": sid,
+                        "agent_id": row["agent_id"],
+                        "title": row["title"] or "未命名会话",
+                        "created_at": row["created_at"],
+                        "messages": [
+                            {"role": m["role"], "content": m["content"] or "", "ts": m["timestamp"]}
+                            for m in msgs
+                        ],
+                    }
+                )
                 if len(sessions) >= limit:
                     break
         return sessions
@@ -118,7 +120,9 @@ class SessionImporter:
                 stats["skipped_imported"] += 1
                 continue
 
-            user_msgs = [m for m in sess["messages"] if m["role"] == "user" and m["content"].strip()]
+            user_msgs = [
+                m for m in sess["messages"] if m["role"] == "user" and m["content"].strip()
+            ]
             if not user_msgs:
                 stats["skipped_short"] += 1
                 continue
@@ -127,7 +131,9 @@ class SessionImporter:
                 stats["imported_sessions"] += 1
                 stats["memories_created"] += len(user_msgs) + 1  # +1会话摘要
                 if len(stats["examples"]) < 3:
-                    stats["examples"].append({"session": sid, "user_msgs": len(user_msgs), "title": sess["title"]})
+                    stats["examples"].append(
+                        {"session": sid, "user_msgs": len(user_msgs), "title": sess["title"]}
+                    )
                 continue
 
             created = 0
@@ -191,7 +197,9 @@ class SessionImporter:
             stats["imported_sessions"] += 1
             stats["memories_created"] += created
             if len(stats["examples"]) < 3:
-                stats["examples"].append({"session": sid, "memories": created, "title": sess["title"]})
+                stats["examples"].append(
+                    {"session": sid, "memories": created, "title": sess["title"]}
+                )
 
         stats["elapsed_s"] = round(time.time() - t0, 2)
         return stats

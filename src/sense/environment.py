@@ -39,7 +39,7 @@ class EnvironmentSensor:
 
     def __init__(self, refresh_interval: float = 300.0):
         self.refresh_interval = refresh_interval
-        self._cached: Optional[EnvironmentInfo] = None
+        self._cached: EnvironmentInfo | None = None
         self._last_refresh: float = 0.0
 
     def collect(self, force: bool = False) -> EnvironmentInfo:
@@ -66,6 +66,7 @@ class EnvironmentSensor:
         # Memory info
         try:
             import psutil
+
             mem = psutil.virtual_memory()
             info.memory_total_gb = round(mem.total / (1024**3), 1)
             info.memory_available_gb = round(mem.available / (1024**3), 1)
@@ -95,15 +96,17 @@ class EnvironmentSensor:
     def get_context_prompt(self) -> str:
         """Generate environment context for system prompt injection."""
         info = self.collect()
-        return "\n".join([
-            "## 运行环境",
-            f"- 操作系统: {info.os_type} {info.os_version}",
-            f"- Python: {info.python_version}",
-            f"- CPU: {info.cpu_count}核",
-            f"- 内存: {info.memory_available_gb}GB可用 / {info.memory_total_gb}GB总量",
-            f"- 磁盘: {info.disk_free_gb}GB可用 / {info.disk_total_gb}GB总量",
-            f"- 工作目录: {info.working_directory}",
-        ])
+        return "\n".join(
+            [
+                "## 运行环境",
+                f"- 操作系统: {info.os_type} {info.os_version}",
+                f"- Python: {info.python_version}",
+                f"- CPU: {info.cpu_count}核",
+                f"- 内存: {info.memory_available_gb}GB可用 / {info.memory_total_gb}GB总量",
+                f"- 磁盘: {info.disk_free_gb}GB可用 / {info.disk_total_gb}GB总量",
+                f"- 工作目录: {info.working_directory}",
+            ]
+        )
 
     def check_resource_constraints(self) -> list[str]:
         """Check for resource constraints."""

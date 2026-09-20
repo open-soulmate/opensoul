@@ -20,10 +20,14 @@ from pydantic import BaseModel
 from src.config import settings
 
 router = APIRouter(prefix="/api/enterprise", tags=["enterprise"])
+
+
 @router.get("/health")
 async def enterprise_health():
     """Enterprise health check."""
     return {"status": "ok", "component": "Enterprise"}
+
+
 security = HTTPBearer()
 
 # ── SQLite database ─────────────────────────────────────────────────────
@@ -100,11 +104,13 @@ _init_db()
 
 def _hash_password(password: str) -> str:
     import bcrypt as _bcrypt
+
     return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def _verify_password(password: str, stored: str) -> bool:
     import bcrypt as _bcrypt
+
     try:
         return _bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
     except Exception:

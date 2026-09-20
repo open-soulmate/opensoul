@@ -27,14 +27,16 @@ class CreativityEngine:
         self.api_key = api_key or settings.llm_api_key
         self.model = model or settings.llm_model
 
-    async def generate_alternatives(self, problem: str, constraints: list[str] = None, count: int = 3) -> list[dict]:
+    async def generate_alternatives(
+        self, problem: str, constraints: list[str] = None, count: int = 3
+    ) -> list[dict]:
         """生成多个替代方案"""
         if not self.api_key:
             return [{"approach": "无LLM配置", "description": "需要配置LLM API"}]
 
         constraint_text = ""
         if constraints:
-            constraint_text = f"\n约束条件：\n" + "\n".join(f"- {c}" for c in constraints)
+            constraint_text = "\n约束条件：\n" + "\n".join(f"- {c}" for c in constraints)
 
         prompt = f"""你是一个创新方案生成器。针对以下问题，生成{count}个不同的解决方案。
 
@@ -70,7 +72,7 @@ class CreativityEngine:
             content = resp.json()["choices"][0]["message"]["content"]
             content = content.strip()
             if content.startswith("```"):
-                content = content[content.index("\n")+1:]
+                content = content[content.index("\n") + 1 :]
             if content.endswith("```"):
                 content = content[:-3]
             return json.loads(content.strip())
@@ -98,7 +100,10 @@ class CreativityEngine:
                     json={
                         "model": self.model,
                         "messages": [
-                            {"role": "system", "content": "你是跨领域创新顾问，擅长从不同领域借鉴灵感。"},
+                            {
+                                "role": "system",
+                                "content": "你是跨领域创新顾问，擅长从不同领域借鉴灵感。",
+                            },
                             {"role": "user", "content": prompt},
                         ],
                         "temperature": 0.9,
@@ -110,7 +115,7 @@ class CreativityEngine:
             content = resp.json()["choices"][0]["message"]["content"]
             content = content.strip()
             if content.startswith("```"):
-                content = content[content.index("\n")+1:]
+                content = content[content.index("\n") + 1 :]
             if content.endswith("```"):
                 content = content[:-3]
             return json.loads(content.strip())

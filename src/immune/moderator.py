@@ -214,9 +214,7 @@ class ContentModerator:
                 out.append(msg)
                 continue
             result = self.moderate(content)
-            actionable = [
-                f for f in result.findings if risk_order.get(f["risk"], 0) >= threshold
-            ]
+            actionable = [f for f in result.findings if risk_order.get(f["risk"], 0) >= threshold]
             if not actionable:
                 out.append(msg)
                 continue
@@ -224,8 +222,7 @@ class ContentModerator:
             new_msg["content"] = result.redacted_text
             out.append(new_msg)
             all_findings.extend(
-                {"type": f["type"], "risk": f["risk"], "label": f["label"]}
-                for f in actionable
+                {"type": f["type"], "risk": f["risk"], "label": f["label"]} for f in actionable
             )
         return out, all_findings
 

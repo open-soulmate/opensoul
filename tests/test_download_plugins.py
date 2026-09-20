@@ -23,6 +23,7 @@ from src.api.download_plugins import (
 
 # ─── Data class tests ────────────────────────────────────────────
 
+
 class TestPluginStatus:
     def test_all_values(self):
         assert PluginStatus.AVAILABLE.value == "available"
@@ -71,9 +72,15 @@ class TestDownloadProgress:
 class TestPluginInfo:
     def test_fields(self):
         info = PluginInfo(
-            id="test", name="Test", description="desc", version="1.0",
-            binary="test", supports_resume=True, supports_p2p=False,
-            install_cmd={"linux": "apt install test"}, update_cmd={},
+            id="test",
+            name="Test",
+            description="desc",
+            version="1.0",
+            binary="test",
+            supports_resume=True,
+            supports_p2p=False,
+            install_cmd={"linux": "apt install test"},
+            update_cmd={},
             check_version_cmd="test --version",
         )
         assert info.id == "test"
@@ -84,6 +91,7 @@ class TestPluginInfo:
 
 
 # ─── Helper function tests ────────────────────────────────────────
+
 
 class TestDetectOs:
     @patch("platform.system", return_value="Linux")
@@ -108,6 +116,7 @@ class TestRefreshPath:
 
 
 # ─── Plugin info tests ────────────────────────────────────────────
+
 
 class TestAria2Plugin:
     def test_info(self):
@@ -217,6 +226,7 @@ class TestOdlPlugin:
 
 # ─── DownloadManager tests ────────────────────────────────────────
 
+
 class TestDownloadManager:
     def test_register_and_list(self):
         mgr = DownloadManager()
@@ -291,6 +301,7 @@ class TestDownloadManager:
 
 
 # ─── Plugin install timeout test ─────────────────────────────────
+
 
 class TestPluginInstall:
     @pytest.mark.asyncio

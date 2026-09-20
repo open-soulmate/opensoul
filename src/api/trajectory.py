@@ -5,13 +5,13 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from src.trajectory.session_fsm import SessionEvent, SessionStateMachine
 from src.trajectory.store import (
     EventType,
     TrajectoryEvent,
     TrajectoryScore,
     trajectory_store,
 )
-from src.trajectory.session_fsm import SessionStateMachine, SessionEvent
 
 router = APIRouter()
 session_fsm = SessionStateMachine()

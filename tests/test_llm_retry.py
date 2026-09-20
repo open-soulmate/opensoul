@@ -123,9 +123,7 @@ class TestRouterRetryIntegration:
 
     def _make_router(self, handler) -> ModelRouter:
         router = ModelRouter()
-        router._http_client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), timeout=5
-        )
+        router._http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5)
         router.key_manager.add_key("mock", "test-key")
         router.add_provider("mock", "http://mock", models={"chat": "m", "embedding": "e"})
         return router
@@ -142,9 +140,7 @@ class TestRouterRetryIntegration:
                     headers={"retry-after-ms": "10"},
                     json={"error": "rate limited"},
                 )
-            return httpx.Response(
-                200, json={"choices": [{"message": {"content": "pong"}}]}
-            )
+            return httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]})
 
         router = self._make_router(handler)
         try:
@@ -185,14 +181,10 @@ class TestRouterRetryIntegration:
                 calls["a"] += 1
                 return httpx.Response(401, json={"error": "bad key"})
             calls["b"] += 1
-            return httpx.Response(
-                200, json={"choices": [{"message": {"content": "ok-b"}}]}
-            )
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok-b"}}]})
 
         router = ModelRouter()
-        router._http_client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), timeout=5
-        )
+        router._http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5)
         router.key_manager.add_key("a", "key-a")
         router.key_manager.add_key("b", "key-b")
         router.add_provider("a", "http://mock-a", models={"chat": "m"}, priority=0)
@@ -213,9 +205,7 @@ class TestRouterRetryIntegration:
             calls["n"] += 1
             if calls["n"] == 1:
                 return httpx.Response(502, json={"error": "bad gateway"})
-            return httpx.Response(
-                200, json={"data": [{"index": 0, "embedding": [0.1, 0.2]}]}
-            )
+            return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.1, 0.2]}]})
 
         router = self._make_router(handler)
         try:
@@ -233,9 +223,7 @@ class TestRouterRetryIntegration:
             calls["n"] += 1
             if calls["n"] == 1:
                 raise httpx.ConnectError("econnrefused")
-            return httpx.Response(
-                200, json={"choices": [{"message": {"content": "recovered"}}]}
-            )
+            return httpx.Response(200, json={"choices": [{"message": {"content": "recovered"}}]})
 
         router = self._make_router(handler)
         try:

@@ -48,6 +48,7 @@ class TemplateEngine:
                 self._templates[t.template_id] = t
             except Exception as exc:
                 logging.getLogger(__name__).debug("probe skipped: %s", exc)
+
     def _save_template(self, template: Template):
         path = self.storage_dir / f"{template.template_id}.json"
         path.write_text(

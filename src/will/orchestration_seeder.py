@@ -19,12 +19,58 @@ SYSTEM_ORCHESTRATIONS = [
         "description": "用户消息真实处理路径：chat API压缩脱敏记忆→ACP proxy→hermes执行→轨迹记录（端口8090/8092）",
         "trigger": "manual",
         "nodes": [
-            {"node_type": "trigger", "label": "用户消息", "config": {"source": "weixin/web", "endpoint": "POST /api/chat"}, "position": {"x": 0, "y": 200}},
-            {"node_type": "organ", "label": "OpenSoul chat(8090)", "config": {"pipeline": ["_compress_if_needed", "_redact_outbound", "_get_memory_context", "_check_loop"], "file": "src/api/chat.py"}, "position": {"x": 220, "y": 200}},
-            {"node_type": "agent", "label": "ACP proxy(8092)", "config": {"file": "acp-proxy/proxy.py", "queue": "interrupt_queue", "timeout_s": 120}, "position": {"x": 440, "y": 200}},
-            {"node_type": "agent", "label": "Hermes Agent", "config": {"cmd": "hermes acp", "pty": True, "file": "acp-proxy/proxy.py ACPProcess"}, "position": {"x": 660, "y": 200}},
-            {"node_type": "organ", "label": "轨迹记录", "config": {"endpoint": "/api/trajectory", "file": "src/api/trajectory.py"}, "position": {"x": 880, "y": 200}},
-            {"node_type": "end", "label": "响应返回", "config": {"modes": ["SSE stream", "JSON"]}, "position": {"x": 1100, "y": 200}},
+            {
+                "node_type": "trigger",
+                "label": "用户消息",
+                "config": {"source": "weixin/web", "endpoint": "POST /api/chat"},
+                "position": {"x": 0, "y": 200},
+            },
+            {
+                "node_type": "organ",
+                "label": "OpenSoul chat(8090)",
+                "config": {
+                    "pipeline": [
+                        "_compress_if_needed",
+                        "_redact_outbound",
+                        "_get_memory_context",
+                        "_check_loop",
+                    ],
+                    "file": "src/api/chat.py",
+                },
+                "position": {"x": 220, "y": 200},
+            },
+            {
+                "node_type": "agent",
+                "label": "ACP proxy(8092)",
+                "config": {
+                    "file": "acp-proxy/proxy.py",
+                    "queue": "interrupt_queue",
+                    "timeout_s": 120,
+                },
+                "position": {"x": 440, "y": 200},
+            },
+            {
+                "node_type": "agent",
+                "label": "Hermes Agent",
+                "config": {
+                    "cmd": "hermes acp",
+                    "pty": True,
+                    "file": "acp-proxy/proxy.py ACPProcess",
+                },
+                "position": {"x": 660, "y": 200},
+            },
+            {
+                "node_type": "organ",
+                "label": "轨迹记录",
+                "config": {"endpoint": "/api/trajectory", "file": "src/api/trajectory.py"},
+                "position": {"x": 880, "y": 200},
+            },
+            {
+                "node_type": "end",
+                "label": "响应返回",
+                "config": {"modes": ["SSE stream", "JSON"]},
+                "position": {"x": 1100, "y": 200},
+            },
         ],
         "edges": [
             ("用户消息", "OpenSoul chat(8090)", ""),
@@ -39,15 +85,78 @@ SYSTEM_ORCHESTRATIONS = [
         "description": "strand_a(conservative,8092)与strand_b(aggressive,8095)双链互审进化流水线（dna_evolution.py实际7阶段）",
         "trigger": "cron",
         "nodes": [
-            {"node_type": "trigger", "label": "进化定时器", "config": {"interval_s": 3600, "strand": "dna_evolution.run"}, "position": {"x": 0, "y": 250}},
-            {"node_type": "action", "label": "观察+反思", "config": {"stages": ["observe", "reflect"], "noise_filter": "NOISE_OBS_TYPES(self_introspect/self_scan)"}, "position": {"x": 200, "y": 250}},
-            {"node_type": "condition", "label": "storm_check熔断", "config": {"file": "failure_memory.py", "ttl_s": 1800, "rule": "窗口5次同签名→熔断，30min自动解锁"}, "position": {"x": 400, "y": 250}},
-            {"node_type": "parallel", "label": "双链并行", "config": {"strands": ["strand_a:primary:conservative", "strand_b:shadow:aggressive"]}, "position": {"x": 600, "y": 250}},
-            {"node_type": "action", "label": "strand_a规划+实现", "config": {"pipeline": ["_locate", "_plan(JSON鲁棒提取)", "_implement", "code_review"], "file": "evolution_v2.py"}, "position": {"x": 820, "y": 150}},
-            {"node_type": "action", "label": "strand_b评审", "config": {"role": "shadow交叉评审", "heartbeat": "data/dna_heartbeat_strand_b.json"}, "position": {"x": 820, "y": 350}},
-            {"node_type": "condition", "label": "plan/code_review", "config": {"judge": "LLM-as-Judge(P0-5)", "verdicts": ["satisfied", "needs_revision", "failed"]}, "position": {"x": 1040, "y": 250}},
-            {"node_type": "merge", "label": "双链合议", "config": {"rule": "两链互审通过→滚动重启sync_partner"}, "position": {"x": 1240, "y": 250}},
-            {"node_type": "end", "label": "checkpoint+记忆沉淀", "config": {"files": ["dna_state_*.json", "dna_memory.json", "failure_memory.db"]}, "position": {"x": 1440, "y": 250}},
+            {
+                "node_type": "trigger",
+                "label": "进化定时器",
+                "config": {"interval_s": 3600, "strand": "dna_evolution.run"},
+                "position": {"x": 0, "y": 250},
+            },
+            {
+                "node_type": "action",
+                "label": "观察+反思",
+                "config": {
+                    "stages": ["observe", "reflect"],
+                    "noise_filter": "NOISE_OBS_TYPES(self_introspect/self_scan)",
+                },
+                "position": {"x": 200, "y": 250},
+            },
+            {
+                "node_type": "condition",
+                "label": "storm_check熔断",
+                "config": {
+                    "file": "failure_memory.py",
+                    "ttl_s": 1800,
+                    "rule": "窗口5次同签名→熔断，30min自动解锁",
+                },
+                "position": {"x": 400, "y": 250},
+            },
+            {
+                "node_type": "parallel",
+                "label": "双链并行",
+                "config": {
+                    "strands": ["strand_a:primary:conservative", "strand_b:shadow:aggressive"]
+                },
+                "position": {"x": 600, "y": 250},
+            },
+            {
+                "node_type": "action",
+                "label": "strand_a规划+实现",
+                "config": {
+                    "pipeline": ["_locate", "_plan(JSON鲁棒提取)", "_implement", "code_review"],
+                    "file": "evolution_v2.py",
+                },
+                "position": {"x": 820, "y": 150},
+            },
+            {
+                "node_type": "action",
+                "label": "strand_b评审",
+                "config": {
+                    "role": "shadow交叉评审",
+                    "heartbeat": "data/dna_heartbeat_strand_b.json",
+                },
+                "position": {"x": 820, "y": 350},
+            },
+            {
+                "node_type": "condition",
+                "label": "plan/code_review",
+                "config": {
+                    "judge": "LLM-as-Judge(P0-5)",
+                    "verdicts": ["satisfied", "needs_revision", "failed"],
+                },
+                "position": {"x": 1040, "y": 250},
+            },
+            {
+                "node_type": "merge",
+                "label": "双链合议",
+                "config": {"rule": "两链互审通过→滚动重启sync_partner"},
+                "position": {"x": 1240, "y": 250},
+            },
+            {
+                "node_type": "end",
+                "label": "checkpoint+记忆沉淀",
+                "config": {"files": ["dna_state_*.json", "dna_memory.json", "failure_memory.db"]},
+                "position": {"x": 1440, "y": 250},
+            },
         ],
         "edges": [
             ("进化定时器", "观察+反思", ""),
@@ -66,15 +175,79 @@ SYSTEM_ORCHESTRATIONS = [
         "description": "OpenSoul器官层级真实协作关系（与/api/topology/graph同源）",
         "trigger": "event",
         "nodes": [
-            {"node_type": "trigger", "label": "Soul内核", "config": {"organ": "soul", "layer": "底层内核"}, "position": {"x": 0, "y": 200}},
-            {"node_type": "organ", "label": "Cortex推理", "config": {"organ": "cortex", "modules": ["loop_guard", "context_compression", "llm_retry"]}, "position": {"x": 200, "y": 200}},
-            {"node_type": "organ", "label": "Nerve总线", "config": {"organ": "nerve", "endpoint": "/api/nerve", "events_example": ["soma.process_started"]}, "position": {"x": 400, "y": 200}},
-            {"node_type": "parallel", "label": "器官并行", "config": {}, "position": {"x": 600, "y": 200}},
-            {"node_type": "organ", "label": "Hippo记忆", "config": {"organ": "hippo", "modules": ["three_factor_retrieve", "session_importer(P3-②)"]}, "position": {"x": 820, "y": 80}},
-            {"node_type": "organ", "label": "Immune安全", "config": {"organ": "immune", "modules": ["permission_engine", "moderator", "rate_limiter"]}, "position": {"x": 820, "y": 200}},
-            {"node_type": "organ", "label": "Will工作流", "config": {"organ": "will", "modules": ["DAGPlanner", "job_queue(P0-8)", "WorkflowEngine"]}, "position": {"x": 820, "y": 320}},
-            {"node_type": "organ", "label": "Gene基因", "config": {"organ": "gene", "modules": ["skill_learner", ".agents/skills对齐(P3-①)"]}, "position": {"x": 820, "y": 440}},
-            {"node_type": "end", "label": "执行/输出", "config": {}, "position": {"x": 1040, "y": 200}},
+            {
+                "node_type": "trigger",
+                "label": "Soul内核",
+                "config": {"organ": "soul", "layer": "底层内核"},
+                "position": {"x": 0, "y": 200},
+            },
+            {
+                "node_type": "organ",
+                "label": "Cortex推理",
+                "config": {
+                    "organ": "cortex",
+                    "modules": ["loop_guard", "context_compression", "llm_retry"],
+                },
+                "position": {"x": 200, "y": 200},
+            },
+            {
+                "node_type": "organ",
+                "label": "Nerve总线",
+                "config": {
+                    "organ": "nerve",
+                    "endpoint": "/api/nerve",
+                    "events_example": ["soma.process_started"],
+                },
+                "position": {"x": 400, "y": 200},
+            },
+            {
+                "node_type": "parallel",
+                "label": "器官并行",
+                "config": {},
+                "position": {"x": 600, "y": 200},
+            },
+            {
+                "node_type": "organ",
+                "label": "Hippo记忆",
+                "config": {
+                    "organ": "hippo",
+                    "modules": ["three_factor_retrieve", "session_importer(P3-②)"],
+                },
+                "position": {"x": 820, "y": 80},
+            },
+            {
+                "node_type": "organ",
+                "label": "Immune安全",
+                "config": {
+                    "organ": "immune",
+                    "modules": ["permission_engine", "moderator", "rate_limiter"],
+                },
+                "position": {"x": 820, "y": 200},
+            },
+            {
+                "node_type": "organ",
+                "label": "Will工作流",
+                "config": {
+                    "organ": "will",
+                    "modules": ["DAGPlanner", "job_queue(P0-8)", "WorkflowEngine"],
+                },
+                "position": {"x": 820, "y": 320},
+            },
+            {
+                "node_type": "organ",
+                "label": "Gene基因",
+                "config": {
+                    "organ": "gene",
+                    "modules": ["skill_learner", ".agents/skills对齐(P3-①)"],
+                },
+                "position": {"x": 820, "y": 440},
+            },
+            {
+                "node_type": "end",
+                "label": "执行/输出",
+                "config": {},
+                "position": {"x": 1040, "y": 200},
+            },
         ],
         "edges": [
             ("Soul内核", "Cortex推理", ""),
@@ -105,6 +278,7 @@ def seed_system_orchestrations(engine) -> dict:
             continue
         try:
             from src.will.models import NodeType, TriggerType
+
             wf = engine.create_workflow(
                 name=spec["name"],
                 description=spec["description"],
@@ -135,8 +309,14 @@ def seed_system_orchestrations(engine) -> dict:
                     target_node_id=label_to_id[dst],
                     condition=cond or None,
                 )
-            result["created"].append({"name": spec["name"], "workflow_id": wf.id,
-                                      "nodes": len(spec["nodes"]), "edges": len(spec["edges"])})
+            result["created"].append(
+                {
+                    "name": spec["name"],
+                    "workflow_id": wf.id,
+                    "nodes": len(spec["nodes"]),
+                    "edges": len(spec["edges"]),
+                }
+            )
         except Exception as e:
             result["errors"].append({"name": spec["name"], "error": str(e)})
             logger.warning("seed %s failed: %s", spec["name"], e)

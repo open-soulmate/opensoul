@@ -1,6 +1,5 @@
 """OpenBenchmark — organ performance benchmarking."""
 
-from src.benchmark.evaluator import CapabilityEvaluator, EvaluationDimension, EvaluationResult
 from src.benchmark.eval_loop import (
     CodeScorer,
     EnvMismatchError,
@@ -13,6 +12,7 @@ from src.benchmark.eval_loop import (
     make_router_judge,
     make_router_runner,
 )
+from src.benchmark.evaluator import CapabilityEvaluator, EvaluationDimension, EvaluationResult
 
 __all__ = [
     "CapabilityEvaluator",

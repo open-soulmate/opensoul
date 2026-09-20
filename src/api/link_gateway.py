@@ -55,10 +55,11 @@ class WebhookDirection(StrEnum):
 @dataclass
 class WebhookEndpoint:
     """A registered webhook endpoint (incoming or outgoing)."""
+
     webhook_id: str
     name: str
     direction: WebhookDirection
-    url: str = ""           # target URL for outgoing; callback URL for incoming
+    url: str = ""  # target URL for outgoing; callback URL for incoming
     secret: str = ""
     headers: dict = field(default_factory=dict)
     payload_parser: str = ""  # optional parser expression (e.g. jq-like path)
@@ -73,12 +74,13 @@ class WebhookEndpoint:
 @dataclass
 class ExternalSystem:
     """A registered external system connected to OpenMate."""
+
     system_id: str
     name: str
-    type: str           # e.g. "gitlab", "jira", "feishu", "custom"
+    type: str  # e.g. "gitlab", "jira", "feishu", "custom"
     url: str = ""
-    auth_type: str = "" # "bearer", "basic", "api_key", "none"
-    auth_value: str = "" # token, "user:pass", api key, etc.
+    auth_type: str = ""  # "bearer", "basic", "api_key", "none"
+    auth_value: str = ""  # token, "user:pass", api key, etc.
     headers: dict = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
     description: str = ""
@@ -91,11 +93,12 @@ class ExternalSystem:
 @dataclass
 class GatewayEvent:
     """An integration event recorded by the gateway."""
+
     event_id: str
     timestamp: float
-    source: str         # system_id or "external"
-    direction: str      # "inbound" or "outbound"
-    event_type: str     # "webhook_received", "webhook_sent", "broadcast", etc.
+    source: str  # system_id or "external"
+    direction: str  # "inbound" or "outbound"
+    event_type: str  # "webhook_received", "webhook_sent", "broadcast", etc.
     payload: Any = None
     target_url: str = ""
     status: str = "ok"  # "ok", "error", "retrying"
@@ -116,8 +119,8 @@ _ws_clients: list[WebSocket] = []  # active WebSocket subscribers
 
 class WebhookRegisterRequest(BaseModel):
     name: str
-    direction: str = "in"           # "in" or "out"
-    url: str = ""                   # target URL for outgoing
+    direction: str = "in"  # "in" or "out"
+    url: str = ""  # target URL for outgoing
     secret: str = ""
     headers: dict[str, str] = {}
     payload_parser: str = ""
@@ -127,8 +130,8 @@ class WebhookRegisterRequest(BaseModel):
 class WebhookPushRequest(BaseModel):
     webhook_id: str
     payload: dict[str, Any]
-    target_url: str = ""            # override webhook's stored URL
-    headers: dict[str, str] = {}    # extra headers for this send
+    target_url: str = ""  # override webhook's stored URL
+    headers: dict[str, str] = {}  # extra headers for this send
 
 
 class SystemRegisterRequest(BaseModel):
@@ -178,19 +181,21 @@ def _record_event(
 
     # Forward to Nerve event bus (fire-and-forget)
     try:
-        push_event({
-            "organ": "link",
-            "emoji": "🔗",
-            "type": event_type,
-            "summary": f"{'📥' if direction == 'inbound' else '📤'} {event_type}: {source}",
-            "detail": {
-                "event_id": evt.event_id,
-                "source": source,
-                "direction": direction,
-                "target_url": target_url,
-                "status": status,
-            },
-        })
+        push_event(
+            {
+                "organ": "link",
+                "emoji": "🔗",
+                "type": event_type,
+                "summary": f"{'📥' if direction == 'inbound' else '📤'} {event_type}: {source}",
+                "detail": {
+                    "event_id": evt.event_id,
+                    "source": source,
+                    "direction": direction,
+                    "target_url": target_url,
+                    "status": status,
+                },
+            }
+        )
     except Exception as exc:
         logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
@@ -329,7 +334,9 @@ async def receive_incoming_webhook(webhook_id: str, request: Request):
 
     # Verify signature if secret is configured
     if wh.secret:
-        sig = request.headers.get("X-Signature", "") or request.headers.get("X-Hub-Signature-256", "")
+        sig = request.headers.get("X-Signature", "") or request.headers.get(
+            "X-Hub-Signature-256", ""
+        )
         expected = f"sha256={hmac.new(wh.secret.encode(), body, hashlib.sha256).hexdigest()}"
         if not hmac.compare_digest(sig, expected):
             raise HTTPException(401, "Invalid signature")
@@ -361,17 +368,19 @@ async def receive_incoming_webhook(webhook_id: str, request: Request):
 
     # Forward to Nerve event bus with the actual payload
     try:
-        push_event({
-            "organ": "link",
-            "emoji": "📥",
-            "type": "webhook_ingress",
-            "summary": f"📥 Incoming webhook [{wh.name}] from {source_ip}",
-            "detail": {
-                "webhook_id": webhook_id,
-                "source_ip": source_ip,
-                "payload_keys": list(payload.keys()) if isinstance(payload, dict) else [],
-            },
-        })
+        push_event(
+            {
+                "organ": "link",
+                "emoji": "📥",
+                "type": "webhook_ingress",
+                "summary": f"📥 Incoming webhook [{wh.name}] from {source_ip}",
+                "detail": {
+                    "webhook_id": webhook_id,
+                    "source_ip": source_ip,
+                    "payload_keys": list(payload.keys()) if isinstance(payload, dict) else [],
+                },
+            }
+        )
     except Exception as exc:
         logging.getLogger(__name__).debug("probe skipped: %s", exc)
 
@@ -577,12 +586,14 @@ async def broadcast_to_systems(req: BroadcastRequest):
             headers=headers,
             source=sys.system_id,
         )
-        results.append({
-            "system_id": sys.system_id,
-            "status": evt.status,
-            "event_id": evt.event_id,
-            "attempts": evt.attempt,
-        })
+        results.append(
+            {
+                "system_id": sys.system_id,
+                "status": evt.status,
+                "event_id": evt.event_id,
+                "attempts": evt.attempt,
+            }
+        )
 
     _record_event(
         source="gateway",
@@ -615,6 +626,7 @@ async def sse_event_stream(
     Server-Sent Events stream for real-time integration events.
     Clients connect here to receive live event notifications.
     """
+
     async def event_generator():
         last_seen = 0
         while True:
@@ -626,14 +638,17 @@ async def sse_event_stream(
                     continue
                 if event_type and evt.event_type != event_type:
                     continue
-                data = json.dumps({
-                    "event_id": evt.event_id,
-                    "timestamp": evt.timestamp,
-                    "source": evt.source,
-                    "direction": evt.direction,
-                    "event_type": evt.event_type,
-                    "status": evt.status,
-                }, ensure_ascii=False)
+                data = json.dumps(
+                    {
+                        "event_id": evt.event_id,
+                        "timestamp": evt.timestamp,
+                        "source": evt.source,
+                        "direction": evt.direction,
+                        "event_type": evt.event_type,
+                        "status": evt.status,
+                    },
+                    ensure_ascii=False,
+                )
                 yield f"data: {data}\n\n"
                 last_seen = max(last_seen, evt.timestamp)
             await asyncio.sleep(1.0)
@@ -685,13 +700,15 @@ async def websocket_proxy(ws: WebSocket):
 
             # Forward to Nerve bus
             try:
-                push_event({
-                    "organ": "link",
-                    "emoji": "🔗",
-                    "type": "ws_message",
-                    "summary": "🔌 WebSocket message received",
-                    "detail": {"payload": payload},
-                })
+                push_event(
+                    {
+                        "organ": "link",
+                        "emoji": "🔗",
+                        "type": "ws_message",
+                        "summary": "🔌 WebSocket message received",
+                        "detail": {"payload": payload},
+                    }
+                )
             except Exception as exc:
                 logging.getLogger(__name__).debug("probe skipped: %s", exc)
             # Broadcast to all other connected WS clients
@@ -700,11 +717,16 @@ async def websocket_proxy(ws: WebSocket):
                 if client is ws:
                     continue
                 try:
-                    await client.send_text(json.dumps({
-                        "from": "relay",
-                        "data": payload,
-                        "timestamp": time.time(),
-                    }, ensure_ascii=False))
+                    await client.send_text(
+                        json.dumps(
+                            {
+                                "from": "relay",
+                                "data": payload,
+                                "timestamp": time.time(),
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
                 except Exception:
                     disconnected.append(client)
 

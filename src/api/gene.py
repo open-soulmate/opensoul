@@ -5,8 +5,8 @@ import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.gene.templates import TemplateEngine
 from src.gene.skill_learner import SkillLearner
+from src.gene.templates import TemplateEngine
 
 router = APIRouter()
 
@@ -223,7 +223,8 @@ async def gene_health():
     # gene↔skills对齐：文件系统发现的skill（.agents/skills标准层+shared+agent目录）与学习型skill并列展示
     discovered = {"discovered_count": 0, "standard_count": 0, "invalid_count": 0, "sources": {}}
     try:
-        from src.api.skills import _scan_standard_skills, _scan_shared_skills, _scan_agent_skills
+        from src.api.skills import _scan_agent_skills, _scan_shared_skills, _scan_standard_skills
+
         standard_skills, validation = _scan_standard_skills()
         shared = _scan_shared_skills()
         agent = _scan_agent_skills()
@@ -268,6 +269,7 @@ class SkillRecommendRequest(BaseModel):
 async def extract_skill(req: SkillExtractRequest):
     """Extract a skill from execution log."""
     import json
+
     # Parse execution_log as JSON list of tool calls
     try:
         tool_calls = json.loads(req.execution_log)

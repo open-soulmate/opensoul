@@ -42,10 +42,32 @@ class IntentResult:
 INTENT_PATTERNS: dict[Intent, dict] = {
     Intent.CODING: {
         "keywords": [
-            "代码", "函数", "bug", "调试", "测试", "重构", "实现", "开发",
-            "code", "function", "debug", "test", "refactor", "implement",
-            "python", "javascript", "typescript", "java", "rust", "go",
-            "报错", "错误", "修复", "fix", "error", "exception",
+            "代码",
+            "函数",
+            "bug",
+            "调试",
+            "测试",
+            "重构",
+            "实现",
+            "开发",
+            "code",
+            "function",
+            "debug",
+            "test",
+            "refactor",
+            "implement",
+            "python",
+            "javascript",
+            "typescript",
+            "java",
+            "rust",
+            "go",
+            "报错",
+            "错误",
+            "修复",
+            "fix",
+            "error",
+            "exception",
         ],
         "tools": ["terminal", "read_file", "write_file", "patch"],
         "weight": 1.2,
@@ -58,9 +80,30 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.FILE_OP: {
         "keywords": [
-            "文件", "目录", "读取", "写入", "创建", "删除", "复制", "移动",
-            "file", "directory", "read", "write", "create", "delete", "copy", "move",
-            "打开", "保存", "导出", "导入", "open", "save", "export", "import",
+            "文件",
+            "目录",
+            "读取",
+            "写入",
+            "创建",
+            "删除",
+            "复制",
+            "移动",
+            "file",
+            "directory",
+            "read",
+            "write",
+            "create",
+            "delete",
+            "copy",
+            "move",
+            "打开",
+            "保存",
+            "导出",
+            "导入",
+            "open",
+            "save",
+            "export",
+            "import",
         ],
         "tools": ["read_file", "write_file", "search_files", "terminal"],
         "weight": 1.0,
@@ -73,9 +116,21 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.WEB_SEARCH: {
         "keywords": [
-            "搜索", "查询", "查找", "网上", "百度", "谷歌",
-            "search", "google", "look up", "find online",
-            "最新", "新闻", "资讯", "latest", "news",
+            "搜索",
+            "查询",
+            "查找",
+            "网上",
+            "百度",
+            "谷歌",
+            "search",
+            "google",
+            "look up",
+            "find online",
+            "最新",
+            "新闻",
+            "资讯",
+            "latest",
+            "news",
         ],
         "tools": ["web_search", "web_extract", "browser_exec"],
         "weight": 1.0,
@@ -87,9 +142,23 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.RESEARCH: {
         "keywords": [
-            "调研", "分析", "研究", "对比", "评估", "报告",
-            "research", "analyze", "study", "compare", "evaluate", "report",
-            "为什么", "如何", "怎么样", "why", "how",
+            "调研",
+            "分析",
+            "研究",
+            "对比",
+            "评估",
+            "报告",
+            "research",
+            "analyze",
+            "study",
+            "compare",
+            "evaluate",
+            "report",
+            "为什么",
+            "如何",
+            "怎么样",
+            "why",
+            "how",
         ],
         "tools": ["web_search", "read_file", "write_file"],
         "weight": 0.9,
@@ -101,9 +170,25 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.WRITING: {
         "keywords": [
-            "写", "撰写", "编写", "文章", "文档", "方案", "报告", "总结",
-            "write", "draft", "article", "document", "report", "summary",
-            "公众号", "博客", "blog", "邮件", "email",
+            "写",
+            "撰写",
+            "编写",
+            "文章",
+            "文档",
+            "方案",
+            "报告",
+            "总结",
+            "write",
+            "draft",
+            "article",
+            "document",
+            "report",
+            "summary",
+            "公众号",
+            "博客",
+            "blog",
+            "邮件",
+            "email",
         ],
         "tools": ["write_file", "web_search"],
         "weight": 1.0,
@@ -114,10 +199,32 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.SYSTEM: {
         "keywords": [
-            "运行", "执行", "安装", "部署", "启动", "停止", "重启",
-            "run", "execute", "install", "deploy", "start", "stop", "restart",
-            "终端", "命令", "shell", "terminal", "command", "bash",
-            "进程", "端口", "服务", "process", "port", "service",
+            "运行",
+            "执行",
+            "安装",
+            "部署",
+            "启动",
+            "停止",
+            "重启",
+            "run",
+            "execute",
+            "install",
+            "deploy",
+            "start",
+            "stop",
+            "restart",
+            "终端",
+            "命令",
+            "shell",
+            "terminal",
+            "command",
+            "bash",
+            "进程",
+            "端口",
+            "服务",
+            "process",
+            "port",
+            "service",
         ],
         "tools": ["terminal"],
         "weight": 1.1,
@@ -129,9 +236,24 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.TASK_MANAGEMENT: {
         "keywords": [
-            "任务", "计划", "安排", "待办", "提醒", "定时",
-            "task", "plan", "schedule", "todo", "remind", "cron",
-            "步骤", "流程", "优先级", "step", "workflow", "priority",
+            "任务",
+            "计划",
+            "安排",
+            "待办",
+            "提醒",
+            "定时",
+            "task",
+            "plan",
+            "schedule",
+            "todo",
+            "remind",
+            "cron",
+            "步骤",
+            "流程",
+            "优先级",
+            "step",
+            "workflow",
+            "priority",
         ],
         "tools": ["todo", "cronjob"],
         "weight": 0.8,
@@ -142,9 +264,21 @@ INTENT_PATTERNS: dict[Intent, dict] = {
     },
     Intent.CONFIGURATION: {
         "keywords": [
-            "配置", "设置", "修改", "调整", "偏好",
-            "config", "settings", "configure", "adjust", "preference",
-            "模型", "provider", "model", "端口", "port",
+            "配置",
+            "设置",
+            "修改",
+            "调整",
+            "偏好",
+            "config",
+            "settings",
+            "configure",
+            "adjust",
+            "preference",
+            "模型",
+            "provider",
+            "model",
+            "端口",
+            "port",
         ],
         "tools": ["read_file", "write_file", "terminal"],
         "weight": 0.7,
@@ -192,9 +326,7 @@ class IntentClassifier:
                 matched[intent] = found
 
         if not scores:
-            self._stats["by_intent"]["unknown"] = (
-                self._stats["by_intent"].get("unknown", 0) + 1
-            )
+            self._stats["by_intent"]["unknown"] = self._stats["by_intent"].get("unknown", 0) + 1
             return IntentResult(
                 intent=Intent.UNKNOWN,
                 confidence=0.0,
@@ -203,9 +335,7 @@ class IntentClassifier:
 
         best = max(scores, key=lambda k: scores[k])
         best_score = scores[best]
-        max_possible = (
-            len(INTENT_PATTERNS[best]["keywords"]) * INTENT_PATTERNS[best]["weight"]
-        )
+        max_possible = len(INTENT_PATTERNS[best]["keywords"]) * INTENT_PATTERNS[best]["weight"]
         confidence = min(1.0, best_score / max_possible)
 
         sub = [
@@ -214,9 +344,7 @@ class IntentClassifier:
             if i != best and s > best_score * 0.5
         ]
 
-        self._stats["by_intent"][best.value] = (
-            self._stats["by_intent"].get(best.value, 0) + 1
-        )
+        self._stats["by_intent"][best.value] = self._stats["by_intent"].get(best.value, 0) + 1
 
         return IntentResult(
             intent=best,

@@ -21,6 +21,7 @@ router = APIRouter()
 
 # ── 请求模型 ──────────────────────────────────────────
 
+
 class ThinkRequest(BaseModel):
     tenant_id: str = "default"
     agent_id: str = "default"
@@ -57,10 +58,10 @@ sessions = SessionManager()
 @router.post("/think")
 async def think(req: ThinkRequest):
     """认知思考：调用已有模块完成意图理解+风险评估+策略决策"""
-    from src.mind.emotion import EmotionAnalyzer
-    from src.cortex.risk_assessor import RiskAssessor
     from src.cortex.project_memory import ProjectMemory
     from src.cortex.reflector import Reflector
+    from src.cortex.risk_assessor import RiskAssessor
+    from src.mind.emotion import EmotionAnalyzer
     from src.models.cognitive import Intent, TaskContext
 
     # 1. 情绪识别（mind模块）
@@ -87,9 +88,10 @@ async def think(req: ThinkRequest):
     # 提取目标文件
     import re
     from pathlib import Path
+
     target_files = []
     if req.repo_root:
-        for m in re.finditer(r'[\w/\\.-]+\.\w+', req.user_input):
+        for m in re.finditer(r"[\w/\\.-]+\.\w+", req.user_input):
             candidate = m.group(0).strip("\"'")
             full = Path(req.repo_root) / candidate
             if full.exists():
@@ -133,9 +135,17 @@ async def think(req: ThinkRequest):
     # 7. 发布事件（nerve模块）
     try:
         from src.nerve.event_bridge import emit
-        await emit("brain", "think", f"🧠 意图分析: {goal}, 风险: {risk.overall_level}", {
-            "goal": goal, "risk": risk.overall_level, "files": target_files,
-        })
+
+        await emit(
+            "brain",
+            "think",
+            f"🧠 意图分析: {goal}, 风险: {risk.overall_level}",
+            {
+                "goal": goal,
+                "risk": risk.overall_level,
+                "files": target_files,
+            },
+        )
     except Exception:
         pass
 
@@ -179,6 +189,7 @@ async def verify(req: VerifyRequest):
     # 2. 发布事件
     try:
         from src.nerve.event_bridge import emit
+
         status = "✅ 成功" if req.result.get("success") else "❌ 失败"
         await emit("brain", "verify", f"🔍 {status}: {req.action[:100]}", req.result)
     except Exception:
@@ -188,7 +199,9 @@ async def verify(req: VerifyRequest):
 
 
 @router.post("/remember")
-async def remember(session_id: str = "", content: str = "", importance: float = 0.5, tags: str = ""):
+async def remember(
+    session_id: str = "", content: str = "", importance: float = 0.5, tags: str = ""
+):
     """主动记忆：存入hippo"""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     mem = store.add(session_id=session_id, content=content, importance=importance, tags=tag_list)
@@ -204,8 +217,13 @@ async def recall(session_id: str = "", query: str = "", limit: int = 10):
         memories = store.search(limit=limit)
     return {
         "memories": [
-            {"id": m.memory_id, "content": m.content, "importance": m.importance,
-             "tags": m.tags, "retention": m.retention}
+            {
+                "id": m.memory_id,
+                "content": m.content,
+                "importance": m.importance,
+                "tags": m.tags,
+                "retention": m.retention,
+            }
             for m in memories[:limit]
         ],
         "total": len(memories),
@@ -217,7 +235,7 @@ async def status():
     """大脑状态"""
     return {
         "memory": store.get_stats(),
-        "sessions": {"total": len(sessions._sessions) if hasattr(sessions, '_sessions') else 0},
+        "sessions": {"total": len(sessions._sessions) if hasattr(sessions, "_sessions") else 0},
     }
 
 
@@ -227,6 +245,7 @@ async def refresh(repo_root: str = ""):
     if not repo_root:
         return {"status": "no_repo_root"}
     from src.cortex.project_memory import ProjectMemory
+
     pm = ProjectMemory(repo_root)
     stats = pm.get_stats()
     return {"status": "refreshed", **stats}
@@ -247,8 +266,9 @@ async def feedback(req: FeedbackRequest):
 @router.post("/learn")
 async def learn_endpoint(tenant_id: str = "default", agent_id: str = "default"):
     """从经验中学习"""
-    from src.learn.long_term import LongTermLearning
     from src.database.postgres import db_pool
+    from src.learn.long_term import LongTermLearning
+
     learning = LongTermLearning(db_pool, tenant_id, agent_id)
     await learning.extract_patterns()
     return {"status": "learned", **await learning.get_stats()}
@@ -257,8 +277,9 @@ async def learn_endpoint(tenant_id: str = "default", agent_id: str = "default"):
 @router.get("/recommendations")
 async def recommendations(tenant_id: str = "default", agent_id: str = "default", intent: str = ""):
     """学习推荐"""
-    from src.learn.long_term import LongTermLearning
     from src.database.postgres import db_pool
+    from src.learn.long_term import LongTermLearning
+
     learning = LongTermLearning(db_pool, tenant_id, agent_id)
     recs = await learning.get_recommendations(intent)
     return {"recommendations": recs}
@@ -272,9 +293,9 @@ async def evolve(tenant_id: str = "default", agent_id: str = "default"):
     而是作为声明式提案进入 /api/heredity/evolution/* 审批管线
     （LobeChat范式：声明≠执行，reviewer审批人≠发起人）。
     """
+    from src.database.postgres import db_pool
     from src.heredity.evolution_loop import EvolutionEngine
     from src.heredity.self_evolution import SelfEvolution
-    from src.database.postgres import db_pool
 
     KIND_MAP = {
         "failure_avoidance": "failure_avoidance",
@@ -302,12 +323,14 @@ async def evolve(tenant_id: str = "default", agent_id: str = "default"):
             evidence_refs=[f"evolution_log:{evo.get('type', 'unknown')}"],
             proposer=f"self_evolution:{agent_id}",
         )
-        declared.append({
-            "proposal_id": result.get("proposal_id"),
-            "status": result.get("status"),
-            "reject_reason": result.get("reject_reason", ""),
-            "duplicate": result.get("duplicate", False),
-        })
+        declared.append(
+            {
+                "proposal_id": result.get("proposal_id"),
+                "status": result.get("status"),
+                "reject_reason": result.get("reject_reason", ""),
+                "duplicate": result.get("duplicate", False),
+            }
+        )
     return {
         "evolutions": evolutions,
         "analysis_error": analysis_error,
@@ -319,8 +342,9 @@ async def evolve(tenant_id: str = "default", agent_id: str = "default"):
 @router.get("/metacognition")
 async def metacognition(tenant_id: str = "default", agent_id: str = "default"):
     """元认知"""
-    from src.mirror.metacognition import Metacognition
     from src.database.postgres import db_pool
+    from src.mirror.metacognition import Metacognition
+
     meta = Metacognition(db_pool, tenant_id, agent_id)
     return {
         "recent_decisions": await meta.reflect_recent(),
@@ -334,6 +358,7 @@ async def agents(tenant_id: str = "default"):
     """多Agent协调"""
     from src.cortex.multi_agent_coord import MultiAgentCoordinator
     from src.database.postgres import db_pool
+
     coord = MultiAgentCoordinator(db_pool, tenant_id)
     return {"agents": await coord.get_active_agents()}
 
@@ -342,6 +367,7 @@ async def agents(tenant_id: str = "default"):
 async def creativity(problem: str = "", constraints: str = "", count: int = 3):
     """创造力引擎"""
     from src.cortex.creativity import CreativityEngine
+
     engine = CreativityEngine()
     constraint_list = constraints.split(",") if constraints else None
     alternatives = await engine.generate_alternatives(problem, constraint_list, count)

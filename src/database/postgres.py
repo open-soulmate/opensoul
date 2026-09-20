@@ -171,7 +171,11 @@ class SQLitePool:
         每补一列在_SCHEMA_FIXES登记一行；出现新的"no column named"错误时在此登记。
         """
         _SCHEMA_FIXES = [
-            ("knowledge_chunks", "token_count", "ALTER TABLE knowledge_chunks ADD COLUMN token_count INT DEFAULT 0"),
+            (
+                "knowledge_chunks",
+                "token_count",
+                "ALTER TABLE knowledge_chunks ADD COLUMN token_count INT DEFAULT 0",
+            ),
         ]
         conn = self._conn
         if conn is None:

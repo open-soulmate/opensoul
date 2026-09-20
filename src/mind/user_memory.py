@@ -16,7 +16,7 @@ class UserMemory:
         self.tenant_id = tenant_id
         self.user_id = user_id
         self._initialized = False
-        self._preferences: Optional[dict] = None
+        self._preferences: dict | None = None
 
     async def _ensure_table(self):
         if self._initialized:
@@ -70,7 +70,15 @@ class UserMemory:
                VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(tenant_id, user_id, key)
                DO UPDATE SET value = ?, updated_at = ?""",
-            (self.tenant_id, self.user_id, key, json.dumps(value), time.time(), json.dumps(value), time.time()),
+            (
+                self.tenant_id,
+                self.user_id,
+                key,
+                json.dumps(value),
+                time.time(),
+                json.dumps(value),
+                time.time(),
+            ),
         )
 
     async def record_feedback(self, action: str, feedback: str, rating: int):

@@ -88,19 +88,25 @@ class SelfEvolution:
 
     async def _analyze_success_trend(self) -> dict:
         """分析成功率趋势"""
-        recent = await self.db.fetch("""
+        recent = await self.db.fetch(
+            """
             SELECT outcome, COUNT(*) as cnt FROM experiences
             WHERE tenant_id = ? AND agent_id = ?
             AND created_at > ?
             GROUP BY outcome
-        """, (self.tenant_id, self.agent_id, time.time() - 7 * 86400))
+        """,
+            (self.tenant_id, self.agent_id, time.time() - 7 * 86400),
+        )
 
-        previous = await self.db.fetch("""
+        previous = await self.db.fetch(
+            """
             SELECT outcome, COUNT(*) as cnt FROM experiences
             WHERE tenant_id = ? AND agent_id = ?
             AND created_at BETWEEN ? AND ?
             GROUP BY outcome
-        """, (self.tenant_id, self.agent_id, time.time() - 14 * 86400, time.time() - 7 * 86400))
+        """,
+            (self.tenant_id, self.agent_id, time.time() - 14 * 86400, time.time() - 7 * 86400),
+        )
 
         def calc_rate(rows):
             total = sum(r["cnt"] for r in rows)
@@ -118,7 +124,8 @@ class SelfEvolution:
 
     async def _analyze_failure_patterns(self) -> list[dict]:
         """分析高频失败模式"""
-        rows = await self.db.fetch("""
+        rows = await self.db.fetch(
+            """
             SELECT error, COUNT(*) as cnt FROM experiences
             WHERE tenant_id = ? AND agent_id = ? AND outcome = 'failure'
             AND created_at > ? AND error IS NOT NULL
@@ -126,7 +133,9 @@ class SelfEvolution:
             HAVING cnt >= 3
             ORDER BY cnt DESC
             LIMIT 5
-        """, (self.tenant_id, self.agent_id, time.time() - 30 * 86400))
+        """,
+            (self.tenant_id, self.agent_id, time.time() - 30 * 86400),
+        )
 
         patterns = []
         for row in rows:
@@ -136,21 +145,26 @@ class SelfEvolution:
                 recommendation = "执行前做语法检查"
             elif "timeout" in error.lower():
                 recommendation = "增加超时时间或分步执行"
-            patterns.append({
-                "error_type": error[:100],
-                "count": row["cnt"],
-                "recommendation": recommendation,
-            })
+            patterns.append(
+                {
+                    "error_type": error[:100],
+                    "count": row["cnt"],
+                    "recommendation": recommendation,
+                }
+            )
         return patterns
 
     async def _analyze_feedback(self) -> dict:
         """分析用户反馈趋势"""
-        rows = await self.db.fetch("""
+        rows = await self.db.fetch(
+            """
             SELECT rating FROM user_feedback
             WHERE tenant_id = ? AND user_id = ?
             AND created_at > ?
             ORDER BY created_at DESC
-        """, (self.tenant_id, self.agent_id, time.time() - 30 * 86400))
+        """,
+            (self.tenant_id, self.agent_id, time.time() - 30 * 86400),
+        )
 
         if not rows:
             return {"avg_rating": 3.0, "negative_trend": False}
@@ -168,7 +182,14 @@ class SelfEvolution:
             """INSERT INTO evolution_log
                (tenant_id, agent_id, evolution_type, reason, impact_score, created_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (self.tenant_id, self.agent_id, evolution["type"], evolution["reason"], 0.5, time.time()),
+            (
+                self.tenant_id,
+                self.agent_id,
+                evolution["type"],
+                evolution["reason"],
+                0.5,
+                time.time(),
+            ),
         )
 
     async def get_stats(self) -> dict:

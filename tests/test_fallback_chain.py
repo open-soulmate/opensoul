@@ -32,9 +32,7 @@ from src.gland.router import (
     _is_transient_error,
 )
 
-CHAT_OK = httpx.Response(
-    200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}}
-)
+CHAT_OK = httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
 
 def _resp(status: int, content: str = "ok") -> httpx.Response:
@@ -43,9 +41,7 @@ def _resp(status: int, content: str = "ok") -> httpx.Response:
             200,
             json={"choices": [{"message": {"content": content}}], "usage": {}},
         )
-    return httpx.Response(
-        status, headers={"retry-after-ms": "1"}, json={"error": f"e{status}"}
-    )
+    return httpx.Response(status, headers={"retry-after-ms": "1"}, json={"error": f"e{status}"})
 
 
 class TestErrorClassification:
@@ -82,9 +78,7 @@ class ChainTestBase:
     def _make_router(self, handler, providers: list[tuple]) -> ModelRouter:
         """providers: list of (name, base_url, models_dict, priority[, add_key])."""
         router = ModelRouter()
-        router._http_client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), timeout=5
-        )
+        router._http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=5)
         for spec in providers:
             name, base_url, models, priority = spec[:4]
             add_key = spec[4] if len(spec) > 4 else True
@@ -181,9 +175,7 @@ class TestRateLimitFastSwitch(ChainTestBase):
                 return _resp(429)
             return _resp(200, "recovered")
 
-        router = self._make_router(
-            handler, [("solo", "http://mock", {"chat": "m"}, 0)]
-        )
+        router = self._make_router(handler, [("solo", "http://mock", {"chat": "m"}, 0)])
         try:
             result = await router.chat([{"role": "user", "content": "hi"}])
             assert result["choices"][0]["message"]["content"] == "recovered"
@@ -364,9 +356,7 @@ class TestChainTrace(ChainTestBase):
         def handler(request: httpx.Request) -> httpx.Response:
             return _resp(404) if state["mode"] == "fail" else CHAT_OK
 
-        router = self._make_router(
-            handler, [("p", "http://mock", {"chat": "m"}, 0)]
-        )
+        router = self._make_router(handler, [("p", "http://mock", {"chat": "m"}, 0)])
         try:
             with pytest.raises(AllProvidersFailedError):
                 await router.chat([{"role": "user", "content": "hi"}])
@@ -389,9 +379,7 @@ class TestEmbedChain(ChainTestBase):
                 calls["a"] += 1
                 return _resp(429)
             calls["b"] += 1
-            return httpx.Response(
-                200, json={"data": [{"index": 0, "embedding": [0.5]}]}
-            )
+            return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.5]}]})
 
         router = self._two_provider_router(handler)
         try:

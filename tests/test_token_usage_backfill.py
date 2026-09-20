@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """P1 provider usage回填测试 — token归因estimate→真实prompt_tokens校准
 
 调研来源：feature-matrix/10-claude-code-source.md #7 SDKContextUsage（provider权威token计数）；
@@ -14,6 +13,7 @@ usage.prompt_tokens，故捕获零请求格式改动、零provider拒绝风险�
 chat非流式，monkeypatch假provider吐usage chunk，断言归因记录被真实回填=非死代码)。
 无网络依赖。
 """
+
 import asyncio
 import json
 import types
@@ -36,6 +36,7 @@ def _fresh():
 # ────────────────────────────────────────────────────────────────
 # 假httpx（AsyncClient）：stream路径吐SSE行，post路径返回JSON usage
 # ────────────────────────────────────────────────────────────────
+
 
 class _FakeStreamResp:
     def __init__(self, lines):
@@ -93,8 +94,14 @@ def _httpx_stub(lines=None, json_payload=None):
     return types.SimpleNamespace(AsyncClient=lambda: _FakeClient(lines, json_payload))
 
 
-_ATTEMPTS = [{"provider": "online", "base_url": "http://fake",
-              "model": "xiaomi/mimo-v2.5-pro", "api_key": "sk-x"}]
+_ATTEMPTS = [
+    {
+        "provider": "online",
+        "base_url": "http://fake",
+        "model": "xiaomi/mimo-v2.5-pro",
+        "api_key": "sk-x",
+    }
+]
 
 
 def _patch_deps(monkeypatch, results, attempts=None):
@@ -133,6 +140,7 @@ def _match_record(uid):
 # ════════════════════════════════════════════════════════════════
 # backfill_actual 单元
 # ════════════════════════════════════════════════════════════════
+
 
 class TestBackfillActual:
     def test_annotates_matching_record_and_gap(self):
@@ -184,11 +192,16 @@ class TestBackfillActual:
 # chat路径 helper — passthrough + backfill helper
 # ════════════════════════════════════════════════════════════════
 
+
 class TestChatHelperPassthrough:
     def test_attribute_helper_forwards_actual_prompt_tokens(self):
         usage = chat._attribute_chat_context(
-            question="你好世界", context_parts=["ctx" * 20], memory_ctx="- mem",
-            model="deepseek-r1", provider="ollama", session_key="u9",
+            question="你好世界",
+            context_parts=["ctx" * 20],
+            memory_ctx="- mem",
+            model="deepseek-r1",
+            provider="ollama",
+            session_key="u9",
             actual_prompt_tokens=777,
         )
         rec = ta.get_attributor().recent(1)[0]
@@ -208,9 +221,9 @@ class TestChatHelperPassthrough:
 
     def test_backfill_helper_fail_safe_on_empty_or_missing(self):
         ta.get_attributor().record({"total_tokens": 50}, session_id="s1")
-        chat._backfill_token_usage("s1", None)                       # 空→不改不抛
-        chat._backfill_token_usage("s1", {})                         # 无prompt_tokens→不改
-        chat._backfill_token_usage("s1", {"completion_tokens": 5})   # 无prompt_tokens→不改
+        chat._backfill_token_usage("s1", None)  # 空→不改不抛
+        chat._backfill_token_usage("s1", {})  # 无prompt_tokens→不改
+        chat._backfill_token_usage("s1", {"completion_tokens": 5})  # 无prompt_tokens→不改
         rec = ta.get_attributor().recent(1)[0]
         assert rec.get("actual_prompt_tokens") is None
 
@@ -218,6 +231,7 @@ class TestChatHelperPassthrough:
 # ════════════════════════════════════════════════════════════════
 # 接线驱动 — rag_stream流式两路径 + chat非流式（真实调用路径，非死代码）
 # ════════════════════════════════════════════════════════════════
+
 
 class TestStreamingUsageWiring:
     def test_normal_stream_captures_and_backfills_usage(self, monkeypatch):
@@ -322,11 +336,17 @@ class TestNonStreamUsageWiring:
 # 端点读路径 — 回填后的字段通过 /api/chat/token-attribution 可见
 # ════════════════════════════════════════════════════════════════
 
+
 class TestEndpointExposesBackfill:
     def test_endpoint_recent_contains_actual_and_gap(self):
-        chat._attribute_chat_context("测试", ["c" * 100], "- mem",
-                                     model="deepseek-chat", session_key="uE",
-                                     actual_prompt_tokens=500)
+        chat._attribute_chat_context(
+            "测试",
+            ["c" * 100],
+            "- mem",
+            model="deepseek-chat",
+            session_key="uE",
+            actual_prompt_tokens=500,
+        )
         result = asyncio.run(chat.token_attribution(limit=5))
         rec = result["recent"][0]
         assert rec["actual_prompt_tokens"] == 500

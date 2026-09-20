@@ -82,6 +82,7 @@ class StateTransition:
 @dataclass
 class SessionFSM:
     """Finite state machine for a single session."""
+
     session_id: str
     state: SessionState = SessionState.IDLE
     history: list[StateTransition] = field(default_factory=list)
@@ -115,7 +116,7 @@ class SessionStateMachine:
         self,
         session_id: str,
         event: SessionEvent,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> tuple[bool, SessionState]:
         """Attempt a state transition. Returns (success, current_state)."""
         fsm = self._machines.get(session_id)
@@ -129,8 +130,7 @@ class SessionStateMachine:
         if next_state is None:
             self._stats["invalid_transitions"] += 1
             logger.warning(
-                f"Invalid transition: {fsm.state.value} + {event.value} "
-                f"(session: {session_id})"
+                f"Invalid transition: {fsm.state.value} + {event.value} (session: {session_id})"
             )
             return False, fsm.state
 
@@ -152,7 +152,7 @@ class SessionStateMachine:
         )
         return True, next_state
 
-    def get_state(self, session_id: str) -> Optional[SessionState]:
+    def get_state(self, session_id: str) -> SessionState | None:
         fsm = self._machines.get(session_id)
         return fsm.state if fsm else None
 

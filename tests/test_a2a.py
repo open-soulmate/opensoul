@@ -46,48 +46,54 @@ class TestA2AEndpoint:
     """Test POST /a2a JSON-RPC endpoint."""
 
     def test_a2a_returns_200(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "你好"}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "你好"}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
 
     def test_a2a_parse_error(self, client):
-        resp = client.post("/a2a", content="invalid json", headers={"Content-Type": "application/json"})
+        resp = client.post(
+            "/a2a", content="invalid json", headers={"Content-Type": "application/json"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
 
     def test_a2a_method_not_found(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-2",
-            "method": "nonexistent/method",
-            "params": {}
-        })
+        resp = client.post(
+            "/a2a",
+            json={"jsonrpc": "2.0", "id": "test-2", "method": "nonexistent/method", "params": {}},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
 
     def test_task_send_creates_task(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-3",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "hello test"}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-3",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "hello test"}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "result" in data
@@ -97,34 +103,31 @@ class TestA2AEndpoint:
         assert result["status"]["state"] in ("completed", "failed")
 
     def test_task_get_not_found(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-4",
-            "method": "tasks/get",
-            "params": {"id": "nonexistent-task-id"}
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-4",
+                "method": "tasks/get",
+                "params": {"id": "nonexistent-task-id"},
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
 
     def test_task_get_missing_id(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-5",
-            "method": "tasks/get",
-            "params": {}
-        })
+        resp = client.post(
+            "/a2a", json={"jsonrpc": "2.0", "id": "test-5", "method": "tasks/get", "params": {}}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
 
     def test_task_cancel_missing_id(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-6",
-            "method": "tasks/cancel",
-            "params": {}
-        })
+        resp = client.post(
+            "/a2a", json={"jsonrpc": "2.0", "id": "test-6", "method": "tasks/cancel", "params": {}}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
@@ -135,17 +138,20 @@ class TestA2ASkillRouting:
 
     def test_knowledge_skill_triggered(self, client):
         """'知识库' tag should route to knowledge handler."""
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-kb-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "搜索知识库中的AI相关内容"}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-kb-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "搜索知识库中的AI相关内容"}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         result = data.get("result", {})
@@ -157,17 +163,20 @@ class TestA2ASkillRouting:
 
     def test_search_skill_triggered(self, client):
         """'搜索' tag should route to search handler."""
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-search-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "搜索关于机器学习的知识"}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-search-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "搜索关于机器学习的知识"}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         result = data.get("result", {})
@@ -175,17 +184,20 @@ class TestA2ASkillRouting:
 
     def test_graph_skill_triggered(self, client):
         """'图谱' tag should route to graph handler."""
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-graph-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "查看知识图谱"}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-graph-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "查看知识图谱"}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         result = data.get("result", {})
@@ -193,17 +205,20 @@ class TestA2ASkillRouting:
 
     def test_chat_fallback(self, client):
         """Messages without matching tags should fallback to chat."""
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "test-chat-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "今天天气怎么样"}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "test-chat-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "今天天气怎么样"}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         result = data.get("result", {})
@@ -215,40 +230,49 @@ class TestA2ATaskLifecycle:
 
     def test_full_lifecycle(self, client):
         # Step 1: Create a task by sending a message
-        create_resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "lifecycle-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "test lifecycle"}],
-                }
-            }
-        })
+        create_resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "lifecycle-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "test lifecycle"}],
+                    }
+                },
+            },
+        )
         assert create_resp.status_code == 200
         create_data = create_resp.json()
         task_id = create_data["result"]["id"]
 
         # Step 2: Get the task
-        get_resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "lifecycle-2",
-            "method": "tasks/get",
-            "params": {"id": task_id}
-        })
+        get_resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "lifecycle-2",
+                "method": "tasks/get",
+                "params": {"id": task_id},
+            },
+        )
         assert get_resp.status_code == 200
         get_data = get_resp.json()
         assert get_data["result"]["id"] == task_id
         assert get_data["result"]["status"]["state"] == "completed"
 
         # Step 3: Cancel should fail (already completed)
-        cancel_resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "lifecycle-3",
-            "method": "tasks/cancel",
-            "params": {"id": task_id}
-        })
+        cancel_resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "lifecycle-3",
+                "method": "tasks/cancel",
+                "params": {"id": task_id},
+            },
+        )
         assert cancel_resp.status_code == 200
         cancel_data = cancel_resp.json()
         # Completed tasks can't be canceled
@@ -257,33 +281,39 @@ class TestA2ATaskLifecycle:
     def test_multi_turn_conversation(self, client):
         """Test sending multiple messages to the same task."""
         # First message
-        resp1 = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "multi-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "你好，我想了解一下AI"}],
-                }
-            }
-        })
+        resp1 = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "multi-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "你好，我想了解一下AI"}],
+                    }
+                },
+            },
+        )
         assert resp1.status_code == 200
         task_id = resp1.json()["result"]["id"]
 
         # Second message to same task
-        resp2 = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "multi-2",
-            "method": "tasks/send",
-            "params": {
-                "id": task_id,
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "能详细说说吗"}],
-                }
-            }
-        })
+        resp2 = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "multi-2",
+                "method": "tasks/send",
+                "params": {
+                    "id": task_id,
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "能详细说说吗"}],
+                    },
+                },
+            },
+        )
         assert resp2.status_code == 200
         result2 = resp2.json()["result"]
         assert result2["id"] == task_id
@@ -295,29 +325,29 @@ class TestA2AEdgeCases:
     """Test edge cases and error handling."""
 
     def test_empty_message(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "edge-1",
-            "method": "tasks/send",
-            "params": {
-                "message": {
-                    "role": "user",
-                    "parts": [{"type": "text", "text": ""}],
-                }
-            }
-        })
+        resp = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": "edge-1",
+                "method": "tasks/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"type": "text", "text": ""}],
+                    }
+                },
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         # Should handle gracefully (not crash)
         assert "result" in data or "error" in data
 
     def test_missing_message_field(self, client):
-        resp = client.post("/a2a", json={
-            "jsonrpc": "2.0",
-            "id": "edge-2",
-            "method": "tasks/send",
-            "params": {}
-        })
+        resp = client.post(
+            "/a2a", json={"jsonrpc": "2.0", "id": "edge-2", "method": "tasks/send", "params": {}}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
@@ -326,17 +356,20 @@ class TestA2AEdgeCases:
         """Multiple tasks should not interfere with each other."""
         responses = []
         for i in range(3):
-            resp = client.post("/a2a", json={
-                "jsonrpc": "2.0",
-                "id": f"concurrent-{i}",
-                "method": "tasks/send",
-                "params": {
-                    "message": {
-                        "role": "user",
-                        "parts": [{"type": "text", "text": f"task {i}"}],
-                    }
-                }
-            })
+            resp = client.post(
+                "/a2a",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": f"concurrent-{i}",
+                    "method": "tasks/send",
+                    "params": {
+                        "message": {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": f"task {i}"}],
+                        }
+                    },
+                },
+            )
             responses.append(resp)
 
         task_ids = set()

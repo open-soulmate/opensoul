@@ -10,7 +10,8 @@ Agent不等指令，主动观察、判断、行动：
 import asyncio
 import logging
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class ProactiveEngine:
         self.agent_id = agent_id
         self._watchers: dict[str, Callable] = {}
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     def register_watcher(self, name: str, callback: Callable):
         """注册一个观察者"""
@@ -34,7 +35,9 @@ class ProactiveEngine:
         """启动主动观察循环"""
         self._running = True
         self._task = asyncio.create_task(self._observe_loop(interval_seconds))
-        logger.info("主动行为引擎启动, interval=%ds, watchers=%d", interval_seconds, len(self._watchers))
+        logger.info(
+            "主动行为引擎启动, interval=%ds, watchers=%d", interval_seconds, len(self._watchers)
+        )
 
     async def stop(self):
         self._running = False

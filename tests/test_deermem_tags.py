@@ -19,6 +19,7 @@ Covers:
 - dream接线：ADD三标签/非auto组合skipped可见/近重复ADD并入/DELETE auto过门
 - get_gatekeeper_stats deermem节可观测
 """
+
 import asyncio
 import json
 import os
@@ -126,9 +127,7 @@ class TestValidateWriteTags:
         assert d.tags is None
 
     def test_missing_field_fail_closed(self):
-        d = validate_write_tags(
-            {"scope": "user", "authority": "descriptive"}, write_mode="auto"
-        )
+        d = validate_write_tags({"scope": "user", "authority": "descriptive"}, write_mode="auto")
         assert d.accepted is False
         assert d.rule == "invalid_durability"
 
@@ -167,9 +166,7 @@ class TestValidateWriteTags:
 
 class TestValidateDeleteTags:
     def test_contradiction_without_replacement_blocked(self):
-        d = validate_delete_tags(
-            CONTRA_TAGS, reason="outdated", replacement="", mode="auto"
-        )
+        d = validate_delete_tags(CONTRA_TAGS, reason="outdated", replacement="", mode="auto")
         assert d.accepted is False
         assert d.rule == "replacement_required"
 
@@ -227,9 +224,7 @@ class TestValidateDeleteTags:
 class TestStoreTagGate:
     def test_auto_project_tags_rejected_with_audit(self):
         store = _make_store()
-        mem = store.store(
-            content="OpenSoul部署拓扑说明文档", safety_tags=PROJECT_TAGS
-        )
+        mem = store.store(content="OpenSoul部署拓扑说明文档", safety_tags=PROJECT_TAGS)
         assert mem is None
         assert store.last_write_outcome == "rejected_tags"
         history = store.get_history(event="TAG_REJECT")
@@ -241,9 +236,7 @@ class TestStoreTagGate:
 
     def test_valid_tags_stored_with_metadata(self):
         store = _make_store()
-        mem = store.store(
-            content="用户偏好使用vim进行编辑", safety_tags=AUTO_OK
-        )
+        mem = store.store(content="用户偏好使用vim进行编辑", safety_tags=AUTO_OK)
         assert mem is not None
         assert store.last_write_outcome == "added"
         tags = mem.metadata["deermem_tags"]
@@ -342,7 +335,7 @@ class TestFactDedupMerge:
     def test_merge_keeps_max_importance(self):
         """新fact importance更低时，既有importance不被拉低（取max）。"""
         store = _make_store()
-        first = store.store(
+        store.store(
             content="Kubernetes autoscaling configuration notes",
             memory_type="semantic",
             importance=0.9,
@@ -378,7 +371,7 @@ class TestFactDedupMerge:
 
     def test_default_policy_rejects_duplicate_regression(self):
         store = _make_store()
-        first = store.store(content="Some unique fact worth remembering")
+        store.store(content="Some unique fact worth remembering")
         second = store.store(content="Some unique fact worth remembering")
         assert second is None
         assert store.last_write_outcome == "rejected_gate"
@@ -388,7 +381,7 @@ class TestFactDedupMerge:
     def test_merge_rejected_when_tags_not_auto_writable(self):
         """非auto-writable标签的提议即使近重复也不并入（标签门先拦）。"""
         store = _make_store()
-        first = store.store(
+        store.store(
             content="Deployment pipeline uses blue-green strategy",
             memory_type="semantic",
         )
@@ -442,9 +435,7 @@ class TestDeleteGate:
             safety_tags=CONTRA_TAGS,
             write_mode="explicit",
         )
-        ok = store.delete_memory(
-            mem.memory_id, reason="superseded", delete_mode="explicit"
-        )
+        ok = store.delete_memory(mem.memory_id, reason="superseded", delete_mode="explicit")
         assert ok is False
         assert store.last_delete_decision.rule == "replacement_required"
         ok2 = store.delete_memory(
@@ -486,18 +477,20 @@ def _make_dream(store, response: str):
 class TestDreamWiring:
     def test_add_with_three_tags_stored_explicit_provenance(self):
         store = _make_store()
-        response = json.dumps([
-            {
-                "action": "ADD",
-                "content": "用户偏好使用增量diff方式修改代码",
-                "memory_type": "semantic",
-                "importance": 0.7,
-                "scope": "user",
-                "durability": "durable",
-                "authority": "descriptive",
-                "reason": "用户明确表达的开发偏好",
-            }
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "用户偏好使用增量diff方式修改代码",
+                    "memory_type": "semantic",
+                    "importance": 0.7,
+                    "scope": "user",
+                    "durability": "durable",
+                    "authority": "descriptive",
+                    "reason": "用户明确表达的开发偏好",
+                }
+            ]
+        )
         distiller = _make_dream(store, response)
         result = asyncio.run(distiller.dream(messages=[{"role": "user", "content": "hi"}]))
         assert result.applied == 1
@@ -506,17 +499,19 @@ class TestDreamWiring:
 
     def test_add_non_auto_tags_skipped_visible(self):
         store = _make_store()
-        response = json.dumps([
-            {
-                "action": "ADD",
-                "content": "OpenSoul服务部署在8090端口",
-                "memory_type": "semantic",
-                "scope": "project",
-                "durability": "durable",
-                "authority": "descriptive",
-                "reason": "项目事实",
-            }
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "OpenSoul服务部署在8090端口",
+                    "memory_type": "semantic",
+                    "scope": "project",
+                    "durability": "durable",
+                    "authority": "descriptive",
+                    "reason": "项目事实",
+                }
+            ]
+        )
         distiller = _make_dream(store, response)
         result = asyncio.run(distiller.dream(messages=[{"role": "user", "content": "hi"}]))
         assert result.applied == 0
@@ -528,15 +523,17 @@ class TestDreamWiring:
     def test_add_partial_tags_fail_closed(self):
         """只给部分标签→fail-closed拒绝（抽取提议必须带三标签）。"""
         store = _make_store()
-        response = json.dumps([
-            {
-                "action": "ADD",
-                "content": "用户偏好Python",
-                "memory_type": "semantic",
-                "scope": "user",
-                "reason": "只给了scope",
-            }
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "用户偏好Python",
+                    "memory_type": "semantic",
+                    "scope": "user",
+                    "reason": "只给了scope",
+                }
+            ]
+        )
         distiller = _make_dream(store, response)
         result = asyncio.run(distiller.dream(messages=[{"role": "user", "content": "hi"}]))
         assert result.skipped == 1
@@ -550,22 +547,24 @@ class TestDreamWiring:
             memory_type="semantic",
             importance=0.5,
         )
-        response = json.dumps([
-            {
-                "action": "ADD",
-                "content": "数据库迁移方案设计与实施步骤说明",
-                "memory_type": "semantic",
-                "importance": 0.7,
-                "reason": "蒸馏发现",
-            },
-            {
-                "action": "ADD",
-                "content": "数据库迁移方案设计与实施步骤说明",
-                "memory_type": "semantic",
-                "importance": 0.6,
-                "reason": "重复提议",
-            }
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "数据库迁移方案设计与实施步骤说明",
+                    "memory_type": "semantic",
+                    "importance": 0.7,
+                    "reason": "蒸馏发现",
+                },
+                {
+                    "action": "ADD",
+                    "content": "数据库迁移方案设计与实施步骤说明",
+                    "memory_type": "semantic",
+                    "importance": 0.6,
+                    "reason": "重复提议",
+                },
+            ]
+        )
         distiller = _make_dream(store, response)
         result = asyncio.run(distiller.dream(messages=[{"role": "user", "content": "hi"}]))
         assert result.applied == 2  # 首条也命中近重复→并入；次条继续并入
@@ -581,9 +580,9 @@ class TestDreamWiring:
             safety_tags=TASK_TAGS,
             write_mode="explicit",
         )
-        response = json.dumps([
-            {"action": "DELETE", "memory_id": mem.memory_id, "reason": "看起来过时"}
-        ])
+        response = json.dumps(
+            [{"action": "DELETE", "memory_id": mem.memory_id, "reason": "看起来过时"}]
+        )
         distiller = _make_dream(store, response)
         result = asyncio.run(distiller.dream(messages=[{"role": "user", "content": "hi"}]))
         assert result.skipped == 1  # 自动路径删除task域fact被fail-closed拦截
@@ -592,9 +591,9 @@ class TestDreamWiring:
     def test_delete_normal_fact_still_works(self):
         store = _make_store()
         mem = store.store(content="Outdated info")
-        response = json.dumps([
-            {"action": "DELETE", "memory_id": mem.memory_id, "reason": "outdated"}
-        ])
+        response = json.dumps(
+            [{"action": "DELETE", "memory_id": mem.memory_id, "reason": "outdated"}]
+        )
         distiller = _make_dream(store, response)
         result = asyncio.run(distiller.dream(messages=[{"role": "user", "content": "hi"}]))
         assert result.applied == 1
@@ -603,15 +602,17 @@ class TestDreamWiring:
     def test_parse_dream_action_tag_fields(self):
         from src.hippo.dream_distiller import _parse_dream_actions
 
-        response = json.dumps([
-            {
-                "action": "ADD",
-                "content": "记忆内容",
-                "scope": "User",
-                "durability": "DURABLE",
-                "authority": "descriptive",
-            }
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "记忆内容",
+                    "scope": "User",
+                    "durability": "DURABLE",
+                    "authority": "descriptive",
+                }
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert actions[0].scope == "user"  # lowercased
         assert actions[0].durability == "durable"
@@ -641,7 +642,7 @@ class TestObservability:
             write_mode="explicit",
         )
         store.delete_memory(mem.memory_id, reason="x", delete_mode="auto")  # DELETE_BLOCKED
-        dup_base = store.store(content="A completely distinct fact about kubernetes")
+        store.store(content="A completely distinct fact about kubernetes")
         store.store(
             content="A completely distinct fact about kubernetes",
             dup_policy="merge",

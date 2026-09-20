@@ -93,6 +93,7 @@ class TestThreeFactorRetrieve:
         )
         target_time = time.time() - last_accessed_offset_hours * 3600.0
         import sqlite3
+
         with sqlite3.connect(store.db_path) as conn:
             conn.execute(
                 "UPDATE memories SET last_accessed_at = ? WHERE memory_id = ?",
@@ -113,11 +114,17 @@ class TestThreeFactorRetrieve:
 
     def test_recency_favors_recent(self, store):
         """A recently accessed memory should outrank an old one with same content relevance."""
-        old_id = self._store_with_time(
-            store, "database migration postgres", 0.5, 720.0  # 30 days ago
+        self._store_with_time(
+            store,
+            "database migration postgres",
+            0.5,
+            720.0,  # 30 days ago
         )
         new_id = self._store_with_time(
-            store, "database migration postgres", 0.5, 0.0  # just now
+            store,
+            "database migration postgres",
+            0.5,
+            0.0,  # just now
         )
         results = store.three_factor_retrieve("database migration")
         assert len(results) == 2
@@ -126,24 +133,16 @@ class TestThreeFactorRetrieve:
 
     def test_importance_favors_important(self, store):
         """With equal recency, higher importance should rank first."""
-        low_id = self._store_with_time(
-            store, "project plan timeline", 0.2, 0.0
-        )
-        high_id = self._store_with_time(
-            store, "project plan timeline", 0.9, 0.0
-        )
+        self._store_with_time(store, "project plan timeline", 0.2, 0.0)
+        high_id = self._store_with_time(store, "project plan timeline", 0.9, 0.0)
         results = store.three_factor_retrieve("project plan")
         assert len(results) == 2
         assert results[0]["memory_id"] == high_id
 
     def test_relevance_favors_matching(self, store):
         """More textually similar content should rank higher."""
-        self._store_with_time(
-            store, "unrelated topic about weather", 0.5, 0.0
-        )
-        self._store_with_time(
-            store, "kubernetes deployment configuration", 0.5, 0.0
-        )
+        self._store_with_time(store, "unrelated topic about weather", 0.5, 0.0)
+        self._store_with_time(store, "kubernetes deployment configuration", 0.5, 0.0)
         results = store.three_factor_retrieve("kubernetes deployment")
         assert len(results) >= 1
         assert "kubernetes" in results[0]["content"].lower()
@@ -168,11 +167,17 @@ class TestThreeFactorRetrieve:
 
     def test_weight_recency_dominant(self, store):
         """With recency_weight=10, a recent-but-unimportant memory beats old-important."""
-        old_important = self._store_with_time(
-            store, "critical deployment notice", 0.95, 720.0  # 30 days old, high importance
+        self._store_with_time(
+            store,
+            "critical deployment notice",
+            0.95,
+            720.0,  # 30 days old, high importance
         )
         new_low = self._store_with_time(
-            store, "critical deployment notice", 0.10, 0.0  # fresh, low importance
+            store,
+            "critical deployment notice",
+            0.10,
+            0.0,  # fresh, low importance
         )
         results = store.three_factor_retrieve(
             "critical deployment",
@@ -185,12 +190,8 @@ class TestThreeFactorRetrieve:
 
     def test_weight_importance_dominant(self, store):
         """With importance_weight=10, old-important beats new-unimportant."""
-        old_important = self._store_with_time(
-            store, "critical deployment notice", 0.95, 720.0
-        )
-        new_low = self._store_with_time(
-            store, "critical deployment notice", 0.10, 0.0
-        )
+        old_important = self._store_with_time(store, "critical deployment notice", 0.95, 720.0)
+        self._store_with_time(store, "critical deployment notice", 0.10, 0.0)
         results = store.three_factor_retrieve(
             "critical deployment",
             recency_weight=1.0,
@@ -203,12 +204,8 @@ class TestThreeFactorRetrieve:
     def test_three_factor_differs_from_legacy(self, store):
         """The three-factor scoring should produce a different ordering than legacy retrieve() in some cases."""
         # Create scenario: old + high importance + high relevance vs recent + low importance + high relevance
-        old_id = self._store_with_time(
-            store, "kubernetes pod scaling config", 0.9, 480.0
-        )
-        new_id = self._store_with_time(
-            store, "kubernetes pod scaling config", 0.2, 0.0
-        )
+        self._store_with_time(store, "kubernetes pod scaling config", 0.9, 480.0)
+        self._store_with_time(store, "kubernetes pod scaling config", 0.2, 0.0)
         three_results = store.three_factor_retrieve("kubernetes pod")
         legacy_results = store.retrieve("kubernetes pod")
         # Legacy retrieve always sorts by importance DESC, access_count DESC
@@ -239,6 +236,7 @@ class TestThreeFactorRetrieve:
         mid = self._store_with_time(store, "access count test memory", 0.5, 0.0)
         store.three_factor_retrieve("access count")
         import sqlite3
+
         with sqlite3.connect(store.db_path) as conn:
             row = conn.execute(
                 "SELECT access_count FROM memories WHERE memory_id = ?", (mid,)
@@ -275,7 +273,7 @@ class TestThreeFactorRetrieve:
     def test_custom_decay_rate(self, store):
         """A lower recency_decay should penalize old memories more."""
         old_id = self._store_with_time(store, "decay rate comparison", 0.5, 48.0)
-        new_id = self._store_with_time(store, "decay rate comparison", 0.5, 0.0)
+        self._store_with_time(store, "decay rate comparison", 0.5, 0.0)
 
         # With aggressive decay (0.5), old memories are heavily penalized
         results_aggressive = store.three_factor_retrieve(
@@ -284,4 +282,4 @@ class TestThreeFactorRetrieve:
         by_id_aggressive = {r["memory_id"]: r for r in results_aggressive}
 
         # recency_raw for old memory should be lower with 0.5 decay than 0.99 decay
-        assert by_id_aggressive[old_id]["recency_raw"] < 0.99 ** 48
+        assert by_id_aggressive[old_id]["recency_raw"] < 0.99**48

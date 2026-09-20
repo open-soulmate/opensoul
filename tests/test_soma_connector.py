@@ -11,13 +11,16 @@ class TestSomaHealth:
 
 class TestComponentRegistration:
     def test_register_component(self, client):
-        resp = client.post("/api/soma/register", json={
-            "component_id": "test-node-1",
-            "name": "Test Node",
-            "component_type": "collector",
-            "version": "0.1.0",
-            "capabilities": ["file", "clipboard"],
-        })
+        resp = client.post(
+            "/api/soma/register",
+            json={
+                "component_id": "test-node-1",
+                "name": "Test Node",
+                "component_type": "collector",
+                "version": "0.1.0",
+                "capabilities": ["file", "clipboard"],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["component_id"] == "test-node-1"
@@ -27,12 +30,15 @@ class TestComponentRegistration:
 
     def test_register_updates_existing(self, client):
         # Register again with different version
-        resp = client.post("/api/soma/register", json={
-            "component_id": "test-node-1",
-            "name": "Test Node Updated",
-            "component_type": "collector",
-            "version": "0.2.0",
-        })
+        resp = client.post(
+            "/api/soma/register",
+            json={
+                "component_id": "test-node-1",
+                "name": "Test Node Updated",
+                "component_type": "collector",
+                "version": "0.2.0",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Test Node Updated"
@@ -60,15 +66,19 @@ class TestComponentRegistration:
 class TestHeartbeat:
     def test_heartbeat(self, client):
         # First register to get token
-        reg = client.post("/api/soma/register", json={
-            "component_id": "test-hb-node",
-            "name": "HB Test",
-            "component_type": "test",
-            "version": "0.0.1",
-        })
+        reg = client.post(
+            "/api/soma/register",
+            json={
+                "component_id": "test-hb-node",
+                "name": "HB Test",
+                "component_type": "test",
+                "version": "0.0.1",
+            },
+        )
         token = reg.json().get("secret_token", "")
 
-        resp = client.post("/api/soma/heartbeat",
+        resp = client.post(
+            "/api/soma/heartbeat",
             json={"component_id": "test-hb-node"},
             headers={"X-Component-Token": token},
         )
@@ -81,15 +91,19 @@ class TestHeartbeat:
 class TestDataPush:
     def test_push_data(self, client):
         # Register to get token
-        reg = client.post("/api/soma/register", json={
-            "component_id": "test-push-node",
-            "name": "Push Test",
-            "component_type": "test",
-            "version": "0.0.1",
-        })
+        reg = client.post(
+            "/api/soma/register",
+            json={
+                "component_id": "test-push-node",
+                "name": "Push Test",
+                "component_type": "test",
+                "version": "0.0.1",
+            },
+        )
         token = reg.json().get("secret_token", "")
 
-        resp = client.post("/api/soma/push",
+        resp = client.post(
+            "/api/soma/push",
             json={
                 "data_type": "file_change",
                 "payload": {"path": "/tmp/test.txt", "action": "created"},
@@ -105,10 +119,13 @@ class TestDataPush:
         assert data["data_type"] == "file_change"
 
     def test_push_data_missing_header(self, client):
-        resp = client.post("/api/soma/push", json={
-            "data_type": "test",
-            "payload": {},
-        })
+        resp = client.post(
+            "/api/soma/push",
+            json={
+                "data_type": "test",
+                "payload": {},
+            },
+        )
         assert resp.status_code == 400
 
 
@@ -129,12 +146,15 @@ class TestStats:
 class TestComponentCleanup:
     def test_delete_component(self, client):
         # Register a temp component
-        client.post("/api/soma/register", json={
-            "component_id": "test-delete-me",
-            "name": "Delete Me",
-            "component_type": "test",
-            "version": "0.0.1",
-        })
+        client.post(
+            "/api/soma/register",
+            json={
+                "component_id": "test-delete-me",
+                "name": "Delete Me",
+                "component_type": "test",
+                "version": "0.0.1",
+            },
+        )
         # Delete it
         resp = client.delete("/api/soma/components/test-delete-me")
         assert resp.status_code == 200

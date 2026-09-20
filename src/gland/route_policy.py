@@ -11,6 +11,7 @@
 - intelligence(智力): prefer=online，不走local
 - auto(自动):        按routing-config规则检测消息复杂度动态选
 """
+
 from __future__ import annotations
 
 import json
@@ -103,6 +104,7 @@ def online_target() -> dict:
     """在线LLM target — 实时读设置页UI保存的配置（/api/llm/config同源）"""
     try:
         from src.api.llm import _get_config
+
         cfg = _get_config()
         return {
             "provider": "online",
@@ -134,6 +136,7 @@ def _decision_feedback_swap(prefer: str, primary: dict, backup: dict) -> tuple[b
     """
     try:
         from src.hippo.decision_log import get_decision_log
+
         stats = get_decision_log().get_provider_stats(domain="llm_routing", window=100)
     except Exception:
         return False, ""
@@ -152,8 +155,9 @@ def _decision_feedback_swap(prefer: str, primary: dict, backup: dict) -> tuple[b
     if b and b.get("attempts", 0) >= 5:
         b_rate = b.get("failure_rate", 1.0)
         if b_rate < p_rate - 0.3:
-            return True, (f"{p_name}近{p_n}次失败率{p_rate:.0%}，"
-                          f"{b_name}失败率{b_rate:.0%}→主备互换")
+            return True, (
+                f"{p_name}近{p_n}次失败率{p_rate:.0%}，{b_name}失败率{b_rate:.0%}→主备互换"
+            )
         return False, ""
     if p_rate >= 0.8:
         return True, f"{p_name}近{p_n}次失败率{p_rate:.0%}（系统性失败）→切换到{b_name}"
@@ -178,7 +182,9 @@ def detect_complexity(message: str, auto_params: dict) -> tuple[float, dict]:
     if auto_params.get("questionDetection", True) and _QUESTION_RE.search(message):
         flags["question"] = True
         score += 0.25
-    if auto_params.get("imageAnalysis", True) and re.search(r"图片|图像|image|photo", message, re.I):
+    if auto_params.get("imageAnalysis", True) and re.search(
+        r"图片|图像|image|photo", message, re.I
+    ):
         flags["image"] = True
         score += 0.45
     return min(score, 1.0), flags

@@ -60,23 +60,42 @@ class MultiAgentCoordinator:
         await self._ensure_table()
         if not self.db:
             return
-        await self.db.execute("""
+        await self.db.execute(
+            """
             INSERT INTO agent_registry (tenant_id, agent_id, agent_type, status, last_heartbeat, created_at)
             VALUES (?, ?, ?, 'idle', ?, ?)
             ON CONFLICT(tenant_id, agent_id)
             DO UPDATE SET status = 'idle', last_heartbeat = ?
-        """, (self.tenant_id, agent_id, agent_type, time.time(), time.time(), time.time()))
+        """,
+            (self.tenant_id, agent_id, agent_type, time.time(), time.time(), time.time()),
+        )
 
-    async def heartbeat(self, agent_id: str, status: str = "active", current_task: str = "", current_files: list[str] = None):
+    async def heartbeat(
+        self,
+        agent_id: str,
+        status: str = "active",
+        current_task: str = "",
+        current_files: list[str] = None,
+    ):
         """心跳更新"""
         await self._ensure_table()
         if not self.db:
             return
-        await self.db.execute("""
+        await self.db.execute(
+            """
             UPDATE agent_registry
             SET status = ?, current_task = ?, current_files = ?, last_heartbeat = ?
             WHERE tenant_id = ? AND agent_id = ?
-        """, (status, current_task, json.dumps(current_files or []), time.time(), self.tenant_id, agent_id))
+        """,
+            (
+                status,
+                current_task,
+                json.dumps(current_files or []),
+                time.time(),
+                self.tenant_id,
+                agent_id,
+            ),
+        )
 
     async def get_active_agents(self) -> list[dict]:
         """获取活跃Agent列表"""
@@ -84,12 +103,15 @@ class MultiAgentCoordinator:
         if not self.db:
             return []
         cutoff = time.time() - 300  # 5分钟内心跳
-        rows = await self.db.fetch("""
+        rows = await self.db.fetch(
+            """
             SELECT agent_id, agent_type, status, current_task, current_files, last_heartbeat
             FROM agent_registry
             WHERE tenant_id = ? AND last_heartbeat > ?
             ORDER BY last_heartbeat DESC
-        """, (self.tenant_id, cutoff))
+        """,
+            (self.tenant_id, cutoff),
+        )
         return [dict(row) for row in rows]
 
     async def check_file_conflict(self, agent_id: str, target_files: list[str]) -> list[dict]:
@@ -108,11 +130,13 @@ class MultiAgentCoordinator:
                 their_files = []
             overlap = set(target_files) & set(their_files)
             if overlap:
-                conflicts.append({
-                    "agent_id": a["agent_id"],
-                    "conflicting_files": list(overlap),
-                    "their_task": a.get("current_task", ""),
-                })
+                conflicts.append(
+                    {
+                        "agent_id": a["agent_id"],
+                        "conflicting_files": list(overlap),
+                        "their_task": a.get("current_task", ""),
+                    }
+                )
         return conflicts
 
     async def send_message(self, from_agent: str, to_agent: str, message_type: str, content: str):

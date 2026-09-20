@@ -8,8 +8,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.vision.chart_generator import ChartGenerator
-from src.vision.mindmap import MindMapGenerator
 from src.vision.dag_visualizer import DAGVisualizer
+from src.vision.mindmap import MindMapGenerator
 
 router = APIRouter()
 

@@ -210,11 +210,9 @@ class TestGoalReport:
         runner.record_event(gid, "bash", {"exit_code": 0})
         runner.record_event(gid, "read_file", {"content": "ok"})
 
-        result = runner.goal_report(GoalReport(
-            goal_id=gid,
-            status="complete",
-            reason="All tasks finished successfully"
-        ))
+        result = runner.goal_report(
+            GoalReport(goal_id=gid, status="complete", reason="All tasks finished successfully")
+        )
         assert result.state == GoalState.COMPLETED
         assert result.report_status == "complete"
 
@@ -231,20 +229,16 @@ class TestGoalReport:
         # Goal might already be paused from fail-stop
         g = runner.get_goal(gid)
         if g.state == GoalState.ACTIVE:
-            result = runner.goal_report(GoalReport(
-                goal_id=gid,
-                status="complete",
-                reason="I think I'm done"
-            ))
+            result = runner.goal_report(
+                GoalReport(goal_id=gid, status="complete", reason="I think I'm done")
+            )
             # With 0 successes and failures > successes, should be PAUSED
             assert result.state == GoalState.PAUSED
         else:
             # Already paused by fail-stop, report on paused goal
-            result = runner.goal_report(GoalReport(
-                goal_id=gid,
-                status="complete",
-                reason="I think I'm done"
-            ))
+            result = runner.goal_report(
+                GoalReport(goal_id=gid, status="complete", reason="I think I'm done")
+            )
             # Should stay paused since no success evidence
             assert result.state in (GoalState.PAUSED, GoalState.COMPLETED)
 
@@ -255,11 +249,9 @@ class TestGoalReport:
 
         runner.record_event(gid, "bash", {"exit_code": 0})
 
-        result = runner.goal_report(GoalReport(
-            goal_id=gid,
-            status="blocked",
-            reason="Waiting for API credentials"
-        ))
+        result = runner.goal_report(
+            GoalReport(goal_id=gid, status="blocked", reason="Waiting for API credentials")
+        )
         assert result.state == GoalState.BLOCKED
         assert result.report_status == "blocked"
 
@@ -269,11 +261,7 @@ class TestGoalReport:
         gid = goal.goal_id
         runner.cancel_goal(gid)
 
-        result = runner.goal_report(GoalReport(
-            goal_id=gid,
-            status="complete",
-            reason="done"
-        ))
+        result = runner.goal_report(GoalReport(goal_id=gid, status="complete", reason="done"))
         assert result.state == GoalState.FAILED  # No change
 
 

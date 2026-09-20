@@ -18,8 +18,6 @@ async def trajectory_v2_health():
     return {"status": "ok", "component": "trajectory-v2"}
 
 
-
-
 # ── Request Schemas ──────────────────────────────────────────
 
 

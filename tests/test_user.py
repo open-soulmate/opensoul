@@ -19,11 +19,14 @@ class TestUserRegister:
         email = f"{username}@test.com"
 
         # Register
-        resp = client.post("/api/user/register", json={
-            "username": username,
-            "email": email,
-            "password": "testpass123",
-        })
+        resp = client.post(
+            "/api/user/register",
+            json={
+                "username": username,
+                "email": email,
+                "password": "testpass123",
+            },
+        )
         # Could be 200 or 400 if user already exists
         assert resp.status_code in (200, 400)
         if resp.status_code == 200:
@@ -37,17 +40,23 @@ class TestUserRegister:
         email = f"{username}@test.com"
 
         # Register first
-        client.post("/api/user/register", json={
-            "username": username,
-            "email": email,
-            "password": "mypassword",
-        })
+        client.post(
+            "/api/user/register",
+            json={
+                "username": username,
+                "email": email,
+                "password": "mypassword",
+            },
+        )
 
         # Login
-        resp = client.post("/api/user/login", data={
-            "username": username,
-            "password": "mypassword",
-        })
+        resp = client.post(
+            "/api/user/login",
+            data={
+                "username": username,
+                "password": "mypassword",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "access_token" in data
@@ -55,10 +64,13 @@ class TestUserRegister:
 
     def test_login_invalid_credentials(self, client):
         """Login with wrong password returns 401."""
-        resp = client.post("/api/user/login", data={
-            "username": "nonexistent_user",
-            "password": "wrongpassword",
-        })
+        resp = client.post(
+            "/api/user/login",
+            data={
+                "username": "nonexistent_user",
+                "password": "wrongpassword",
+            },
+        )
         assert resp.status_code == 401
 
     def test_me_without_token_returns_401(self, client):
@@ -72,26 +84,35 @@ class TestUserRegister:
         email = f"{username}@test.com"
 
         # Register
-        client.post("/api/user/register", json={
-            "username": username,
-            "email": email,
-            "password": "pass123",
-        })
+        client.post(
+            "/api/user/register",
+            json={
+                "username": username,
+                "email": email,
+                "password": "pass123",
+            },
+        )
 
         # Login
-        login_resp = client.post("/api/user/login", data={
-            "username": username,
-            "password": "pass123",
-        })
+        login_resp = client.post(
+            "/api/user/login",
+            data={
+                "username": username,
+                "password": "pass123",
+            },
+        )
         if login_resp.status_code != 200:
             return  # Skip if registration failed
 
         token = login_resp.json()["access_token"]
 
         # Get profile
-        resp = client.get("/api/user/me", headers={
-            "Authorization": f"Bearer {token}",
-        })
+        resp = client.get(
+            "/api/user/me",
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["username"] == username

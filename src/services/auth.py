@@ -56,6 +56,7 @@ def decode_token(token: str) -> dict | None:
                 return None
             import sqlite3 as _sqlite3
             from pathlib import Path as _Path
+
             # Verify enterprise user exists
             _ent_db = _Path(__file__).parent.parent.parent / "data" / "enterprise.db"
             _os_db = _Path(__file__).parent.parent.parent / "data" / "opensoul.db"

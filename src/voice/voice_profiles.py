@@ -126,6 +126,7 @@ class ProfileManager:
                 self._user[p.profile_id] = p
         except Exception as exc:
             logging.getLogger(__name__).debug("probe skipped: %s", exc)
+
     def _save_user_profiles(self):
         path = os.path.join(self._data_dir, "profiles.json")
         data = [asdict(p) for p in self._user.values()]

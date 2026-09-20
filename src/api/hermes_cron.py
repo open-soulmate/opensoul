@@ -11,6 +11,8 @@ from src.api.user import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
 @router.get("/health")
 async def hermes_cron_health():
     """HermesCron health check."""

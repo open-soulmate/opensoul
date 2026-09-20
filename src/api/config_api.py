@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from src.config_manager import ALL_ORGANS, config_manager
 
 router = APIRouter()
+
+
 @router.get("/health")
 @router.get("/config/health")
 async def config_api_health():

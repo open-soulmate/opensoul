@@ -1,7 +1,8 @@
-import os
 import json
-import httpx
+import os
 from pathlib import Path
+
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -69,9 +70,12 @@ def _migrate_env_to_profiles() -> dict:
         profiles = {
             "mimo": {
                 "standard": {
-                    "url": _llm_overrides.get("standard_base_url", "") or _llm_overrides.get("base_url", ""),
-                    "api_key": _llm_overrides.get("standard_api_key", "") or _llm_overrides.get("api_key", ""),
-                    "model": _llm_overrides.get("standard_model", "") or _llm_overrides.get("model", ""),
+                    "url": _llm_overrides.get("standard_base_url", "")
+                    or _llm_overrides.get("base_url", ""),
+                    "api_key": _llm_overrides.get("standard_api_key", "")
+                    or _llm_overrides.get("api_key", ""),
+                    "model": _llm_overrides.get("standard_model", "")
+                    or _llm_overrides.get("model", ""),
                 },
                 "subscription": {
                     "url": _llm_overrides.get("subscription_base_url", ""),
@@ -131,10 +135,16 @@ def _load_overrides_from_env():
                 k, v = line.split("=", 1)
                 k, v = k.strip(), v.strip()
                 _SLOT_MAP = {
-                    "LLM_API_KEY": "api_key", "LLM_BASE_URL": "base_url", "LLM_MODEL": "model",
+                    "LLM_API_KEY": "api_key",
+                    "LLM_BASE_URL": "base_url",
+                    "LLM_MODEL": "model",
                     "LLM_ACTIVE_VARIANT": "active_variant",
-                    "LLM_STANDARD_API_KEY": "standard_api_key", "LLM_STANDARD_BASE_URL": "standard_base_url", "LLM_STANDARD_MODEL": "standard_model",
-                    "LLM_SUBSCRIPTION_API_KEY": "subscription_api_key", "LLM_SUBSCRIPTION_BASE_URL": "subscription_base_url", "LLM_SUBSCRIPTION_MODEL": "subscription_model",
+                    "LLM_STANDARD_API_KEY": "standard_api_key",
+                    "LLM_STANDARD_BASE_URL": "standard_base_url",
+                    "LLM_STANDARD_MODEL": "standard_model",
+                    "LLM_SUBSCRIPTION_API_KEY": "subscription_api_key",
+                    "LLM_SUBSCRIPTION_BASE_URL": "subscription_base_url",
+                    "LLM_SUBSCRIPTION_MODEL": "subscription_model",
                 }
                 slot = _SLOT_MAP.get(k)
                 if slot and v:
@@ -172,10 +182,16 @@ def _save_overrides_to_env():
         lines = f.readlines()
 
     keys_to_save = {
-        "LLM_API_KEY": "api_key", "LLM_BASE_URL": "base_url", "LLM_MODEL": "model",
+        "LLM_API_KEY": "api_key",
+        "LLM_BASE_URL": "base_url",
+        "LLM_MODEL": "model",
         "LLM_ACTIVE_VARIANT": "active_variant",
-        "LLM_STANDARD_API_KEY": "standard_api_key", "LLM_STANDARD_BASE_URL": "standard_base_url", "LLM_STANDARD_MODEL": "standard_model",
-        "LLM_SUBSCRIPTION_API_KEY": "subscription_api_key", "LLM_SUBSCRIPTION_BASE_URL": "subscription_base_url", "LLM_SUBSCRIPTION_MODEL": "subscription_model",
+        "LLM_STANDARD_API_KEY": "standard_api_key",
+        "LLM_STANDARD_BASE_URL": "standard_base_url",
+        "LLM_STANDARD_MODEL": "standard_model",
+        "LLM_SUBSCRIPTION_API_KEY": "subscription_api_key",
+        "LLM_SUBSCRIPTION_BASE_URL": "subscription_base_url",
+        "LLM_SUBSCRIPTION_MODEL": "subscription_model",
     }
     updated_keys = set()
 
@@ -286,6 +302,7 @@ async def save_config(data: LLMConfigUpdate):
 
 class LLMTestRequest(BaseModel):
     """Optional overrides for test — lets the frontend test unsaved settings."""
+
     base_url: str | None = None
     api_key: str | None = None
     model: str | None = None
@@ -302,7 +319,10 @@ def _sub(url: str = "", prefix: str = "") -> dict:
 
 # 所有云端大模型统一双体系：标准API + 订阅制（订阅地址为空=用户自填；小米订阅制=官方Token Plan地址）
 PRESET_VARIANTS: dict[str, list[dict]] = {
-    "mimo": [_std("https://api.xiaomimimo.com/v1"), _sub("https://token-plan-cn.xiaomimimo.com/v1", "tp-")],
+    "mimo": [
+        _std("https://api.xiaomimimo.com/v1"),
+        _sub("https://token-plan-cn.xiaomimimo.com/v1", "tp-"),
+    ],
     "openai": [_std("https://api.openai.com/v1"), _sub()],
     "claude": [_std("https://api.anthropic.com/v1", "sk-ant-"), _sub()],
     "gemini": [_std("https://generativelanguage.googleapis.com/v1beta", "AIza"), _sub()],
@@ -315,9 +335,30 @@ PRESET_VARIANTS: dict[str, list[dict]] = {
     "minimax": [_std("https://api.minimax.chat/v1", "eyJ"), _sub()],
     "stepfun": [_std("https://api.stepfun.com/v1"), _sub()],
     "doubao": [_std("https://ark.cn-beijing.volces.com/api/v3", ""), _sub()],
-    "ollama": [{"id": "standard", "label": "本地", "base_url": "http://localhost:11434/v1", "key_prefix": ""}],
-    "lmstudio": [{"id": "standard", "label": "本地", "base_url": "http://localhost:1234/v1", "key_prefix": ""}],
-    "vllm": [{"id": "standard", "label": "本地", "base_url": "http://localhost:8000/v1", "key_prefix": ""}],
+    "ollama": [
+        {
+            "id": "standard",
+            "label": "本地",
+            "base_url": "http://localhost:11434/v1",
+            "key_prefix": "",
+        }
+    ],
+    "lmstudio": [
+        {
+            "id": "standard",
+            "label": "本地",
+            "base_url": "http://localhost:1234/v1",
+            "key_prefix": "",
+        }
+    ],
+    "vllm": [
+        {
+            "id": "standard",
+            "label": "本地",
+            "base_url": "http://localhost:8000/v1",
+            "key_prefix": "",
+        }
+    ],
     "custom": [_std("", ""), _sub("", "")],
 }
 
@@ -344,8 +385,15 @@ async def _probe_variant(base_url: str, api_key: str, model: str = "") -> str:
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         probe = await client.post(
                             f"{base_url.rstrip('/')}/chat/completions",
-                            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                            json={"model": model, "messages": [{"role": "user", "content": "."}], "max_tokens": 1},
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json={
+                                "model": model,
+                                "messages": [{"role": "user", "content": "."}],
+                                "max_tokens": 1,
+                            },
                         )
                     if probe.status_code == 402:
                         return "low_balance"
@@ -390,16 +438,29 @@ async def test_connection(body: LLMTestRequest | None = None):
     Accepts optional overrides so the frontend can test settings
     the user has edited but not yet saved.
     """
-    api_key = (body.api_key if body and body.api_key else None) or _active_slot("api_key") or settings.llm_api_key
-    base_url = (body.base_url if body and body.base_url else None) or _active_slot("base_url") or settings.llm_base_url
-    model = (body.model if body and body.model else None) or _active_slot("model") or settings.llm_model
+    api_key = (
+        (body.api_key if body and body.api_key else None)
+        or _active_slot("api_key")
+        or settings.llm_api_key
+    )
+    base_url = (
+        (body.base_url if body and body.base_url else None)
+        or _active_slot("base_url")
+        or settings.llm_base_url
+    )
+    model = (
+        (body.model if body and body.model else None) or _active_slot("model") or settings.llm_model
+    )
 
     import logging
+
     logging.getLogger("llm-test").warning(
         "TEST REQUEST: body=%s, resolved: base_url=%s, model=%s, key_len=%d, key_source=%s",
         body.model_dump() if body else None,
-        base_url, model, len(api_key) if api_key else 0,
-        "body" if (body and body.api_key) else "override/env"
+        base_url,
+        model,
+        len(api_key) if api_key else 0,
+        "body" if (body and body.api_key) else "override/env",
     )
 
     if not api_key:
@@ -414,7 +475,11 @@ async def test_connection(body: LLMTestRequest | None = None):
                 f"{base_url}/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+                    **(
+                        {"api-key": api_key}
+                        if api_key.startswith("tp-")
+                        else {"Authorization": f"Bearer {api_key}"}
+                    ),
                 },
                 json={
                     "model": model,
@@ -434,8 +499,14 @@ async def test_connection(body: LLMTestRequest | None = None):
             }
     except httpx.HTTPStatusError as e:
         import logging
-        logging.getLogger("llm-test").warning("LLM API error %d: %s", e.response.status_code, e.response.text[:300])
-        raise HTTPException(status_code=502, detail=f"LLM API error: {e.response.status_code} — {e.response.text[:200]}")
+
+        logging.getLogger("llm-test").warning(
+            "LLM API error %d: %s", e.response.status_code, e.response.text[:300]
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM API error: {e.response.status_code} — {e.response.text[:200]}",
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LLM connection failed: {str(e)}")
 
@@ -458,7 +529,11 @@ async def completions(req: LLMRequest):
                 f"{base_url}/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    **({"api-key": api_key} if api_key.startswith("tp-") else {"Authorization": f"Bearer {api_key}"}),
+                    **(
+                        {"api-key": api_key}
+                        if api_key.startswith("tp-")
+                        else {"Authorization": f"Bearer {api_key}"}
+                    ),
                 },
                 json={
                     "model": model,
@@ -471,10 +546,17 @@ async def completions(req: LLMRequest):
             resp.raise_for_status()
             return resp.json()
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"LLM API error: {e.response.status_code} — {e.response.text[:200]}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM API error: {e.response.status_code} — {e.response.text[:200]}",
+        )
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="LLM request timed out (120s)")
     except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"LLM upstream unreachable: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=502, detail=f"LLM upstream unreachable: {type(e).__name__}: {e}"
+        )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LLM completion failed: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=502, detail=f"LLM completion failed: {type(e).__name__}: {e}"
+        )

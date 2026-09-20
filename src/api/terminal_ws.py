@@ -12,6 +12,8 @@ import termios
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
+
+
 @router.get("/health")
 async def terminal_ws_health():
     """TerminalWS health check."""
@@ -46,6 +48,7 @@ async def terminal_ws(websocket: WebSocket):
                     break
         except Exception as exc:
             logging.getLogger(__name__).debug("probe skipped: %s", exc)
+
     async def read_ws():
         """Read from WebSocket and write to PTY."""
         try:

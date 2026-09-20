@@ -26,24 +26,33 @@ class TestLLMConfig:
         yield
         std = snap.get("standard") or {}
         sub = snap.get("subscription") or {}
-        client.post("/api/llm/config", json={
-            "variant": "subscription",
-            "base_url": sub.get("base_url", ""),
-            "api_key": sub.get("api_key", ""),
-            "model": sub.get("model", ""),
-        })
-        client.post("/api/llm/config", json={
-            "variant": "standard",
-            "base_url": std.get("base_url", ""),
-            "api_key": std.get("api_key", ""),
-            "model": std.get("model", ""),
-        })
-        client.post("/api/llm/config", json={
-            "variant": snap.get("active_variant", "standard"),
-            "base_url": snap.get("base_url", ""),
-            "api_key": snap.get("api_key", ""),
-            "model": snap.get("model", ""),
-        })
+        client.post(
+            "/api/llm/config",
+            json={
+                "variant": "subscription",
+                "base_url": sub.get("base_url", ""),
+                "api_key": sub.get("api_key", ""),
+                "model": sub.get("model", ""),
+            },
+        )
+        client.post(
+            "/api/llm/config",
+            json={
+                "variant": "standard",
+                "base_url": std.get("base_url", ""),
+                "api_key": std.get("api_key", ""),
+                "model": std.get("model", ""),
+            },
+        )
+        client.post(
+            "/api/llm/config",
+            json={
+                "variant": snap.get("active_variant", "standard"),
+                "base_url": snap.get("base_url", ""),
+                "api_key": snap.get("api_key", ""),
+                "model": snap.get("model", ""),
+            },
+        )
 
     def test_get_config(self, client):
         resp = client.get("/api/llm/config")

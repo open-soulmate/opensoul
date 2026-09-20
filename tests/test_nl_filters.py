@@ -11,19 +11,20 @@ Covers:
 - apply_post_filters: date/importance/word filtering on memory dicts
 - Edge cases: empty query, pure filter query, Chinese text
 """
+
 import json
 import time
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 from src.hippo.nl_filters import (
     NLFilterResult,
-    parse_nl_query,
-    apply_post_filters,
     _compute_date_range,
     _fmt_ts,
+    apply_post_filters,
+    parse_nl_query,
 )
-
 
 # ── DateFilter: relative dates ────────────────────────────────────
 
@@ -249,8 +250,10 @@ class TestCleanQuery:
         # "about Python programming" is captured as word_filter — the terms
         # are preserved in the filter, not the clean query. This is correct:
         # the search system uses word_filters for content matching.
-        assert any("python" in wf.lower() for wf in r.word_filters) or \
-               "python" in r.clean_query.lower()
+        assert (
+            any("python" in wf.lower() for wf in r.word_filters)
+            or "python" in r.clean_query.lower()
+        )
 
     def test_empty_query(self):
         r = parse_nl_query("")

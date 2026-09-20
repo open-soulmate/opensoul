@@ -34,6 +34,7 @@ logger = logging.getLogger("opensoul.hippo.long_term")
 @dataclass
 class LongTermMemory:
     """A long-term memory entry with four-layer classification."""
+
     memory_id: str
     content: str
     memory_type: str = "episodic"  # episodic / semantic / procedural / working
@@ -57,6 +58,7 @@ class MemoryAuditEntry:
     is fully traceable. Schema mirrors mem0's history table:
     memory_id / old / new / event / is_deleted.
     """
+
     audit_id: str
     memory_id: str
     event: str  # ADD / UPDATE / DELETE / MERGE / DECAY
@@ -100,7 +102,7 @@ class LongTermMemoryStore:
     def __init__(
         self,
         db_path: str = "",
-        gatekeeper: Optional[MemoryGatekeeper] = None,
+        gatekeeper: MemoryGatekeeper | None = None,
         gatekeeper_enabled: bool = True,
     ):
         if not db_path:
@@ -110,14 +112,12 @@ class LongTermMemoryStore:
         self.db_path = db_path
         # LobeChat gatekeeper：记忆准入判定，默认开启（gatekeeper_enabled=False仅测试用）
         self.gatekeeper = (
-            gatekeeper
-            if gatekeeper is not None
-            else MemoryGatekeeper(enabled=gatekeeper_enabled)
+            gatekeeper if gatekeeper is not None else MemoryGatekeeper(enabled=gatekeeper_enabled)
         )
         # DeerMem标签门可观测状态（每次store/delete更新，API层读取）
         self.last_write_outcome: str = ""  # added / merged / rejected_tags / rejected_gate
-        self.last_tag_decision: Optional[TagDecision] = None
-        self.last_delete_decision: Optional[TagDecision] = None
+        self.last_tag_decision: TagDecision | None = None
+        self.last_delete_decision: TagDecision | None = None
         self._init_db()
 
     def _init_db(self):
@@ -204,14 +204,14 @@ class LongTermMemoryStore:
         content: str,
         memory_type: str = "episodic",
         importance: float = 0.5,
-        tags: Optional[list[str]] = None,
-        metadata: Optional[dict] = None,
+        tags: list[str] | None = None,
+        metadata: dict | None = None,
         source_session: str = "",
         force: bool = False,
-        safety_tags: Optional[dict] = None,
+        safety_tags: dict | None = None,
         write_mode: str = "auto",
         dup_policy: str = "reject",
-    ) -> Optional[LongTermMemory]:
+    ) -> LongTermMemory | None:
         """Store a new long-term memory.
 
         P1 gatekeeper（LobeChat记忆守门员）：写入前过准入判定。
@@ -258,9 +258,7 @@ class LongTermMemoryStore:
                         )
                     )
                     if not tag_dec.accepted:
-                        self._reject_on_tags(
-                            tag_dec, content, memory_type, gate_decision=decision
-                        )
+                        self._reject_on_tags(tag_dec, content, memory_type, gate_decision=decision)
                         return None
                     merged = self._merge_into_existing(
                         duplicate_of=decision.duplicate_of,
@@ -277,10 +275,7 @@ class LongTermMemoryStore:
                     # 目标缺失/跨类别：落到下方GATE_REJECT审计（原因标注）
                 # 拒绝也必须可见：落审计而非静默丢弃
                 extra_reason = ""
-                if (
-                    dup_policy == "merge"
-                    and decision.rule in ("duplicate_exact", "duplicate_near")
-                ):
+                if dup_policy == "merge" and decision.rule in ("duplicate_exact", "duplicate_near"):
                     extra_reason = " (cross_category_not_mergeable)"
                 self._write_audit(
                     memory_id=f"gate_{hashlib.sha256(f'{content}:{time.time()}'.encode()).hexdigest()[:12]}",
@@ -328,9 +323,7 @@ class LongTermMemoryStore:
 
         # resolved安全标签随metadata落库（删除门/审计的依据）
         resolved_metadata = dict(metadata or {})
-        resolved_metadata["deermem_tags"] = (
-            tag_dec.tags.to_dict() if tag_dec.tags else {}
-        )
+        resolved_metadata["deermem_tags"] = tag_dec.tags.to_dict() if tag_dec.tags else {}
 
         mem = LongTermMemory(
             memory_id=memory_id,
@@ -348,13 +341,21 @@ class LongTermMemoryStore:
                    (memory_id, content, memory_type, importance, tags, metadata,
                     created_at, last_accessed_at, access_count, source_session)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (memory_id, content, memory_type, importance,
-                 json.dumps(tags or [], ensure_ascii=False),
-                 json.dumps(resolved_metadata, ensure_ascii=False),
-                 mem.created_at, mem.last_accessed_at, 0, source_session),
+                (
+                    memory_id,
+                    content,
+                    memory_type,
+                    importance,
+                    json.dumps(tags or [], ensure_ascii=False),
+                    json.dumps(resolved_metadata, ensure_ascii=False),
+                    mem.created_at,
+                    mem.last_accessed_at,
+                    0,
+                    source_session,
+                ),
             )
             conn.execute(
-                'INSERT INTO memories_fts (memory_id, content, tags) VALUES (?, ?, ?)',
+                "INSERT INTO memories_fts (memory_id, content, tags) VALUES (?, ?, ?)",
                 (memory_id, content, json.dumps(tags or [])),
             )
             conn.commit()
@@ -365,12 +366,15 @@ class LongTermMemoryStore:
             memory_id=memory_id,
             event="ADD",
             old_value="",
-            new_value=json.dumps({
-                "content": content[:200],
-                "memory_type": memory_type,
-                "importance": importance,
-                "deermem_tags": resolved_metadata["deermem_tags"],
-            }, ensure_ascii=False),
+            new_value=json.dumps(
+                {
+                    "content": content[:200],
+                    "memory_type": memory_type,
+                    "importance": importance,
+                    "deermem_tags": resolved_metadata["deermem_tags"],
+                },
+                ensure_ascii=False,
+            ),
             reason="store",
         )
         # MemoryVersion：新记忆=版本1（codex版本化，后续update/merge递增）
@@ -392,7 +396,7 @@ class LongTermMemoryStore:
         tag_dec: TagDecision,
         content: str,
         memory_type: str,
-        gate_decision: Optional[GateDecision] = None,
+        gate_decision: GateDecision | None = None,
     ):
         """TAG_REJECT审计（mem0 §1.1：标签门拒绝必须可见，绝不静默）。"""
         self._write_audit(
@@ -426,7 +430,7 @@ class LongTermMemoryStore:
         similarity: float,
         dup_rule: str,
         source_session: str = "",
-    ) -> Optional[LongTermMemory]:
+    ) -> LongTermMemory | None:
         """DeerMem #10 fact_dedup：近重复并入既有fact。
 
         - 仅同类别（memory_type相同）并入；跨类别返回None（调用方回退reject）
@@ -541,14 +545,24 @@ class LongTermMemoryStore:
         is_deleted: bool = False,
     ):
         """Write an audit trail record (mem0 history pattern)."""
-        audit_id = f"aud_{hashlib.sha256(f'{memory_id}:{event}:{time.time()}'.encode()).hexdigest()[:12]}"
+        audit_id = (
+            f"aud_{hashlib.sha256(f'{memory_id}:{event}:{time.time()}'.encode()).hexdigest()[:12]}"
+        )
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """INSERT INTO memory_audit
                    (audit_id, memory_id, event, old_value, new_value, is_deleted, reason, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (audit_id, memory_id, event, old_value, new_value,
-                 1 if is_deleted else 0, reason, time.time()),
+                (
+                    audit_id,
+                    memory_id,
+                    event,
+                    old_value,
+                    new_value,
+                    1 if is_deleted else 0,
+                    reason,
+                    time.time(),
+                ),
             )
             conn.commit()
 
@@ -600,9 +614,19 @@ class LongTermMemoryStore:
                        (version_id, memory_id, version, event, content,
                         memory_type, importance, tags, metadata, reason, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (version_id, memory_id, version, event, content,
-                     memory_type, float(importance), tags_json, metadata_json,
-                     reason, time.time()),
+                    (
+                        version_id,
+                        memory_id,
+                        version,
+                        event,
+                        content,
+                        memory_type,
+                        float(importance),
+                        tags_json,
+                        metadata_json,
+                        reason,
+                        time.time(),
+                    ),
                 )
                 conn.commit()
             return version
@@ -643,7 +667,7 @@ class LongTermMemoryStore:
 
     def rollback_version(
         self, memory_id: str, version: int, reason: str = "user_rollback"
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """回滚到指定历史版本（codex MemoryVersion语义）。
 
         - 经update_memory执行：稀疏恢复快照字段，同时写UPDATE审计+新版本快照
@@ -671,13 +695,13 @@ class LongTermMemoryStore:
     def update_memory(
         self,
         memory_id: str,
-        content: Optional[str] = None,
-        memory_type: Optional[str] = None,
-        importance: Optional[float] = None,
-        tags: Optional[list[str]] = None,
-        metadata: Optional[dict] = None,
+        content: str | None = None,
+        memory_type: str | None = None,
+        importance: float | None = None,
+        tags: list[str] | None = None,
+        metadata: dict | None = None,
         reason: str = "user_edit",
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Update a long-term memory with full audit trail (Khoj CRUD + mem0 audit).
 
         Only updates fields that are explicitly provided (sparse edit pattern).
@@ -737,9 +761,7 @@ class LongTermMemoryStore:
 
             # Update FTS index if content or tags changed
             if content is not None or tags is not None:
-                conn.execute(
-                    "DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,)
-                )
+                conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,))
                 new_content = content if content is not None else row["content"]
                 new_tags = tags if tags is not None else json.loads(row["tags"])
                 conn.execute(
@@ -843,9 +865,7 @@ class LongTermMemoryStore:
                 reason=f"deermem_tags:{dec.rule}",
                 is_deleted=False,
             )
-            logger.info(
-                "DeerMem delete gate blocked %s rule=%s", memory_id, dec.rule
-            )
+            logger.info("DeerMem delete gate blocked %s rule=%s", memory_id, dec.rule)
             return False
 
         with sqlite3.connect(self.db_path) as conn:
@@ -858,9 +878,7 @@ class LongTermMemoryStore:
                     "UPDATE memories SET consolidated = 1 WHERE memory_id = ?",
                     (memory_id,),
                 )
-                conn.execute(
-                    "DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,)
-                )
+                conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,))
             conn.commit()
 
         # Write DELETE audit record
@@ -1096,7 +1114,7 @@ class LongTermMemoryStore:
 
         # Score and rank
         query_lower = query.lower()
-        query_tokens = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+        query_tokens = set(re.findall(r"[\w\u4e00-\u9fff]+", query_lower))
 
         scored = []
         for row in rows:
@@ -1105,7 +1123,7 @@ class LongTermMemoryStore:
             d["metadata"] = json.loads(d.get("metadata", "{}"))
 
             content_lower = d["content"].lower()
-            content_tokens = set(re.findall(r'[\w\u4e00-\u9fff]+', content_lower))
+            content_tokens = set(re.findall(r"[\w\u4e00-\u9fff]+", content_lower))
 
             # Jaccard similarity
             if query_tokens and content_tokens:
@@ -1114,11 +1132,7 @@ class LongTermMemoryStore:
                 jaccard = 0.0
 
             # Combined score: relevance × importance × access_frequency
-            score = (
-                jaccard * 0.5 +
-                d["importance"] * 0.3 +
-                min(1.0, d["access_count"] / 10) * 0.2
-            )
+            score = jaccard * 0.5 + d["importance"] * 0.3 + min(1.0, d["access_count"] / 10) * 0.2
             d["relevance_score"] = round(score, 4)
             scored.append(d)
 
@@ -1192,7 +1206,7 @@ class LongTermMemoryStore:
 
         now = time.time()
         query_lower = query.lower()
-        query_tokens = set(re.findall(r'[\w\u4e00-\u9fff]+', query_lower))
+        query_tokens = set(re.findall(r"[\w\u4e00-\u9fff]+", query_lower))
 
         # Phase 2: compute three raw factor scores per memory
         recency_raw: dict[str, float] = {}
@@ -1209,17 +1223,17 @@ class LongTermMemoryStore:
 
             # Recency: 0.99 ^ hours_since_last_access (recent → closer to 1.0)
             idle_hours = max(0.0, (now - d["last_accessed_at"]) / 3600.0)
-            recency_raw[mid] = recency_decay ** idle_hours
+            recency_raw[mid] = recency_decay**idle_hours
 
             # Importance: stored value, already in [0, 1]
             importance_raw[mid] = d["importance"]
 
             # Relevance: Jaccard token overlap
             content_lower = d["content"].lower()
-            content_tokens = set(re.findall(r'[\w\u4e00-\u9fff]+', content_lower))
+            content_tokens = set(re.findall(r"[\w\u4e00-\u9fff]+", content_lower))
             if query_tokens and content_tokens:
-                relevance_raw[mid] = (
-                    len(query_tokens & content_tokens) / len(query_tokens | content_tokens)
+                relevance_raw[mid] = len(query_tokens & content_tokens) / len(
+                    query_tokens | content_tokens
                 )
             else:
                 relevance_raw[mid] = 0.0
@@ -1340,10 +1354,14 @@ class LongTermMemoryStore:
                         (primary_id, row["memory_id"]),
                     )
                     stats["merged"] += 1
-                    merge_audit_records.append((
-                        row["memory_id"], primary_id,
-                        row["importance"], row["access_count"],
-                    ))
+                    merge_audit_records.append(
+                        (
+                            row["memory_id"],
+                            primary_id,
+                            row["importance"],
+                            row["access_count"],
+                        )
+                    )
                 else:
                     seen[content_hash] = row["memory_id"]
 
@@ -1372,10 +1390,12 @@ class LongTermMemoryStore:
             self._write_audit(
                 memory_id=merged_id,
                 event="MERGE",
-                old_value=json.dumps({
-                    "importance": old_importance,
-                    "access_count": old_access,
-                }),
+                old_value=json.dumps(
+                    {
+                        "importance": old_importance,
+                        "access_count": old_access,
+                    }
+                ),
                 new_value=json.dumps({"merged_into": primary_id}),
                 reason="consolidation_dedup",
             )
@@ -1396,9 +1416,7 @@ class LongTermMemoryStore:
             avg_importance = conn.execute(
                 "SELECT AVG(importance) FROM memories WHERE consolidated = 0"
             ).fetchone()[0]
-            total_accesses = conn.execute(
-                "SELECT SUM(access_count) FROM memories"
-            ).fetchone()[0]
+            total_accesses = conn.execute("SELECT SUM(access_count) FROM memories").fetchone()[0]
 
         return {
             "total_memories": total,

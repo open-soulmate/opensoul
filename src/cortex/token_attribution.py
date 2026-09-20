@@ -18,6 +18,7 @@ token估算启发式（两侧一致）：
 失败纪律（mem0 §1.1 + 本项目fail-safe惯例）：归因是观测性旁路，任何异常不得阻断
 LLM请求主路径（调用方均以try/except包裹，失败仅debug日志）。
 """
+
 from __future__ import annotations
 
 import json
@@ -218,9 +219,9 @@ class ContextAttributor:
         self.ledger_path = ledger_path
         if ledger_path:
             try:
-                from pathlib import Path as _P
+                from pathlib import Path
 
-                _P(ledger_path).parent.mkdir(parents=True, exist_ok=True)
+                Path(ledger_path).parent.mkdir(parents=True, exist_ok=True)
             except Exception:
                 pass
 
@@ -275,12 +276,19 @@ class ContextAttributor:
                     if self.ledger_path:
                         try:
                             with open(self.ledger_path, "a", encoding="utf-8") as f:
-                                f.write(json.dumps({
-                                    "backfill": True, "ts": time.time(),
-                                    "session_id": session_id,
-                                    "actual_prompt_tokens": actual_prompt_tokens,
-                                    "estimate_gap": rec["estimate_gap"],
-                                }, ensure_ascii=False) + "\n")
+                                f.write(
+                                    json.dumps(
+                                        {
+                                            "backfill": True,
+                                            "ts": time.time(),
+                                            "session_id": session_id,
+                                            "actual_prompt_tokens": actual_prompt_tokens,
+                                            "estimate_gap": rec["estimate_gap"],
+                                        },
+                                        ensure_ascii=False,
+                                    )
+                                    + "\n"
+                                )
                         except Exception as exc:
                             logger.debug(
                                 "token attribution backfill ledger write failed (non-fatal): %s",
@@ -307,8 +315,13 @@ class ContextAttributor:
                 key = (c.get("kind"), c.get("name"))
                 slot = agg.setdefault(
                     key,
-                    {"kind": c.get("kind"), "name": c.get("name"), "source": c.get("source"),
-                     "tokens_total": 0, "times_seen": 0},
+                    {
+                        "kind": c.get("kind"),
+                        "name": c.get("name"),
+                        "source": c.get("source"),
+                        "tokens_total": 0,
+                        "times_seen": 0,
+                    },
                 )
                 slot["tokens_total"] += c.get("tokens", 0)
                 slot["times_seen"] += 1

@@ -18,11 +18,10 @@ Auto-actions:
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
-import logging
-
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -50,6 +49,7 @@ class AttackType(StrEnum):
 @dataclass
 class ThreatEvent:
     """A single detected threat."""
+
     threat_id: str
     attack_type: AttackType
     threat_level: ThreatLevel
@@ -79,6 +79,7 @@ class ThreatEvent:
 @dataclass
 class IPSuspicion:
     """Tracks suspicion level for a single IP."""
+
     ip: str
     threat_count: int = 0
     threat_types: set = field(default_factory=set)
@@ -174,13 +175,13 @@ class IntrusionDetector:
     ]
 
     # ── Thresholds ──────────────────────────────────────────────────
-    AUTO_BLOCK_THRESHOLD = 5          # threats before auto-block
-    AUTO_BLOCK_DURATION = 3600        # 1 hour
-    BRUTE_FORCE_WINDOW = 300          # 5 min window
-    BRUTE_FORCE_THRESHOLD = 10        # failed logins before alert
-    RATE_WINDOW = 60                  # 1 min window
-    RATE_THRESHOLD = 200              # requests per minute = anomaly
-    MAX_THREAT_HISTORY = 10000        # keep last N threats
+    AUTO_BLOCK_THRESHOLD = 5  # threats before auto-block
+    AUTO_BLOCK_DURATION = 3600  # 1 hour
+    BRUTE_FORCE_WINDOW = 300  # 5 min window
+    BRUTE_FORCE_THRESHOLD = 10  # failed logins before alert
+    RATE_WINDOW = 60  # 1 min window
+    RATE_THRESHOLD = 200  # requests per minute = anomaly
+    MAX_THREAT_HISTORY = 10000  # keep last N threats
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -226,11 +227,17 @@ class IntrusionDetector:
             sus = self._ip_suspicion.get(ip)
             if sus and sus.blocked:
                 if time.time() - sus.blocked_at < self.AUTO_BLOCK_DURATION:
-                    return [self._make_threat(
-                        ip, path, method,
-                        AttackType.RATE_ANOMALY, ThreatLevel.CRITICAL,
-                        f"Request from blocked IP {ip}", blocked=True,
-                    )]
+                    return [
+                        self._make_threat(
+                            ip,
+                            path,
+                            method,
+                            AttackType.RATE_ANOMALY,
+                            ThreatLevel.CRITICAL,
+                            f"Request from blocked IP {ip}",
+                            blocked=True,
+                        )
+                    ]
                 else:
                     sus.blocked = False
 
@@ -238,6 +245,7 @@ class IntrusionDetector:
         # Mask API keys in body before pattern matching — keys can contain 0x, --, /* etc.
         # that falsely trigger SQL injection / hex encoding patterns.
         import json as _json
+
         try:
             _parsed = _json.loads(body)
             if isinstance(_parsed, dict):
@@ -251,62 +259,104 @@ class IntrusionDetector:
 
         for pattern, desc in self.SQLI_PATTERNS:
             if re.search(pattern, combined):
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.SQL_INJECTION, ThreatLevel.CRITICAL,
-                    desc, matched_pattern=pattern,
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.SQL_INJECTION,
+                        ThreatLevel.CRITICAL,
+                        desc,
+                        matched_pattern=pattern,
+                    )
+                )
 
         for pattern, desc in self.XSS_PATTERNS:
             if re.search(pattern, combined):
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.XSS, ThreatLevel.HIGH,
-                    desc, matched_pattern=pattern,
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.XSS,
+                        ThreatLevel.HIGH,
+                        desc,
+                        matched_pattern=pattern,
+                    )
+                )
 
         for pattern, desc in self.TRAVERSAL_PATTERNS:
             if re.search(pattern, combined):
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.PATH_TRAVERSAL, ThreatLevel.HIGH,
-                    desc, matched_pattern=pattern,
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.PATH_TRAVERSAL,
+                        ThreatLevel.HIGH,
+                        desc,
+                        matched_pattern=pattern,
+                    )
+                )
 
         for pattern, desc in self.CMDI_PATTERNS:
             if re.search(pattern, combined):
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.COMMAND_INJECTION, ThreatLevel.CRITICAL,
-                    desc, matched_pattern=pattern,
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.COMMAND_INJECTION,
+                        ThreatLevel.CRITICAL,
+                        desc,
+                        matched_pattern=pattern,
+                    )
+                )
 
         for pattern, desc in self.SSRF_PATTERNS:
             if re.search(pattern, combined):
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.SSRF, ThreatLevel.HIGH,
-                    desc, matched_pattern=pattern,
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.SSRF,
+                        ThreatLevel.HIGH,
+                        desc,
+                        matched_pattern=pattern,
+                    )
+                )
 
         for pattern, desc in self.HEADER_INJECTION_PATTERNS:
             # Check in URL and header values
             header_str = " ".join(f"{k}: {v}" for k, v in headers.items())
             if re.search(pattern, f"{path} {header_str}"):
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.HEADER_INJECTION, ThreatLevel.MEDIUM,
-                    desc, matched_pattern=pattern,
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.HEADER_INJECTION,
+                        ThreatLevel.MEDIUM,
+                        desc,
+                        matched_pattern=pattern,
+                    )
+                )
 
         if user_agent:
             for pattern, desc in self.BOT_UA_PATTERNS:
                 if re.search(pattern, user_agent):
-                    threats.append(self._make_threat(
-                        ip, path, method,
-                        AttackType.BOT_DETECTED, ThreatLevel.MEDIUM,
-                        f"{desc}: {user_agent[:80]}", matched_pattern=pattern,
-                    ))
+                    threats.append(
+                        self._make_threat(
+                            ip,
+                            path,
+                            method,
+                            AttackType.BOT_DETECTED,
+                            ThreatLevel.MEDIUM,
+                            f"{desc}: {user_agent[:80]}",
+                            matched_pattern=pattern,
+                        )
+                    )
 
         # ── Rate anomaly detection ──────────────────────────────────
         now = time.time()
@@ -316,17 +366,23 @@ class IntrusionDetector:
             cutoff = now - self.RATE_WINDOW
             recent = sum(1 for t in self._request_counts[ip] if t > cutoff)
             if recent > self.RATE_THRESHOLD:
-                threats.append(self._make_threat(
-                    ip, path, method,
-                    AttackType.RATE_ANOMALY, ThreatLevel.HIGH,
-                    f"Rate anomaly: {recent} requests in {self.RATE_WINDOW}s (threshold: {self.RATE_THRESHOLD})",
-                ))
+                threats.append(
+                    self._make_threat(
+                        ip,
+                        path,
+                        method,
+                        AttackType.RATE_ANOMALY,
+                        ThreatLevel.HIGH,
+                        f"Rate anomaly: {recent} requests in {self.RATE_WINDOW}s (threshold: {self.RATE_THRESHOLD})",
+                    )
+                )
 
         # Debug: log detected threats
         if threats:
             logging.getLogger(__name__).debug(
                 "WAF threats: ip=%s path=%s threats=%s",
-                ip, path,
+                ip,
+                path,
                 [(t.attack_type.value, t.threat_level.value, str(t)[:50]) for t in threats],
             )
 
@@ -347,8 +403,11 @@ class IntrusionDetector:
                 recent_fails = sum(1 for t in self._login_attempts[ip] if t > cutoff)
                 if recent_fails >= self.BRUTE_FORCE_THRESHOLD:
                     threat = self._make_threat(
-                        ip, path, "POST",
-                        AttackType.BRUTE_FORCE, ThreatLevel.HIGH,
+                        ip,
+                        path,
+                        "POST",
+                        AttackType.BRUTE_FORCE,
+                        ThreatLevel.HIGH,
                         f"Brute force: {recent_fails} failed logins in {self.BRUTE_FORCE_WINDOW}s",
                     )
                     self._record_threats(ip, [threat])
@@ -383,15 +442,17 @@ class IntrusionDetector:
             result = []
             for ip, sus in self._ip_suspicion.items():
                 if sus.blocked and (time.time() - sus.blocked_at < self.AUTO_BLOCK_DURATION):
-                    result.append({
-                        "ip": ip,
-                        "threat_count": sus.threat_count,
-                        "threat_types": [t.value for t in sus.threat_types],
-                        "blocked_at": sus.blocked_at,
-                        "expires_at": sus.blocked_at + self.AUTO_BLOCK_DURATION,
-                        "first_seen": sus.first_seen,
-                        "last_seen": sus.last_seen,
-                    })
+                    result.append(
+                        {
+                            "ip": ip,
+                            "threat_count": sus.threat_count,
+                            "threat_types": [t.value for t in sus.threat_types],
+                            "blocked_at": sus.blocked_at,
+                            "expires_at": sus.blocked_at + self.AUTO_BLOCK_DURATION,
+                            "first_seen": sus.first_seen,
+                            "last_seen": sus.last_seen,
+                        }
+                    )
             return result
 
     def block_ip(self, ip: str, reason: str = "manual"):
@@ -413,12 +474,12 @@ class IntrusionDetector:
         """Get intrusion detection statistics."""
         with self._lock:
             active_blocks = sum(
-                1 for s in self._ip_suspicion.values()
+                1
+                for s in self._ip_suspicion.values()
                 if s.blocked and (time.time() - s.blocked_at < self.AUTO_BLOCK_DURATION)
             )
             suspicious_ips = sum(
-                1 for s in self._ip_suspicion.values()
-                if s.threat_count > 0 and not s.blocked
+                1 for s in self._ip_suspicion.values() if s.threat_count > 0 and not s.blocked
             )
             return {
                 "total_inspected": self._stats["total_inspected"],
@@ -450,6 +511,7 @@ class IntrusionDetector:
         blocked: bool = False,
     ) -> ThreatEvent:
         import uuid
+
         return ThreatEvent(
             threat_id=str(uuid.uuid4())[:8],
             attack_type=attack_type,

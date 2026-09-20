@@ -5,8 +5,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.will.engine import WorkflowEngine
 from src.will.dag_planner import DAGPlanner
+from src.will.engine import WorkflowEngine
 from src.will.models import (
     NodeType,
     TriggerType,
@@ -20,6 +20,7 @@ engine = WorkflowEngine()
 try:
     if not engine.list_workflows():
         from src.will.orchestration_seeder import seed_system_orchestrations
+
         _seed_result = seed_system_orchestrations(engine)
 except Exception:
     pass  # seed失败不阻塞服务启动
@@ -436,7 +437,7 @@ async def dag_status(plan_id: str):
                 "step_id": s.step_id,
                 "description": s.description,
                 "tool_name": s.tool_name,
-                "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
+                "status": s.status.value if hasattr(s.status, "value") else str(s.status),
                 "depends_on": s.depends_on,
                 "error": s.error,
             }
@@ -454,37 +455,50 @@ async def dag_stats():
 # ── P1 Goal自主目标循环（kilocode goal/runner.ts移植）──
 from src.will.goal_runner import (
     GoalCreate as _GoalCreate,
+)
+from src.will.goal_runner import (
     GoalReport as _GoalReport,
+)
+from src.will.goal_runner import (
     GoalState as _GoalState,
+)
+from src.will.goal_runner import (
     get_goal_runner,
 )
+
 
 class GoalCreateRequest(BaseModel):
     session_id: str = ""
     description: str
     max_loops: int = 50
 
+
 class GoalReportRequest(BaseModel):
     status: str  # "complete" | "blocked"
     reason: str = ""
+
 
 class GoalEventRequest(BaseModel):
     tool_name: str
     result: dict[str, Any] = Field(default_factory=dict)
     detail: str = ""
 
+
 @router.post("/goals")
 async def create_goal(req: GoalCreateRequest):
     """Create a new autonomous goal. Admission check applied."""
     runner = get_goal_runner()
-    goal = runner.create_goal(_GoalCreate(
-        session_id=req.session_id,
-        description=req.description,
-        max_loops=req.max_loops,
-    ))
+    goal = runner.create_goal(
+        _GoalCreate(
+            session_id=req.session_id,
+            description=req.description,
+            max_loops=req.max_loops,
+        )
+    )
     if not goal:
         raise HTTPException(409, "Admission denied — session already has active/blocked goal")
     return goal.model_dump()
+
 
 @router.get("/goals")
 async def list_goals(
@@ -499,6 +513,7 @@ async def list_goals(
     )
     return {"goals": [g.model_dump() for g in gs], "count": len(gs)}
 
+
 @router.get("/goals/{goal_id}")
 async def get_goal(goal_id: str):
     """Get goal details including event history."""
@@ -508,6 +523,7 @@ async def get_goal(goal_id: str):
         raise HTTPException(404, "Goal not found")
     return goal.model_dump()
 
+
 @router.delete("/goals/{goal_id}")
 async def delete_goal(goal_id: str):
     """Delete a goal."""
@@ -516,6 +532,7 @@ async def delete_goal(goal_id: str):
         raise HTTPException(404, "Goal not found")
     return {"status": "ok", "goal_id": goal_id}
 
+
 @router.post("/goals/{goal_id}/report")
 async def goal_report(goal_id: str, req: GoalReportRequest):
     """Agent self-report via goal_report protocol.
@@ -523,14 +540,17 @@ async def goal_report(goal_id: str, req: GoalReportRequest):
     注意：这是agent自报，不是独立验证。事件驱动计数决定是否真正COMPLETED。
     """
     runner = get_goal_runner()
-    goal = runner.goal_report(_GoalReport(
-        goal_id=goal_id,
-        status=req.status,
-        reason=req.reason,
-    ))
+    goal = runner.goal_report(
+        _GoalReport(
+            goal_id=goal_id,
+            status=req.status,
+            reason=req.reason,
+        )
+    )
     if not goal:
         raise HTTPException(404, "Goal not found")
     return goal.model_dump()
+
 
 @router.post("/goals/{goal_id}/events")
 async def record_goal_event(goal_id: str, req: GoalEventRequest):
@@ -542,6 +562,7 @@ async def record_goal_event(goal_id: str, req: GoalEventRequest):
     goal = runner.get_goal(goal_id)
     return {"event": event.model_dump(), "goal_state": goal.state.value if goal else "unknown"}
 
+
 @router.post("/goals/{goal_id}/pause")
 async def pause_goal(goal_id: str, reason: str = Query(default="User paused")):
     """Pause an active goal (user preemption). Not terminal."""
@@ -550,6 +571,7 @@ async def pause_goal(goal_id: str, reason: str = Query(default="User paused")):
     if not goal:
         raise HTTPException(404, "Goal not found")
     return goal.model_dump()
+
 
 @router.post("/goals/{goal_id}/resume")
 async def resume_goal(goal_id: str, reason: str = Query(default="User resumed")):
@@ -560,6 +582,7 @@ async def resume_goal(goal_id: str, reason: str = Query(default="User resumed"))
         raise HTTPException(400, "Cannot resume — goal not found, terminal, or BLOCKED")
     return goal.model_dump()
 
+
 @router.post("/goals/{goal_id}/cancel")
 async def cancel_goal(goal_id: str, reason: str = Query(default="User cancelled")):
     """Cancel a goal → FAILED terminal state."""
@@ -569,11 +592,13 @@ async def cancel_goal(goal_id: str, reason: str = Query(default="User cancelled"
         raise HTTPException(404, "Goal not found")
     return goal.model_dump()
 
+
 @router.get("/goals-stats")
 async def goal_stats():
     """Goal runner statistics for monitoring panel."""
     runner = get_goal_runner()
     return runner.get_stats()
+
 
 # ── P0-8 后台作业队列（agno job_queue模式）──
 
@@ -581,8 +606,8 @@ async def goal_stats():
 # 加载时完成（幂等，GET端点零副作用）；worker池懒启动——首次/jobs/submit
 # 时start()（agno "executor上线才claim任务"）。此前c1feb676只落了队列基础
 # 设施+API，register_handler/start调用点为0，提交的作业永远pending。
-from src.will.job_queue import get_job_queue as _get_job_queue
 from src.will.job_handlers import register_default_handlers as _register_job_handlers
+from src.will.job_queue import get_job_queue as _get_job_queue
 
 _register_job_handlers(_get_job_queue())
 
@@ -599,6 +624,7 @@ class JobSubmitRequest(BaseModel):
 async def seed_system():
     """P3-③: 注册真实系统编排为可视化workflow（幂等）"""
     from src.will.orchestration_seeder import seed_system_orchestrations
+
     result = seed_system_orchestrations(engine)
     return {"ok": not result["errors"], **result}
 
@@ -621,7 +647,10 @@ async def job_submit(req: JobSubmitRequest):
     await jq.start()
     existing = jq.find_by_idempotency_key(req.idempotency_key)
     job_id = await jq.submit(
-        req.name, req.params, req.timeout_s, req.max_retries,
+        req.name,
+        req.params,
+        req.timeout_s,
+        req.max_retries,
         idempotency_key=req.idempotency_key,
     )
     return {
@@ -636,6 +665,7 @@ async def job_submit(req: JobSubmitRequest):
 async def job_purge(status: str = "", name_pattern: str = "", older_than_days: int = 0):
     """清理作业历史 — 集成修复#4: test_job/stress_test等测试噪声积压清理。"""
     from src.will.job_queue import get_job_queue
+
     purged = get_job_queue().purge(
         status=status, name_pattern=name_pattern, older_than_days=older_than_days
     )
@@ -646,6 +676,7 @@ async def job_purge(status: str = "", name_pattern: str = "", older_than_days: i
 async def job_status(job_id: str):
     """Get job status and result."""
     from src.will.job_queue import get_job_queue
+
     result = get_job_queue().get(job_id)
     if not result:
         raise HTTPException(404, "Job not found")
@@ -656,6 +687,7 @@ async def job_status(job_id: str):
 async def job_list(status: str = "", limit: int = 50):
     """List jobs, optionally filtered by status."""
     from src.will.job_queue import get_job_queue
+
     return {"jobs": get_job_queue().list_jobs(status, limit)}
 
 
@@ -663,5 +695,6 @@ async def job_list(status: str = "", limit: int = 50):
 async def job_cancel(job_id: str):
     """Cancel a pending job."""
     from src.will.job_queue import get_job_queue
+
     ok = get_job_queue().cancel(job_id)
     return {"cancelled": ok}

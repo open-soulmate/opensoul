@@ -221,22 +221,24 @@ class TestTrajectoryStore:
     @pytest.mark.asyncio
     async def test_list_sessions(self):
         pool = _mock_db_pool()
-        pool.fetch = AsyncMock(return_value=[
-            {
-                "id": "s1",
-                "agent_id": "a1",
-                "task_description": "task1",
-                "status": "completed",
-                "forked_from": None,
-                "fork_point_event_id": None,
-                "total_events": 10,
-                "total_tokens": 500,
-                "total_duration_ms": 1000.0,
-                "tags_json": '["tag1"]',
-                "created_at": "2024-01-01T00:00:00Z",
-                "ended_at": "2024-01-01T01:00:00Z",
-            }
-        ])
+        pool.fetch = AsyncMock(
+            return_value=[
+                {
+                    "id": "s1",
+                    "agent_id": "a1",
+                    "task_description": "task1",
+                    "status": "completed",
+                    "forked_from": None,
+                    "fork_point_event_id": None,
+                    "total_events": 10,
+                    "total_tokens": 500,
+                    "total_duration_ms": 1000.0,
+                    "tags_json": '["tag1"]',
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "ended_at": "2024-01-01T01:00:00Z",
+                }
+            ]
+        )
         with patch("src.trajectory.store.db_pool", pool):
             sessions = await self.store.list_sessions(limit=10)
             assert len(sessions) == 1
@@ -262,21 +264,23 @@ class TestTrajectoryStore:
     @pytest.mark.asyncio
     async def test_get_events(self):
         pool = _mock_db_pool()
-        pool.fetch = AsyncMock(return_value=[
-            {
-                "id": "e1",
-                "session_id": "s1",
-                "parent_event_id": None,
-                "event_type": "user_input",
-                "agent_id": "a1",
-                "content": "Hello",
-                "metadata_json": "{}",
-                "token_usage": 10,
-                "duration_ms": 5.0,
-                "status": "ok",
-                "created_at": "2024-01-01T00:00:00Z",
-            }
-        ])
+        pool.fetch = AsyncMock(
+            return_value=[
+                {
+                    "id": "e1",
+                    "session_id": "s1",
+                    "parent_event_id": None,
+                    "event_type": "user_input",
+                    "agent_id": "a1",
+                    "content": "Hello",
+                    "metadata_json": "{}",
+                    "token_usage": 10,
+                    "duration_ms": 5.0,
+                    "status": "ok",
+                    "created_at": "2024-01-01T00:00:00Z",
+                }
+            ]
+        )
         with patch("src.trajectory.store.db_pool", pool):
             events = await self.store.get_events("s1")
             assert len(events) == 1
@@ -293,20 +297,22 @@ class TestTrajectoryStore:
     @pytest.mark.asyncio
     async def test_get_session(self):
         pool = _mock_db_pool()
-        pool.fetchrow = AsyncMock(return_value={
-            "id": "s1",
-            "agent_id": "a1",
-            "task_description": "task",
-            "status": "running",
-            "forked_from": None,
-            "fork_point_event_id": None,
-            "total_events": 0,
-            "total_tokens": 0,
-            "total_duration_ms": 0,
-            "tags_json": "[]",
-            "created_at": "2024-01-01T00:00:00Z",
-            "ended_at": None,
-        })
+        pool.fetchrow = AsyncMock(
+            return_value={
+                "id": "s1",
+                "agent_id": "a1",
+                "task_description": "task",
+                "status": "running",
+                "forked_from": None,
+                "fork_point_event_id": None,
+                "total_events": 0,
+                "total_tokens": 0,
+                "total_duration_ms": 0,
+                "tags_json": "[]",
+                "created_at": "2024-01-01T00:00:00Z",
+                "ended_at": None,
+            }
+        )
         with patch("src.trajectory.store.db_pool", pool):
             session = await self.store.get_session("s1")
             assert session is not None

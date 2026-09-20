@@ -85,7 +85,9 @@ class PreferenceLearner:
                 content = match.group(1).strip()
                 if len(content) > 2:
                     pref = self._upsert(
-                        category="communication" if "用" in content or "prefer" in content.lower() else "general",
+                        category="communication"
+                        if "用" in content or "prefer" in content.lower()
+                        else "general",
                         key=self._extract_key(content),
                         value=content,
                         confidence=0.9 if source == "explicit" else 0.3,
@@ -98,7 +100,12 @@ class PreferenceLearner:
         # Inference patterns
         inference_patterns = [
             (r"(?:简短|简洁|short|concise|brief)", "communication", "response_style", "concise"),
-            (r"(?:详细|详细点|detailed|thorough|comprehensive)", "communication", "response_style", "detailed"),
+            (
+                r"(?:详细|详细点|detailed|thorough|comprehensive)",
+                "communication",
+                "response_style",
+                "detailed",
+            ),
             (r"(?:中文|Chinese)", "communication", "language", "zh-CN"),
             (r"(?:英文|English)", "communication", "language", "en-US"),
             (r"(?:代码|code|编程|programming)", "technical", "domain", "coding"),
@@ -132,7 +139,7 @@ class PreferenceLearner:
         confidence: float,
         source: str,
         evidence: list[str],
-    ) -> Optional[LearnedPreference]:
+    ) -> LearnedPreference | None:
         pref_id = f"pref_{hashlib.sha256(f'{category}:{key}'.encode()).hexdigest()[:12]}"
 
         with sqlite3.connect(self.db_path) as conn:
@@ -152,26 +159,52 @@ class PreferenceLearner:
                     """UPDATE learned_preferences SET
                        value = ?, confidence = ?, source = ?, evidence = ?, updated_at = ?
                        WHERE category = ? AND key = ?""",
-                    (value, new_conf, source, json.dumps(all_evidence, ensure_ascii=False),
-                     time.time(), category, key),
+                    (
+                        value,
+                        new_conf,
+                        source,
+                        json.dumps(all_evidence, ensure_ascii=False),
+                        time.time(),
+                        category,
+                        key,
+                    ),
                 )
                 conn.commit()
                 return LearnedPreference(
-                    pref_id=pref_id, category=category, key=key, value=value,
-                    confidence=new_conf, source=source, evidence=all_evidence,
+                    pref_id=pref_id,
+                    category=category,
+                    key=key,
+                    value=value,
+                    confidence=new_conf,
+                    source=source,
+                    evidence=all_evidence,
                 )
             else:
                 conn.execute(
                     """INSERT INTO learned_preferences
                        (pref_id, category, key, value, confidence, source, evidence, created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (pref_id, category, key, value, confidence, source,
-                     json.dumps(evidence, ensure_ascii=False), time.time(), time.time()),
+                    (
+                        pref_id,
+                        category,
+                        key,
+                        value,
+                        confidence,
+                        source,
+                        json.dumps(evidence, ensure_ascii=False),
+                        time.time(),
+                        time.time(),
+                    ),
                 )
                 conn.commit()
                 return LearnedPreference(
-                    pref_id=pref_id, category=category, key=key, value=value,
-                    confidence=confidence, source=source, evidence=evidence,
+                    pref_id=pref_id,
+                    category=category,
+                    key=key,
+                    value=value,
+                    confidence=confidence,
+                    source=source,
+                    evidence=evidence,
                 )
 
     def get_preferences(self, category: str = "", min_confidence: float = 0.3) -> list[dict]:

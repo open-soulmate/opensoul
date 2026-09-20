@@ -1,6 +1,7 @@
 """
 OpenSoul 认知层数据模型 — Intent, Risk, Decision, Verification, TaskContext
 """
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Optional
@@ -35,22 +36,22 @@ class Decision:
     risk: RiskAssessment
     edit_mode: Literal["patch", "full", "stepwise"]
     execute_mode: Literal["auto", "confirm_required", "deny"]
-    confirm_prompt: Optional[str] = None
+    confirm_prompt: str | None = None
 
 
 @dataclass
 class CheckItem:
     name: str
     passed: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
 class Verification:
     success: bool
     checks: list[CheckItem]
-    error: Optional[str] = None
-    fix: Optional[str] = None
+    error: str | None = None
+    fix: str | None = None
 
 
 @dataclass
@@ -74,11 +75,11 @@ class ImpactAnalysis:
 class TaskContext:
     task_id: str = ""
     user_input: str = ""
-    intent: Optional[Intent] = None
-    risk: Optional[RiskAssessment] = None
-    decision: Optional[Decision] = None
-    tool_result: Optional[dict] = None
-    verification: Optional[Verification] = None
+    intent: Intent | None = None
+    risk: RiskAssessment | None = None
+    decision: Decision | None = None
+    tool_result: dict | None = None
+    verification: Verification | None = None
     history: list[dict] = field(default_factory=list)
 
 
@@ -87,8 +88,8 @@ class Experience:
     action: str
     intent_summary: str
     outcome: Literal["success", "failure", "partial"]
-    error: Optional[str] = None
-    fix: Optional[str] = None
+    error: str | None = None
+    fix: str | None = None
     timestamp: datetime = field(default_factory=datetime.now)
     relevance_score: float = 1.0
 

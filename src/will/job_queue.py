@@ -18,17 +18,19 @@
     差异在此注明，不假装有分布式租约）
 - list_jobs/get/get_stats以SQLite为真源：重启后monitoring面板仍可见历史
 """
+
 import asyncio
 import json
+import logging
 import sqlite3
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
-import logging
 logger = logging.getLogger("opensoul.job_queue")
 
 
@@ -131,7 +133,7 @@ class JobQueue:
         """注册作业处理器"""
         self._handlers[name] = handler
 
-    def find_by_idempotency_key(self, idempotency_key: str) -> Optional[str]:
+    def find_by_idempotency_key(self, idempotency_key: str) -> str | None:
         """按幂等键查pending/running作业id（API层duplicate回执用，agno §5.2）"""
         if not idempotency_key:
             return None
@@ -227,9 +229,14 @@ class JobQueue:
         self._workers.clear()
         logger.info("JobQueue stopped")
 
-    async def submit(self, name: str, params: dict | None = None,
-                     timeout_s: int = 300, max_retries: int = 2,
-                     idempotency_key: str = "") -> str:
+    async def submit(
+        self,
+        name: str,
+        params: dict | None = None,
+        timeout_s: int = 300,
+        max_retries: int = 2,
+        idempotency_key: str = "",
+    ) -> str:
         """提交后台作业，立即返回job_id。
 
         idempotency_key（agno §5.2）：同key已有pending/running作业时返回既有job_id，
@@ -242,7 +249,9 @@ class JobQueue:
                     (idempotency_key,),
                 ).fetchone()
             if existing:
-                logger.info(f"Job submit deduped by idempotency_key={idempotency_key} -> {existing['id']}")
+                logger.info(
+                    f"Job submit deduped by idempotency_key={idempotency_key} -> {existing['id']}"
+                )
                 return existing["id"]
         job_id = f"job_{uuid.uuid4().hex[:12]}"
         job = Job(
@@ -258,7 +267,7 @@ class JobQueue:
         logger.info(f"Job submitted: {job_id} ({name})")
         return job_id
 
-    def get(self, job_id: str) -> Optional[dict]:
+    def get(self, job_id: str) -> dict | None:
         """查询作业状态"""
         job = self._jobs.get(job_id)
         if job:
@@ -303,8 +312,7 @@ class JobQueue:
             return True
         return False
 
-    def purge(self, status: str = "", name_pattern: str = "",
-              older_than_days: int = 0) -> int:
+    def purge(self, status: str = "", name_pattern: str = "", older_than_days: int = 0) -> int:
         """清理作业历史 — 集成修复#4: 测试噪声积压(test_job failed×20等)。"""
         where: list[str] = []
         params: list = []
@@ -349,7 +357,7 @@ class JobQueue:
         while self._running:
             try:
                 job_id = await asyncio.wait_for(self._queue.get(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except asyncio.CancelledError:
                 break
@@ -375,7 +383,7 @@ class JobQueue:
                 result = await asyncio.wait_for(handler(**job.params), timeout=job.timeout_s)
                 job.status = JobStatus.COMPLETED
                 job.result = result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 job.status = JobStatus.TIMEOUT
                 job.error = f"Job timed out after {job.timeout_s}s"
                 if job.retries < job.max_retries:
@@ -398,30 +406,45 @@ class JobQueue:
 
             job.finished_at = time.time()
             self._persist(job)
-            logger.info(f"[{worker_name}] Job {job_id} ({job.name}): {job.status} in {job.duration_s}s")
+            logger.info(
+                f"[{worker_name}] Job {job_id} ({job.name}): {job.status} in {job.duration_s}s"
+            )
 
     def _persist(self, job: Job, idempotency_key: str = ""):
         """持久化作业状态到SQLite"""
         try:
             with self._conn() as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO jobs 
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO jobs
                     (id, name, status, params, result, error, created_at, started_at, finished_at, timeout_s, retries, max_retries, idempotency_key)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT idempotency_key FROM jobs WHERE id = ?), ''))
-                """, (
-                    job.id, job.name, str(job.status),
-                    json.dumps(job.params, ensure_ascii=False),
-                    json.dumps(job.result, ensure_ascii=False, default=str) if job.result is not None else None,
-                    job.error, job.created_at, job.started_at, job.finished_at,
-                    job.timeout_s, job.retries, job.max_retries,
-                    idempotency_key or None, job.id,
-                ))
+                """,
+                    (
+                        job.id,
+                        job.name,
+                        str(job.status),
+                        json.dumps(job.params, ensure_ascii=False),
+                        json.dumps(job.result, ensure_ascii=False, default=str)
+                        if job.result is not None
+                        else None,
+                        job.error,
+                        job.created_at,
+                        job.started_at,
+                        job.finished_at,
+                        job.timeout_s,
+                        job.retries,
+                        job.max_retries,
+                        idempotency_key or None,
+                        job.id,
+                    ),
+                )
         except Exception as e:
             logger.error(f"Failed to persist job {job.id}: {e}")
 
 
 # ── 全局单例 ──
-_job_queue: Optional[JobQueue] = None
+_job_queue: JobQueue | None = None
 
 
 def get_job_queue() -> JobQueue:

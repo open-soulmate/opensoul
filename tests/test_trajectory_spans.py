@@ -176,7 +176,9 @@ async def test_add_and_get_scores(tmp_path):
     async with temp_store(tmp_path) as store:
         session = await store.create_session()
         ev = await _mk_event(store, session.id)
-        s1 = TrajectoryScore(session_id=session.id, name="correctness", value=8.0, source="llm_judge")
+        s1 = TrajectoryScore(
+            session_id=session.id, name="correctness", value=8.0, source="llm_judge"
+        )
         s2 = TrajectoryScore(
             session_id=session.id,
             trace_id=ev.id,
@@ -231,9 +233,7 @@ async def test_score_summary_aggregation(tmp_path):
         session = await store.create_session()
         for value, source in [(7.0, "llm_judge"), (9.0, "human"), (8.0, "api")]:
             await store.add_score(
-                TrajectoryScore(
-                    session_id=session.id, name="quality", value=value, source=source
-                )
+                TrajectoryScore(session_id=session.id, name="quality", value=value, source=source)
             )
         await store.add_score(
             TrajectoryScore(session_id=session.id, name="latency", value=1200.0, source="api")

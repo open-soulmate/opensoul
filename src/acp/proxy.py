@@ -82,7 +82,7 @@ class ACPProcess:
                     return result
                 print("ACP: events not captured (buffering), using hermes -z", flush=True)
             except (BrokenPipeError, OSError) as e:
-                print(f"ACP: pipe error {e}, restarting (attempt {attempt+1})", flush=True)
+                print(f"ACP: pipe error {e}, restarting (attempt {attempt + 1})", flush=True)
                 logger.warning(f"ACP pipe error: {e}, restarting")
                 if attempt == 0:
                     await self._restart()
@@ -131,14 +131,12 @@ class ACPProcess:
                 if text:
                     parts.append({"type": "text", "text": text})
                 b64 = image_data.split(",")[-1] if "," in image_data else image_data
-                parts.append(
-                    {"type": "image", "data": b64, "mimeType": mime_type}
-                )
+                parts.append({"type": "image", "data": b64, "mimeType": mime_type})
                 result = await self._prompt_parts(parts, sid)
                 if result.get("response_text"):
                     return result
             except (BrokenPipeError, OSError) as e:
-                print(f"ACP: image pipe error {e}, restarting (attempt {attempt+1})", flush=True)
+                print(f"ACP: image pipe error {e}, restarting (attempt {attempt + 1})", flush=True)
                 logger.warning(f"ACP image pipe error: {e}, restarting")
                 if attempt == 0:
                     await self._restart()
@@ -162,7 +160,9 @@ class ACPProcess:
         finally:
             # Clean up temp file after a delay (hermes needs time to read it)
             if tmp_path:
-                asyncio.get_event_loop().call_later(300, lambda: os.unlink(tmp_path) if os.path.exists(tmp_path) else None)
+                asyncio.get_event_loop().call_later(
+                    300, lambda: os.unlink(tmp_path) if os.path.exists(tmp_path) else None
+                )
 
     async def list_sessions(self) -> list[dict]:
         if not self.is_running or not self._initialized:

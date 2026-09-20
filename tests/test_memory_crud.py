@@ -10,6 +10,7 @@ Covers:
 - get_audit_stats() aggregation
 - FTS index sync on update/delete
 """
+
 import json
 import os
 import tempfile
@@ -24,12 +25,11 @@ class TestMemoryCRUDAndAudit(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp()
         self._db_path = os.path.join(self._tmpdir, "test_ltm.db")
         # gatekeeper关闭：本套件专注CRUD/审计语义，含故意重复内容（consolidate用例）
-        self.store = LongTermMemoryStore(
-            db_path=self._db_path, gatekeeper_enabled=False
-        )
+        self.store = LongTermMemoryStore(db_path=self._db_path, gatekeeper_enabled=False)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     # ── store() writes ADD audit ────────────────────────────

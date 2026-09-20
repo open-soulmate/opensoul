@@ -16,9 +16,12 @@ class TestScanTextEndpoint:
 
     def test_scan_returns_200_and_findings(self, client):
         """Scanning text with a known secret returns 200 + finding with position."""
-        resp = client.post("/api/immune/scan-text", json={
-            "text": "My API key is sk-abc123def456ghi789jkl012mno345pqr678stu90v for testing"
-        })
+        resp = client.post(
+            "/api/immune/scan-text",
+            json={
+                "text": "My API key is sk-abc123def456ghi789jkl012mno345pqr678stu90v for testing"
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "findings" in data
@@ -29,9 +32,9 @@ class TestScanTextEndpoint:
     def test_findings_have_position_not_matched_text(self, client):
         """Findings contain start/end positions but NEVER the matched secret."""
         secret = "sk-" + "a" * 48
-        resp = client.post("/api/immune/scan-text", json={
-            "text": f"Here is a key: {secret} in the text"
-        })
+        resp = client.post(
+            "/api/immune/scan-text", json={"text": f"Here is a key: {secret} in the text"}
+        )
         data = resp.json()
         assert data["total_findings"] >= 1
         for f in data["findings"]:
@@ -63,9 +66,10 @@ class TestScanTextEndpoint:
 
     def test_clean_text_returns_zero_findings(self, client):
         """Text with no secrets returns empty findings list."""
-        resp = client.post("/api/immune/scan-text", json={
-            "text": "This is a perfectly normal sentence about climbing mountains."
-        })
+        resp = client.post(
+            "/api/immune/scan-text",
+            json={"text": "This is a perfectly normal sentence about climbing mountains."},
+        )
         data = resp.json()
         assert data["total_findings"] == 0
         assert data["findings"] == []
@@ -91,15 +95,11 @@ class TestScanTextEndpoint:
         assert len(pat_findings) >= 1
         f = pat_findings[0]
         # Verify position matches the actual secret location
-        assert text[f["start"]:f["end"]] == secret
+        assert text[f["start"] : f["end"]] == secret
 
     def test_multiple_secret_types_detected(self, client):
         """Multiple different secret types in one text are all detected."""
-        text = (
-            "Contact: 13812345678, "
-            "AWS: AKIA" + "IOSFODNN7" + "EXAMPLE, "
-            "OpenAI: sk-" + "T" * 48
-        )
+        text = "Contact: 13812345678, AWS: AKIA" + "IOSFODNN7" + "EXAMPLE, OpenAI: sk-" + "T" * 48
         resp = client.post("/api/immune/scan-text", json={"text": text, "min_risk": "low"})
         data = resp.json()
         types = [f["type"] for f in data["findings"]]
@@ -120,9 +120,9 @@ class TestScanTextEndpoint:
         # Get current audit stats
         before = client.get("/api/immune/audit/stats").json()
         # Scan text with a critical-risk secret
-        client.post("/api/immune/scan-text", json={
-            "text": "password=SuperSecret123 and ghs_" + "a" * 36
-        })
+        client.post(
+            "/api/immune/scan-text", json={"text": "password=SuperSecret123 and ghs_" + "a" * 36}
+        )
         after = client.get("/api/immune/audit/stats").json()
         # Audit count should not change from scan-text calls
         # (moderate would log, scan-text should not)
@@ -132,7 +132,9 @@ class TestScanTextEndpoint:
     def test_overlapping_patterns_merged(self, client):
         """An OpenAI key also matching generic sk- pattern is merged into one finding."""
         secret = "sk-" + "y" * 48
-        resp = client.post("/api/immune/scan-text", json={"text": f"Key: {secret}", "min_risk": "low"})
+        resp = client.post(
+            "/api/immune/scan-text", json={"text": f"Key: {secret}", "min_risk": "low"}
+        )
         data = resp.json()
         # Should be one merged finding, not two overlapping ones
         sk_findings = [f for f in data["findings"] if "sk" in f["type"] or "api_key" in f["type"]]

@@ -28,23 +28,26 @@ logger = logging.getLogger(__name__)
 
 class GoalState(StrEnum):
     """五状态机（kilocode goal/state.ts）"""
-    ACTIVE = "active"       # 正在自主循环
-    PAUSED = "paused"       # 暂停（用户抢占/失败即停/手动暂停）— 非终态
-    BLOCKED = "blocked"     # 被阻塞（agent自报blocked，需人工介入）
-    COMPLETED = "completed" # 已完成（事件驱动判定或goal_report自报）
-    FAILED = "failed"       # 已失败（超时/重试耗尽）
+
+    ACTIVE = "active"  # 正在自主循环
+    PAUSED = "paused"  # 暂停（用户抢占/失败即停/手动暂停）— 非终态
+    BLOCKED = "blocked"  # 被阻塞（agent自报blocked，需人工介入）
+    COMPLETED = "completed"  # 已完成（事件驱动判定或goal_report自报）
+    FAILED = "failed"  # 已失败（超时/重试耗尽）
 
 
 class GoalOutcome(StrEnum):
     """事件驱动结果四态（kilocode outcome() 100行）"""
-    SUCCESS = "success"     # 工具执行成功
-    FAILED = "failed"       # 工具执行失败（bash exit≠0等）
-    BLOCKED = "blocked"     # 被阻塞（plan_exit、权限拒绝等）
-    NONE = "none"           # 不计分（question/suggest/todo等）
+
+    SUCCESS = "success"  # 工具执行成功
+    FAILED = "failed"  # 工具执行失败（bash exit≠0等）
+    BLOCKED = "blocked"  # 被阻塞（plan_exit、权限拒绝等）
+    NONE = "none"  # 不计分（question/suggest/todo等）
 
 
 class GoalEvent(BaseModel):
     """Goal循环中的一次事件记录"""
+
     event_id: str = Field(default_factory=lambda: uuid4().hex[:12])
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     tool_name: str = ""
@@ -55,9 +58,10 @@ class GoalEvent(BaseModel):
 
 class Goal(BaseModel):
     """一个自主目标"""
+
     goal_id: str = Field(default_factory=lambda: f"goal_{uuid4().hex[:12]}")
-    session_id: str = ""      # 所属会话
-    description: str = ""     # 目标描述
+    session_id: str = ""  # 所属会话
+    description: str = ""  # 目标描述
     state: GoalState = GoalState.ACTIVE
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -70,7 +74,7 @@ class Goal(BaseModel):
     blocked_count: int = 0
     none_count: int = 0
     # goal_report自报
-    report_status: str | None = None   # "complete" | "blocked" | None
+    report_status: str | None = None  # "complete" | "blocked" | None
     report_reason: str | None = None
     # 状态变更原因（审计）
     state_history: list[dict[str, str]] = Field(default_factory=list)
@@ -107,6 +111,7 @@ class GoalCreate(BaseModel):
 
 class GoalReport(BaseModel):
     """goal_report自报协议 — "这是你的报告，不是独立验证"（kilocode tool.ts）"""
+
     goal_id: str
     status: str  # "complete" | "blocked"
     reason: str = ""
@@ -148,9 +153,7 @@ class GoalRunner:
     def _save(self) -> None:
         try:
             self._PERSIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-            data = {
-                "goals": [g.model_dump(mode="json") for g in self._goals.values()]
-            }
+            data = {"goals": [g.model_dump(mode="json") for g in self._goals.values()]}
             self._PERSIST_PATH.write_text(
                 json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
             )
@@ -171,7 +174,10 @@ class GoalRunner:
                 if goal.state == GoalState.ACTIVE:
                     return False, f"Session {session_id} already has an active goal: {goal.goal_id}"
                 if goal.state == GoalState.BLOCKED:
-                    return False, f"Session {session_id} has a blocked goal: {goal.goal_id}. Resolve it first."
+                    return (
+                        False,
+                        f"Session {session_id} has a blocked goal: {goal.goal_id}. Resolve it first.",
+                    )
         return True, "ok"
 
     # ── CRUD ────────────────────────────────────────────────────
@@ -189,11 +195,13 @@ class GoalRunner:
             max_loops=req.max_loops,
             started_at=datetime.now(UTC).isoformat(),
         )
-        goal.state_history.append({
-            "state": GoalState.ACTIVE.value,
-            "reason": "Goal created and started",
-            "timestamp": goal.created_at,
-        })
+        goal.state_history.append(
+            {
+                "state": GoalState.ACTIVE.value,
+                "reason": "Goal created and started",
+                "timestamp": goal.created_at,
+            }
+        )
         self._goals[goal.goal_id] = goal
         self._save()
         logger.info("Goal %s created: %s", goal.goal_id, goal.description)
@@ -318,8 +326,9 @@ class GoalRunner:
             recent = scored_events[-3:]
             if all(e.outcome == GoalOutcome.FAILED for e in recent):
                 self._transition(
-                    goal, GoalState.PAUSED,
-                    "Fail-stop: 3 consecutive failures. Review before resuming."
+                    goal,
+                    GoalState.PAUSED,
+                    "Fail-stop: 3 consecutive failures. Review before resuming.",
                 )
                 return
 
@@ -331,8 +340,9 @@ class GoalRunner:
         # Rule 4: 零进展检查 — 20个事件后无任何success → PAUSED
         if len(scored_events) >= 20 and goal.success_count == 0:
             self._transition(
-                goal, GoalState.PAUSED,
-                "No progress: 20+ events with zero success. Review before resuming."
+                goal,
+                GoalState.PAUSED,
+                "No progress: 20+ events with zero success. Review before resuming.",
             )
             return
 
@@ -358,21 +368,16 @@ class GoalRunner:
         if req.status == "complete":
             # 事件驱动验证：success > failure 或者至少有success事件
             if goal.success_count > goal.failure_count or goal.success_count > 0:
-                self._transition(
-                    goal, GoalState.COMPLETED,
-                    f"Goal report: complete — {req.reason}"
-                )
+                self._transition(goal, GoalState.COMPLETED, f"Goal report: complete — {req.reason}")
             else:
                 # 自报完成但事件不支持 → 降级为PAUSED
                 self._transition(
-                    goal, GoalState.PAUSED,
-                    f"Self-reported complete but no success evidence. Review: {req.reason}"
+                    goal,
+                    GoalState.PAUSED,
+                    f"Self-reported complete but no success evidence. Review: {req.reason}",
                 )
         elif req.status == "blocked":
-            self._transition(
-                goal, GoalState.BLOCKED,
-                f"Goal report: blocked — {req.reason}"
-            )
+            self._transition(goal, GoalState.BLOCKED, f"Goal report: blocked — {req.reason}")
 
         self._save()
         return goal
@@ -440,12 +445,14 @@ class GoalRunner:
         goal.updated_at = datetime.now(UTC).isoformat()
         if new_state in (GoalState.COMPLETED, GoalState.FAILED, GoalState.BLOCKED):
             goal.completed_at = goal.updated_at
-        goal.state_history.append({
-            "from": old_state.value,
-            "state": new_state.value,
-            "reason": reason,
-            "timestamp": goal.updated_at,
-        })
+        goal.state_history.append(
+            {
+                "from": old_state.value,
+                "state": new_state.value,
+                "reason": reason,
+                "timestamp": goal.updated_at,
+            }
+        )
         logger.info("Goal %s: %s → %s (%s)", goal.goal_id, old_state.value, new_state.value, reason)
 
     # ── Stats ───────────────────────────────────────────────────
@@ -479,6 +486,7 @@ class GoalRunner:
 # ── Module-level singleton ──────────────────────────────────────
 
 _runner: GoalRunner | None = None
+
 
 def get_goal_runner() -> GoalRunner:
     global _runner

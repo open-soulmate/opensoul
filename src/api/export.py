@@ -128,9 +128,7 @@ async def export_markdown(user_id: UUID):
     return PlainTextResponse(
         content=md_content,
         media_type="text/markdown",
-        headers={
-            "Content-Disposition": f'attachment; filename="knowledge-export-{user_id}.md"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="knowledge-export-{user_id}.md"'},
     )
 
 
@@ -210,7 +208,5 @@ async def export_csv(
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{table}-export-{user_id}.csv"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{table}-export-{user_id}.csv"'},
     )

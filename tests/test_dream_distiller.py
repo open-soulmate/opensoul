@@ -7,6 +7,7 @@ Covers:
 - Dream stats
 - Anti-hallucination prompt content
 """
+
 import asyncio
 import json
 import os
@@ -18,10 +19,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.hippo.dream_distiller import (
+    DREAM_SYSTEM_PROMPT,
     DreamAction,
     DreamDistiller,
     DreamResult,
-    DREAM_SYSTEM_PROMPT,
     _parse_dream_actions,
 )
 from src.hippo.long_term_memory import LongTermMemoryStore
@@ -88,10 +89,17 @@ class TestMemoryEchoBlocker:
 
     def test_dream_force_bypasses_echo(self):
         """force=True bypasses the echo blocker for manual triggers."""
-        response = json.dumps([
-            {"action": "ADD", "content": "test memory", "memory_type": "semantic",
-             "importance": 0.7, "reason": "new info"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "test memory",
+                    "memory_type": "semantic",
+                    "importance": 0.7,
+                    "reason": "new info",
+                }
+            ]
+        )
         distiller, store = _make_distiller(llm_response=response)
         distiller.mark_recall(["ltm_xyz"])
 
@@ -108,10 +116,18 @@ class TestDreamActionParsing:
     """Parse CowAgent 5-step distillation output into DreamAction list."""
 
     def test_parse_add_action(self):
-        response = json.dumps([
-            {"action": "ADD", "content": "User prefers Python", "memory_type": "semantic",
-             "importance": 0.8, "tags": ["preference"], "reason": "stated in conversation"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "User prefers Python",
+                    "memory_type": "semantic",
+                    "importance": 0.8,
+                    "tags": ["preference"],
+                    "reason": "stated in conversation",
+                }
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].action == "ADD"
@@ -120,10 +136,16 @@ class TestDreamActionParsing:
         assert actions[0].memory_type == "semantic"
 
     def test_parse_update_action(self):
-        response = json.dumps([
-            {"action": "UPDATE", "memory_id": "ltm_abc", "new_content": "Updated info",
-             "reason": "conflict resolution"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "UPDATE",
+                    "memory_id": "ltm_abc",
+                    "new_content": "Updated info",
+                    "reason": "conflict resolution",
+                }
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].action == "UPDATE"
@@ -131,18 +153,18 @@ class TestDreamActionParsing:
         assert actions[0].new_content == "Updated info"
 
     def test_parse_delete_action(self):
-        response = json.dumps([
-            {"action": "DELETE", "memory_id": "ltm_xyz", "reason": "outdated info"}
-        ])
+        response = json.dumps(
+            [{"action": "DELETE", "memory_id": "ltm_xyz", "reason": "outdated info"}]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].action == "DELETE"
         assert actions[0].memory_id == "ltm_xyz"
 
     def test_parse_skip_action(self):
-        response = json.dumps([
-            {"action": "SKIP", "memory_id": "ltm_keep", "reason": "still valid"}
-        ])
+        response = json.dumps(
+            [{"action": "SKIP", "memory_id": "ltm_keep", "reason": "still valid"}]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].action == "SKIP"
@@ -156,55 +178,67 @@ class TestDreamActionParsing:
 
     def test_parse_bare_json_in_text(self):
         """Handle JSON array embedded in prose."""
-        response = 'Here are the operations:\n[{"action": "ADD", "content": "info", "reason": "y"}]\nDone.'
+        response = (
+            'Here are the operations:\n[{"action": "ADD", "content": "info", "reason": "y"}]\nDone.'
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
 
     def test_parse_rejects_invalid_actions(self):
         """Non-standard action types are filtered out."""
-        response = json.dumps([
-            {"action": "INVALID", "content": "x"},
-            {"action": "ADD", "content": "valid", "reason": "ok"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "INVALID", "content": "x"},
+                {"action": "ADD", "content": "valid", "reason": "ok"},
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].content == "valid"
 
     def test_parse_add_requires_content(self):
         """ADD without content is rejected."""
-        response = json.dumps([
-            {"action": "ADD", "content": "", "reason": "empty"},
-            {"action": "ADD", "content": "has content", "reason": "ok"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "ADD", "content": "", "reason": "empty"},
+                {"action": "ADD", "content": "has content", "reason": "ok"},
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].content == "has content"
 
     def test_parse_update_requires_memory_id(self):
         """UPDATE without memory_id is rejected."""
-        response = json.dumps([
-            {"action": "UPDATE", "new_content": "x", "reason": "no id"},
-            {"action": "UPDATE", "memory_id": "ltm_1", "new_content": "y", "reason": "ok"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "UPDATE", "new_content": "x", "reason": "no id"},
+                {"action": "UPDATE", "memory_id": "ltm_1", "new_content": "y", "reason": "ok"},
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].memory_id == "ltm_1"
 
     def test_parse_importance_clamped(self):
         """Importance values are clamped to [0.0, 1.0]."""
-        response = json.dumps([
-            {"action": "ADD", "content": "high", "importance": 5.0, "reason": "x"},
-            {"action": "ADD", "content": "low", "importance": -1.0, "reason": "y"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "ADD", "content": "high", "importance": 5.0, "reason": "x"},
+                {"action": "ADD", "content": "low", "importance": -1.0, "reason": "y"},
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 2
         assert all(0.0 <= a.importance <= 1.0 for a in actions)
 
     def test_parse_invalid_memory_type_defaults(self):
         """Invalid memory_type falls back to 'semantic'."""
-        response = json.dumps([
-            {"action": "ADD", "content": "x", "memory_type": "invalid_type", "reason": "z"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "ADD", "content": "x", "memory_type": "invalid_type", "reason": "z"},
+            ]
+        )
         actions = _parse_dream_actions(response)
         assert len(actions) == 1
         assert actions[0].memory_type == "semantic"
@@ -241,11 +275,18 @@ class TestDreamPipeline:
 
     def test_dream_add_memory(self):
         """ADD action creates a new memory in the store."""
-        response = json.dumps([
-            {"action": "ADD", "content": "User works on OpenMate project",
-             "memory_type": "episodic", "importance": 0.7,
-             "tags": ["project"], "reason": "mentioned in conversation"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "User works on OpenMate project",
+                    "memory_type": "episodic",
+                    "importance": 0.7,
+                    "tags": ["project"],
+                    "reason": "mentioned in conversation",
+                }
+            ]
+        )
         distiller, store = _make_distiller(llm_response=response)
         messages = [{"role": "user", "content": "I'm working on OpenMate"}]
         result = asyncio.run(distiller.dream(messages=messages))
@@ -263,10 +304,16 @@ class TestDreamPipeline:
         store = _make_store()
         mem = store.store(content="Old info", memory_type="semantic", importance=0.5)
 
-        response = json.dumps([
-            {"action": "UPDATE", "memory_id": mem.memory_id,
-             "new_content": "New info from conversation", "reason": "updated"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "UPDATE",
+                    "memory_id": mem.memory_id,
+                    "new_content": "New info from conversation",
+                    "reason": "updated",
+                }
+            ]
+        )
         distiller, _ = _make_distiller(store=store, llm_response=response)
         messages = [{"role": "user", "content": "Actually it's new info"}]
         result = asyncio.run(distiller.dream(messages=messages))
@@ -281,9 +328,9 @@ class TestDreamPipeline:
         store = _make_store()
         mem = store.store(content="Outdated info", importance=0.3)
 
-        response = json.dumps([
-            {"action": "DELETE", "memory_id": mem.memory_id, "reason": "outdated"}
-        ])
+        response = json.dumps(
+            [{"action": "DELETE", "memory_id": mem.memory_id, "reason": "outdated"}]
+        )
         distiller, _ = _make_distiller(store=store, llm_response=response)
         messages = [{"role": "user", "content": "That info is wrong"}]
         result = asyncio.run(distiller.dream(messages=messages))
@@ -298,11 +345,13 @@ class TestDreamPipeline:
         store = _make_store()
         existing = store.store(content="Will be deleted", importance=0.2)
 
-        response = json.dumps([
-            {"action": "ADD", "content": "New fact", "importance": 0.6, "reason": "extracted"},
-            {"action": "DELETE", "memory_id": existing.memory_id, "reason": "outdated"},
-            {"action": "SKIP", "memory_id": "ltm_nonexistent", "reason": "keep"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "ADD", "content": "New fact", "importance": 0.6, "reason": "extracted"},
+                {"action": "DELETE", "memory_id": existing.memory_id, "reason": "outdated"},
+                {"action": "SKIP", "memory_id": "ltm_nonexistent", "reason": "keep"},
+            ]
+        )
         distiller, _ = _make_distiller(store=store, llm_response=response)
         messages = [{"role": "user", "content": "test"}]
         result = asyncio.run(distiller.dream(messages=messages))
@@ -314,6 +363,7 @@ class TestDreamPipeline:
 
     def test_dream_llm_error(self):
         """LLM call failure is captured, not raised."""
+
         async def failing_llm(sp, up):
             raise RuntimeError("provider down")
 
@@ -327,10 +377,16 @@ class TestDreamPipeline:
 
     def test_dream_audit_trail(self):
         """Dream ADD operations write audit records (mem0 pattern)."""
-        response = json.dumps([
-            {"action": "ADD", "content": "Audited memory", "importance": 0.6,
-             "reason": "distilled from conversation"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "Audited memory",
+                    "importance": 0.6,
+                    "reason": "distilled from conversation",
+                }
+            ]
+        )
         distiller, store = _make_distiller(llm_response=response)
         messages = [{"role": "user", "content": "test"}]
         asyncio.run(distiller.dream(messages=messages))
@@ -355,9 +411,11 @@ class TestDreamStats:
         assert stats["echo_blocked_count"] == 0
 
     def test_stats_after_dream(self):
-        response = json.dumps([
-            {"action": "ADD", "content": "test", "importance": 0.5, "reason": "x"},
-        ])
+        response = json.dumps(
+            [
+                {"action": "ADD", "content": "test", "importance": 0.5, "reason": "x"},
+            ]
+        )
         distiller, _ = _make_distiller(llm_response=response)
         messages = [{"role": "user", "content": "hello"}]
         asyncio.run(distiller.dream(messages=messages))
@@ -415,10 +473,16 @@ class TestDreamLifecycle:
     """Full lifecycle: recall → echo block → reset → dream succeeds."""
 
     def test_full_lifecycle(self):
-        response = json.dumps([
-            {"action": "ADD", "content": "Lifecycle test memory",
-             "importance": 0.6, "reason": "test"}
-        ])
+        response = json.dumps(
+            [
+                {
+                    "action": "ADD",
+                    "content": "Lifecycle test memory",
+                    "importance": 0.6,
+                    "reason": "test",
+                }
+            ]
+        )
         distiller, store = _make_distiller(llm_response=response)
         messages = [{"role": "user", "content": "hello"}]
 

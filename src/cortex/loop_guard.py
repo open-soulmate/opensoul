@@ -32,6 +32,7 @@ Core design (consolidated from 5 independent sources):
    further alarms for a configurable period (default 60s) to avoid
    overwhelming the caller with repeated alerts.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -65,6 +66,7 @@ SHINGLE_SIZE = 3
 
 class LoopSeverity(StrEnum):
     """Progressive escalation levels (DeerFlow pattern)."""
+
     OK = "ok"
     WARN = "warn"
     INTERVENE = "intervene"
@@ -73,6 +75,7 @@ class LoopSeverity(StrEnum):
 
 class DetectionType(StrEnum):
     """What triggered the loop detection."""
+
     NONE = "none"
     TOOL_REPETITION = "tool_repetition"
     TEXT_SIMILARITY = "text_similarity"
@@ -83,6 +86,7 @@ class DetectionType(StrEnum):
 @dataclass
 class ToolCallSignature:
     """Identifies a tool call by name + args hash (ag2/DeerFlow pattern)."""
+
     name: str
     args_hash: str
 
@@ -109,6 +113,7 @@ class ToolCallSignature:
 @dataclass
 class LoopDetectionResult:
     """Result of a loop detection check."""
+
     severity: LoopSeverity = LoopSeverity.OK
     detection_type: DetectionType = DetectionType.NONE
     message: str = ""
@@ -123,6 +128,7 @@ class LoopDetectionResult:
 @dataclass
 class _ToolCallRecord:
     """Internal record of a tool call occurrence."""
+
     signature: ToolCallSignature
     timestamp: float
 
@@ -320,7 +326,8 @@ class LoopGuard:
                 self._flagged_repeat.add(sig_str)
                 logger.warning(
                     "Loop warning: tool '%s' repeated %d times consecutively",
-                    sig.name, consecutive,
+                    sig.name,
+                    consecutive,
                 )
                 return LoopDetectionResult(
                     severity=LoopSeverity.WARN,
@@ -376,9 +383,7 @@ class LoopGuard:
 
         return LoopDetectionResult()
 
-    def _check_text_similarity(
-        self, text_response: str | None, now: float
-    ) -> LoopDetectionResult:
+    def _check_text_similarity(self, text_response: str | None, now: float) -> LoopDetectionResult:
         """Detect repetitive text output via 3-gram Jaccard similarity (anything-llm).
 
         Compares current text against recent texts. If similarity exceeds
@@ -459,7 +464,7 @@ class LoopGuard:
         text_lower = text.lower().strip()
         if len(text_lower) < n:
             return set()
-        return {text_lower[i:i + n] for i in range(len(text_lower) - n + 1)}
+        return {text_lower[i : i + n] for i in range(len(text_lower) - n + 1)}
 
     @staticmethod
     def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:

@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 from src.heredity.evolution_loop import (
-    EvolutionEngine,
     PROPOSAL_KINDS,
+    EvolutionEngine,
     is_protected_target,
 )
 
@@ -89,8 +89,11 @@ class TestDeclare:
         """CowAgent硬护栏：目标在保护区的提案自动拒绝，审批也不可放行。"""
         result = _declare(
             engine,
-            proposed_change={"target": "/opt/opensoul/src/immune/moderator.py",
-                             "anchor_old": "a", "anchor_new": "b"},
+            proposed_change={
+                "target": "/opt/opensoul/src/immune/moderator.py",
+                "anchor_old": "a",
+                "anchor_new": "b",
+            },
         )
         assert result["status"] == "rejected"
         assert result["reject_reason"].startswith("protected_target")
@@ -211,9 +214,11 @@ class TestApply:
     def test_apply_anchor_not_found_leaves_file_untouched(self, engine, target_file):
         p = _declare(
             engine,
-            proposed_change={"target": str(target_file),
-                             "anchor_old": "nonexistent-anchor",
-                             "anchor_new": "new"},
+            proposed_change={
+                "target": str(target_file),
+                "anchor_old": "nonexistent-anchor",
+                "anchor_new": "new",
+            },
         )
         engine.review(p["proposal_id"], "approve", reviewer="user")
         result = engine.apply(p["proposal_id"], actor="user")
@@ -224,8 +229,11 @@ class TestApply:
     def test_apply_target_missing(self, engine, tmp_path):
         p = _declare(
             engine,
-            proposed_change={"target": str(tmp_path / "nope.md"),
-                             "anchor_old": "a", "anchor_new": "b"},
+            proposed_change={
+                "target": str(tmp_path / "nope.md"),
+                "anchor_old": "a",
+                "anchor_new": "b",
+            },
         )
         engine.review(p["proposal_id"], "approve", reviewer="user")
         result = engine.apply(p["proposal_id"], actor="user")
@@ -250,7 +258,11 @@ class TestApply:
         p = _declare(
             engine,
             title="tamper attempt",
-            proposed_change={"target": str(protected), "anchor_old": "keep me", "anchor_new": "pwned"},
+            proposed_change={
+                "target": str(protected),
+                "anchor_old": "keep me",
+                "anchor_new": "pwned",
+            },
         )
         # 绕过declare的护栏？不行——declare已拒绝；直接篡改DB模拟攻击
         assert p["status"] == "rejected"
@@ -285,9 +297,11 @@ class TestRollback:
         original = target_file.read_text(encoding="utf-8")
         p = _declare(
             engine,
-            proposed_change={"target": str(target_file),
-                             "anchor_old": "model = fast",
-                             "anchor_new": "model = careful"},
+            proposed_change={
+                "target": str(target_file),
+                "anchor_old": "model = fast",
+                "anchor_new": "model = careful",
+            },
         )
         engine.review(p["proposal_id"], "approve", reviewer="user")
         engine.apply(p["proposal_id"], actor="user")
@@ -309,9 +323,11 @@ class TestRollback:
     def test_rollback_missing_snapshot_raises(self, engine, target_file):
         p = _declare(
             engine,
-            proposed_change={"target": str(target_file),
-                             "anchor_old": "model = fast",
-                             "anchor_new": "model = careful"},
+            proposed_change={
+                "target": str(target_file),
+                "anchor_old": "model = fast",
+                "anchor_new": "model = careful",
+            },
         )
         engine.review(p["proposal_id"], "approve", reviewer="user")
         engine.apply(p["proposal_id"], actor="user")
@@ -385,8 +401,10 @@ class TestTriggers:
 
     def test_auto_propose_creates_pending_proposal(self, engine):
         result = engine.evaluate_triggers(
-            idle_seconds=300.0, context_pressure=0.95,
-            budget_remaining=1.0, auto_propose=True,
+            idle_seconds=300.0,
+            context_pressure=0.95,
+            budget_remaining=1.0,
+            auto_propose=True,
         )
         assert result["fired"] == ["idle_evolution"]
         proposals = result["auto_proposals"]
@@ -460,6 +478,7 @@ class TestEvolutionAPI:
 
     def test_declare_review_flow_via_api(self, client):
         import uuid as _uuid
+
         title = f"api flow test {_uuid.uuid4().hex[:8]}"
         resp = self._declare_via_api(client, title)
         assert resp.status_code == 200
@@ -491,6 +510,7 @@ class TestEvolutionAPI:
 
     def test_apply_and_rollback_via_api(self, client, tmp_path):
         import uuid as _uuid
+
         target = tmp_path / f"api_target_{_uuid.uuid4().hex[:6]}.md"
         target.write_text("param = old_value\n", encoding="utf-8")
         resp = client.post(

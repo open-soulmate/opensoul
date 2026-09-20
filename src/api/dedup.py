@@ -6,6 +6,8 @@ from src.api.user import get_current_user
 from src.services.deduplication import deduplicate_knowledge, get_duplicate_report
 
 router = APIRouter()
+
+
 @router.get("/health")
 async def dedup_health():
     """Dedup health check."""

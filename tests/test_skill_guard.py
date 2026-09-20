@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """P1 skill供应链防御测试 — kilocode discovery.ts移植（origin钉死+staging+原子swap+路径逃逸）"""
 
 import os
@@ -42,15 +41,30 @@ def make_skill_dir(base, name, description="test skill", with_md=True):
 
 # ── 名称安全段校验（kilocode name安全段） ──────────────────────
 
+
 class TestValidateSkillName:
     def test_valid_names(self):
         for name in ["abc", "my-skill", "skill_v2", "a.b.c", "X123"]:
             assert validate_skill_name(name) == name
 
-    @pytest.mark.parametrize("bad", [
-        "", None, "..", "../evil", "..\\evil", "foo/bar", "foo\\bar",
-        ".hidden", ".staging-x-1", "./x", "a/../../b", "skill name", "技能",
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "",
+            None,
+            "..",
+            "../evil",
+            "..\\evil",
+            "foo/bar",
+            "foo\\bar",
+            ".hidden",
+            ".staging-x-1",
+            "./x",
+            "a/../../b",
+            "skill name",
+            "技能",
+        ],
+    )
     def test_rejected_names(self, bad):
         with pytest.raises(SkillSecurityError) as e:
             validate_skill_name(bad)
@@ -64,11 +78,24 @@ class TestValidateRegistryName:
         assert validate_registry_name("@scope/pkg") == "pkg"
         assert validate_registry_name("a/b/c") == "c"
 
-    @pytest.mark.parametrize("bad", [
-        "../evil-name", "org/../evil", "org/..", "org/.hidden",
-        "org\\evil", "..", "./x", "org/repo name", "", "org/",
-        "org/bad$name", "技能/pkg", "org/@pkg",
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "../evil-name",
+            "org/../evil",
+            "org/..",
+            "org/.hidden",
+            "org\\evil",
+            "..",
+            "./x",
+            "org/repo name",
+            "",
+            "org/",
+            "org/bad$name",
+            "技能/pkg",
+            "org/@pkg",
+        ],
+    )
     def test_registry_traversal_rejected(self, bad):
         with pytest.raises(SkillSecurityError) as e:
             validate_registry_name(bad)
@@ -76,6 +103,7 @@ class TestValidateRegistryName:
 
 
 # ── 路径逃逸contained（kilocode contained()） ──────────────────
+
 
 class TestContained:
     def test_inside(self, tmp_path):
@@ -102,6 +130,7 @@ class TestContained:
 
 
 # ── origin钉死（kilocode origin钉死在index源） ────────────────
+
 
 class TestOriginPinning:
     def test_fresh_install_no_origin_ok(self, tmp_path):
@@ -130,8 +159,12 @@ class TestOriginPinning:
 
     def test_origin_manifest_roundtrip(self, tmp_path):
         skill = make_skill_dir(tmp_path, "manifest-skill")
-        write_origin(skill, OriginRecord(origin="https://src", source_type="git",
-                                         version="1.2.0", content_hash="abc123"))
+        write_origin(
+            skill,
+            OriginRecord(
+                origin="https://src", source_type="git", version="1.2.0", content_hash="abc123"
+            ),
+        )
         assert (skill / ORIGIN_MANIFEST).exists()
         rec = read_origin(skill)
         assert rec.origin == "https://src"
@@ -140,6 +173,7 @@ class TestOriginPinning:
 
 
 # ── 安全计划（kilocode逐skill安全计划） ───────────────────────
+
 
 class TestSecurityPlan:
     def test_valid_staging_passes(self, tmp_path):
@@ -157,7 +191,7 @@ class TestSecurityPlan:
         assert any(e["type"] == "invalid_skill" for e in check.errors)
 
     def test_unsafe_name_fails(self, tmp_path):
-        bad = tmp_path / ".."
+        tmp_path / ".."
         check = security_plan(tmp_path / "nonexistent-but-safe-name")
         assert check.ok is False  # 不存在的目录名合法但无SKILL.md
 
@@ -173,7 +207,7 @@ class TestSecurityPlan:
     def test_origin_mismatch_fails_plan(self, tmp_path):
         live = make_skill_dir(tmp_path, "live-skill")
         write_origin(live, OriginRecord(origin="https://trusted", source_type="registry"))
-        staging = make_skill_dir(tmp_path / "staging-area" if False else tmp_path, "live-skill-x")
+        make_skill_dir(tmp_path / "staging-area" if False else tmp_path, "live-skill-x")
         # staging与live同名场景在promote管线测，这里直接验证plan的origin比对路径
         staging2 = tmp_path / "staging2" / "live-skill"
         staging2.parent.mkdir()
@@ -184,6 +218,7 @@ class TestSecurityPlan:
 
 
 # ── 原子swap（backup→失败回滚） ────────────────────────────────
+
 
 class TestAtomicSwap:
     def test_fresh_promote(self, tmp_path):
@@ -226,7 +261,7 @@ class TestAtomicSwap:
     def test_failure_rolls_back_live(self, tmp_path, monkeypatch):
         live_parent = tmp_path / "live"
         live_parent.mkdir()
-        old = make_skill_dir(live_parent, "rollback-skill", description="original")
+        make_skill_dir(live_parent, "rollback-skill", description="original")
         staging_container = make_staging_dir(live_parent, "rollback-skill")
         staging = make_skill_dir(staging_container, "rollback-skill", description="new-broken")
 
@@ -273,6 +308,7 @@ class TestAtomicSwap:
 
 # ── 安全删除（fix路径穿越） ────────────────────────────────────
 
+
 class TestSafeRemove:
     def test_remove_existing(self, tmp_path):
         make_skill_dir(tmp_path, "doomed-skill")
@@ -298,14 +334,16 @@ class TestSafeRemove:
 
 # ── 完整晋升管线（staging→校验→origin→原子swap） ──────────────
 
+
 class TestPromoteStaging:
     def test_happy_path_writes_origin(self, tmp_path):
         live_parent = tmp_path / "shared"
         live_parent.mkdir()
         container = make_staging_dir(live_parent, "promoted-skill")
         payload = make_skill_dir(container, "promoted-skill")
-        result = promote_staging(payload, live_parent,
-                                 origin="https://github.com/org/promoted-skill", source_type="git")
+        result = promote_staging(
+            payload, live_parent, origin="https://github.com/org/promoted-skill", source_type="git"
+        )
         assert result.success is True
         assert result.swapped is True
         dest = live_parent / "promoted-skill"
@@ -334,12 +372,16 @@ class TestPromoteStaging:
         # v1 from trusted origin
         c1 = make_staging_dir(live_parent, "hot-skill")
         p1 = make_skill_dir(c1, "hot-skill", description="v1")
-        r1 = promote_staging(p1, live_parent, origin="https://trusted/registry", source_type="registry")
+        r1 = promote_staging(
+            p1, live_parent, origin="https://trusted/registry", source_type="registry"
+        )
         assert r1.success is True
         # v2 from a DIFFERENT origin → 供应链攻击信号 → fail-closed
         c2 = make_staging_dir(live_parent, "hot-skill")
         p2 = make_skill_dir(c2, "hot-skill", description="v2 backdoored")
-        r2 = promote_staging(p2, live_parent, origin="https://evil.example.com/hot-skill", source_type="git")
+        r2 = promote_staging(
+            p2, live_parent, origin="https://evil.example.com/hot-skill", source_type="git"
+        )
         assert r2.success is False
         assert any(e["type"] == "origin_mismatch" for e in r2.errors)
         content = (live_parent / "hot-skill" / "SKILL.md").read_text(encoding="utf-8")
@@ -350,7 +392,9 @@ class TestPromoteStaging:
         live_parent.mkdir()
         c1 = make_staging_dir(live_parent, "legit-skill")
         p1 = make_skill_dir(c1, "legit-skill", description="v1")
-        assert promote_staging(p1, live_parent, origin="https://trusted/src", source_type="git").success
+        assert promote_staging(
+            p1, live_parent, origin="https://trusted/src", source_type="git"
+        ).success
         c2 = make_staging_dir(live_parent, "legit-skill")
         p2 = make_skill_dir(c2, "legit-skill", description="v2 upgraded legit")
         r2 = promote_staging(p2, live_parent, origin="https://trusted/src", source_type="git")
@@ -364,7 +408,9 @@ class TestPromoteStaging:
         live_parent.mkdir()
         c = make_staging_dir(live_parent, "audited-skill")
         p = make_skill_dir(c, "audited-skill")
-        promote_staging(p, live_parent, origin="https://src/audited", source_type="git", version="3.0")
+        promote_staging(
+            p, live_parent, origin="https://src/audited", source_type="git", version="3.0"
+        )
         make_skill_dir(live_parent, "legacy-no-origin")  # 防御接线前的老安装
         items = inventory(live_parent)
         by_name = {i["skill"]: i for i in items}

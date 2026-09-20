@@ -3,11 +3,12 @@
 消息源：opensoul.db agent_messages（acp-proxy ws_chat写入的真实聊天记录，
 与session_importer P3-②同源）。每24h一轮，idempotency_key按日期防重复提交。
 """
+
 import asyncio
 import logging
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("will.dream-producer")
@@ -52,16 +53,14 @@ async def run_daily_dream() -> str | None:
     jq = get_job_queue()
     register_default_handlers(jq)
     await jq.start()
-    date_key = datetime.now(timezone.utc).strftime("%Y%m%d")
+    date_key = datetime.now(UTC).strftime("%Y%m%d")
     job_id = await jq.submit(
         "hippo.dream",
         {"messages": messages, "force": False},
         timeout_s=600,
         idempotency_key=f"daily-dream-{date_key}",
     )
-    logger.info(
-        "dream-producer: 提交daily dream job=%s messages=%d条", job_id, len(messages)
-    )
+    logger.info("dream-producer: 提交daily dream job=%s messages=%d条", job_id, len(messages))
     return job_id
 
 

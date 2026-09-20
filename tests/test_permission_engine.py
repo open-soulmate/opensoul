@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """P0-3 工具级权限引擎测试 — AgentScope语义 + kilocode分层 + mem0审计"""
 
 import asyncio
@@ -24,13 +23,20 @@ def make_engine(mode=PermissionMode.DEFAULT, rules=None, wds=None):
 
 
 def rule(tool, content, behavior, source="user", hard=False, risk="medium", seq=1):
-    return PermissionRule(tool_name=tool, rule_content=content,
-                          behavior=PermissionBehavior(behavior),
-                          source=source, hard=hard, risk=risk, seq=seq,
-                          rule_id=f"test-{source}-{seq}")
+    return PermissionRule(
+        tool_name=tool,
+        rule_content=content,
+        behavior=PermissionBehavior(behavior),
+        source=source,
+        hard=hard,
+        risk=risk,
+        seq=seq,
+        rule_id=f"test-{source}-{seq}",
+    )
 
 
 # ── 规则匹配（AgentScope match_rule分流） ──────────────────────
+
 
 class TestMatchRule:
     def test_empty_content_matches_all(self):
@@ -61,6 +67,7 @@ class TestMatchRule:
 
 # ── 模式语义（AgentScope逐模式评估顺序） ───────────────────────
 
+
 class TestModes:
     def test_explore_allows_read_only(self):
         d = make_engine(PermissionMode.EXPLORE).check("read_file", {"path": "a.py"})
@@ -72,8 +79,7 @@ class TestModes:
 
     def test_explore_allow_rule_cannot_grant_write(self):
         """EXPLORE的只读保证不可被用户allow规则授予（AgentScope注释规格）"""
-        e = make_engine(PermissionMode.EXPLORE, rules=[
-            rule("write_file", "", "allow", seq=1)])
+        e = make_engine(PermissionMode.EXPLORE, rules=[rule("write_file", "", "allow", seq=1)])
         d = e.check("write_file", {"path": "a.py"})
         assert d.behavior == PermissionBehavior.DENY
 
@@ -92,8 +98,9 @@ class TestModes:
         assert d.decision_id  # ASK决策必须有审计ID
 
     def test_default_allow_rule_grants(self):
-        e = make_engine(PermissionMode.DEFAULT, rules=[
-            rule("terminal", "python:*", "allow", seq=1)])
+        e = make_engine(
+            PermissionMode.DEFAULT, rules=[rule("terminal", "python:*", "allow", seq=1)]
+        )
         d = e.check("terminal", {"command": "python build.py"})
         assert d.behavior == PermissionBehavior.ALLOW
         assert d.rule_source == "user"
@@ -113,8 +120,7 @@ class TestModes:
         assert d.behavior == PermissionBehavior.ALLOW
 
     def test_bypass_still_honors_deny_rules(self):
-        e = make_engine(PermissionMode.BYPASS, rules=[
-            rule("terminal", "deploy:*", "deny", seq=1)])
+        e = make_engine(PermissionMode.BYPASS, rules=[rule("terminal", "deploy:*", "deny", seq=1)])
         d = e.check("terminal", {"command": "deploy prod"})
         assert d.behavior == PermissionBehavior.DENY
 
@@ -139,34 +145,47 @@ class TestModes:
 
 # ── kilocode分层：hard否决 + findLast + provenance ─────────────
 
+
 class TestLayering:
     def test_hard_deny_veto_in_bypass(self):
         """hard规则在BYPASS模式下依然否决（kilocode hardRuleset）"""
-        e = make_engine(PermissionMode.BYPASS, rules=[
-            rule("terminal", "rm -rf /", "deny", source="builtin", hard=True, seq=1)])
+        e = make_engine(
+            PermissionMode.BYPASS,
+            rules=[rule("terminal", "rm -rf /", "deny", source="builtin", hard=True, seq=1)],
+        )
         d = e.check("terminal", {"command": "rm -rf / --no-preserve-root"})
         assert d.behavior == PermissionBehavior.DENY
         assert "HARD" in d.message
 
     def test_deny_beats_allow(self):
-        e = make_engine(PermissionMode.DEFAULT, rules=[
-            rule("terminal", "deploy:*", "allow", seq=1),
-            rule("terminal", "deploy prod", "deny", seq=2)])
+        e = make_engine(
+            PermissionMode.DEFAULT,
+            rules=[
+                rule("terminal", "deploy:*", "allow", seq=1),
+                rule("terminal", "deploy prod", "deny", seq=2),
+            ],
+        )
         d = e.check("terminal", {"command": "deploy prod"})
         assert d.behavior == PermissionBehavior.DENY
 
     def test_session_allow_overrides_builtin_ask_findlast(self):
         """kilocode三层findLast：session层allow覆盖builtin层非hard ask"""
-        e = make_engine(PermissionMode.ACCEPT_EDITS, rules=[
-            rule("terminal", "curl ", "ask", source="builtin", seq=1),
-            rule("terminal", "curl:*", "allow", source="session", seq=2)])
+        e = make_engine(
+            PermissionMode.ACCEPT_EDITS,
+            rules=[
+                rule("terminal", "curl ", "ask", source="builtin", seq=1),
+                rule("terminal", "curl:*", "allow", source="session", seq=2),
+            ],
+        )
         d = e.check("terminal", {"command": "curl https://api.example.com"})
         assert d.behavior == PermissionBehavior.ALLOW
         assert d.rule_source == "session"
 
     def test_provenance_present(self):
-        e = make_engine(PermissionMode.ACCEPT_EDITS, rules=[
-            rule("terminal", "deploy:*", "deny", source="user", seq=1)])
+        e = make_engine(
+            PermissionMode.ACCEPT_EDITS,
+            rules=[rule("terminal", "deploy:*", "deny", source="user", seq=1)],
+        )
         d = e.check("terminal", {"command": "deploy staging"})
         assert d.rule_id
         assert d.rule_source == "user"
@@ -193,6 +212,7 @@ class TestLayering:
 
 # ── 建议生成（AgentScope _generate_suggestions） ────────────────
 
+
 class TestSuggestions:
     def test_shell_suggestion_prefix_wildcard(self):
         s = generate_suggestions("terminal", {"command": "npm run build"})
@@ -209,6 +229,7 @@ class TestSuggestions:
 
 
 # ── 持久化 + 审计（mem0审计表模式） ─────────────────────────────
+
 
 class TestStore:
     def test_seed_idempotent(self, tmp_path):
@@ -281,6 +302,7 @@ class TestStore:
 
 # ── Service端到端 ──────────────────────────────────────────────
 
+
 class TestService:
     def test_check_end_to_end_deny_with_provenance(self, tmp_path):
         svc = PermissionService(db_path=str(tmp_path / "s1.db"))
@@ -306,21 +328,31 @@ class TestService:
 
 # ── HTTP API（经FastAPI TestClient） ────────────────────────────
 
+
 class TestPermissionAPI:
     def test_check_endpoint_read_only(self, client):
-        resp = client.post("/api/immune/permission/check", json={
-            "tool_name": "read_file", "arguments": {"path": "src/main.py"},
-            "session_id": "t1", "working_dir": "/home/climbing",
-        })
+        resp = client.post(
+            "/api/immune/permission/check",
+            json={
+                "tool_name": "read_file",
+                "arguments": {"path": "src/main.py"},
+                "session_id": "t1",
+                "working_dir": "/home/climbing",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["behavior"] == "allow"
 
     def test_check_endpoint_hard_deny(self, client):
-        resp = client.post("/api/immune/permission/check", json={
-            "tool_name": "terminal", "arguments": {"command": "rm -rf /"},
-            "session_id": "t2",
-        })
+        resp = client.post(
+            "/api/immune/permission/check",
+            json={
+                "tool_name": "terminal",
+                "arguments": {"command": "rm -rf /"},
+                "session_id": "t2",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["behavior"] == "deny"
@@ -334,17 +366,25 @@ class TestPermissionAPI:
         assert any(r["behavior"] == "ask" for r in rules)
 
     def test_rule_add_and_delete(self, client):
-        resp = client.post("/api/immune/permission/rules", json={
-            "tool_name": "terminal", "rule_content": "pytest:*",
-            "behavior": "allow", "source": "session"})
+        resp = client.post(
+            "/api/immune/permission/rules",
+            json={
+                "tool_name": "terminal",
+                "rule_content": "pytest:*",
+                "behavior": "allow",
+                "source": "session",
+            },
+        )
         assert resp.status_code == 200
         rule_id = resp.json()["rule_id"]
         resp2 = client.delete(f"/api/immune/permission/rules/{rule_id}")
         assert resp2.status_code == 200
 
     def test_rule_invalid_behavior(self, client):
-        resp = client.post("/api/immune/permission/rules", json={
-            "tool_name": "terminal", "rule_content": "x", "behavior": "banana"})
+        resp = client.post(
+            "/api/immune/permission/rules",
+            json={"tool_name": "terminal", "rule_content": "x", "behavior": "banana"},
+        )
         assert resp.status_code == 400
 
     def test_mode_get_set_roundtrip(self, client):
@@ -353,8 +393,10 @@ class TestPermissionAPI:
         assert resp.status_code == 200
         assert client.get("/api/immune/permission/mode").json()["mode"] == "dont_ask"
         # DONT_ASK下敏感读取被转DENY
-        resp2 = client.post("/api/immune/permission/check", json={
-            "tool_name": "read_file", "arguments": {"path": "/home/u/.ssh/id_rsa"}})
+        resp2 = client.post(
+            "/api/immune/permission/check",
+            json={"tool_name": "read_file", "arguments": {"path": "/home/u/.ssh/id_rsa"}},
+        )
         assert resp2.json()["behavior"] == "deny"
         # 恢复原模式
         client.put("/api/immune/permission/mode", json={"mode": original})
@@ -365,15 +407,22 @@ class TestPermissionAPI:
 
     def test_audit_and_outcome_flow(self, client):
         # 触发一次ASK
-        r = client.post("/api/immune/permission/check", json={
-            "tool_name": "terminal", "arguments": {"command": "sudo systemctl status"},
-            "session_id": "api-test"})
+        r = client.post(
+            "/api/immune/permission/check",
+            json={
+                "tool_name": "terminal",
+                "arguments": {"command": "sudo systemctl status"},
+                "session_id": "api-test",
+            },
+        )
         assert r.json()["behavior"] == "ask"
         decision_id = r.json()["decision_id"]
         assert decision_id
         # 回写人工审批结果
-        r2 = client.post(f"/api/immune/permission/approvals/{decision_id}",
-                         json={"outcome": "approved", "comment": "运维巡检"})
+        r2 = client.post(
+            f"/api/immune/permission/approvals/{decision_id}",
+            json={"outcome": "approved", "comment": "运维巡检"},
+        )
         assert r2.status_code == 200
         # 审计查询可见
         r3 = client.get("/api/immune/permission/audit", params={"outcome": "approved"})
@@ -381,8 +430,9 @@ class TestPermissionAPI:
         ids = [e["decision_id"] for e in r3.json()["entries"]]
         assert decision_id in ids
         # 无效outcome拒绝
-        r4 = client.post(f"/api/immune/permission/approvals/{decision_id}",
-                         json={"outcome": "banana"})
+        r4 = client.post(
+            f"/api/immune/permission/approvals/{decision_id}", json={"outcome": "banana"}
+        )
         assert r4.status_code in (400, 404)
 
     def test_stats_endpoint(self, client):

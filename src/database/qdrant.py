@@ -45,7 +45,9 @@ class QdrantStore:
             self._connected = True
             return True
         except Exception as exc:
-            logger.warning("Qdrant unreachable at %s — vector search disabled: %s", settings.qdrant_url, exc)
+            logger.warning(
+                "Qdrant unreachable at %s — vector search disabled: %s", settings.qdrant_url, exc
+            )
             return False
 
     def ensure_collection(self):

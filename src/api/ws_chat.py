@@ -13,10 +13,13 @@ from src.api.user import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
 @router.get("/health")
 async def ws_chat_health():
     """WSChat health check."""
     return {"status": "ok", "component": "WSChat"}
+
 
 # CLI argument overrides — agents not listed here default to: binary -p "message"
 CLI_ARGS: dict[str, list[str]] = {
@@ -42,10 +45,8 @@ def _refresh_agent_list():
         return
     try:
         from src.api.agents import AGENT_REGISTRY
-        _available_agents = {
-            k: v for k, v in AGENT_REGISTRY.items()
-            if v.get("available")
-        }
+
+        _available_agents = {k: v for k, v in AGENT_REGISTRY.items() if v.get("available")}
         _agents_cache_ts = now
         logger.info(f"Agent list refreshed: {len(_available_agents)} available")
     except Exception as e:

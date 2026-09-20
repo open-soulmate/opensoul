@@ -28,6 +28,7 @@ TIMEOUT = 10  # seconds — every subprocess gets this ceiling
 
 # ── Display-server detection ─────────────────────────────────────────────────
 
+
 class DisplayServer(StrEnum):
     WAYLAND = "wayland"
     X11 = "x11"
@@ -51,6 +52,7 @@ def _has_cmd(name: str) -> bool:
 
 
 # ── Async subprocess helper ─────────────────────────────────────────────────
+
 
 async def _run(
     *args: str,
@@ -80,6 +82,7 @@ async def _run(
 
 # ── Request / Response models ────────────────────────────────────────────────
 
+
 class ScreenshotResponse(BaseModel):
     base64: str
     format: str = "png"
@@ -91,7 +94,7 @@ class ScreenshotResponse(BaseModel):
 class OCRRequest(BaseModel):
     base64: str | None = None  # if omitted, takes a fresh screenshot
     region: dict | None = None  # {"x": 0, "y": 0, "w": 100, "h": 100}
-    lang: str = "eng+chi_sim"      # tesseract language codes
+    lang: str = "eng+chi_sim"  # tesseract language codes
 
 
 class OCRResponse(BaseModel):
@@ -123,8 +126,8 @@ class KeyResponse(BaseModel):
 class ClickRequest(BaseModel):
     x: int
     y: int
-    button: int = 1        # 1=left, 2=middle, 3=right
-    clicks: int = 1         # 1=single, 2=double
+    button: int = 1  # 1=left, 2=middle, 3=right
+    clicks: int = 1  # 1=single, 2=double
 
 
 class ClickResponse(BaseModel):
@@ -187,7 +190,7 @@ class FocusResponse(BaseModel):
 
 class ClickTextRequest(BaseModel):
     text: str
-    occurrence: int = 1    # which match (1-based)
+    occurrence: int = 1  # which match (1-based)
     button: int = 1
 
 
@@ -224,6 +227,7 @@ class ReadRegionResponse(BaseModel):
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
+
 
 def _check_tool(name: str) -> str:
     """Return path to *name* or raise HTTP 503."""
@@ -309,8 +313,11 @@ async def _ocr_from_b64(
             # Use ImageMagick convert for cropping if available, else proceed as-is
             if _has_cmd("convert"):
                 await _run(
-                    "convert", crop_in,
-                    "-crop", f"{w}x{h}+{x}+{y}", "+repage",
+                    "convert",
+                    crop_in,
+                    "-crop",
+                    f"{w}x{h}+{x}+{y}",
+                    "+repage",
                     tmp_in,
                     timeout=TIMEOUT,
                 )
@@ -319,8 +326,13 @@ async def _ocr_from_b64(
                 tmp_in = crop_in
 
         await _run(
-            "tesseract", tmp_in, tmp_out,
-            "-l", lang, "--psm", "6",
+            "tesseract",
+            tmp_in,
+            tmp_out,
+            "-l",
+            lang,
+            "--psm",
+            "6",
             timeout=TIMEOUT,
         )
         out = Path(tmp_out + ".txt")
@@ -368,19 +380,46 @@ def _ydotool_key_seq(keys: str) -> list[str]:
     ydotool key syntax: 'keydown:LeftCtrl keydown:c keyup:c keyup:LeftCtrl'
     """
     KEYMAP = {
-        "ctrl": "LeftCtrl", "control": "LeftCtrl",
-        "alt": "LeftAlt", "lalt": "LeftAlt", "ralt": "RightAlt",
-        "shift": "LeftShift", "lshift": "LeftShift", "rshift": "RightShift",
-        "super": "LeftMeta", "meta": "LeftMeta", "win": "LeftMeta",
-        "return": "Return", "enter": "Return",
-        "tab": "Tab", "escape": "Escape", "esc": "Escape",
-        "backspace": "BackSpace", "delete": "Delete", "del": "Delete",
+        "ctrl": "LeftCtrl",
+        "control": "LeftCtrl",
+        "alt": "LeftAlt",
+        "lalt": "LeftAlt",
+        "ralt": "RightAlt",
+        "shift": "LeftShift",
+        "lshift": "LeftShift",
+        "rshift": "RightShift",
+        "super": "LeftMeta",
+        "meta": "LeftMeta",
+        "win": "LeftMeta",
+        "return": "Return",
+        "enter": "Return",
+        "tab": "Tab",
+        "escape": "Escape",
+        "esc": "Escape",
+        "backspace": "BackSpace",
+        "delete": "Delete",
+        "del": "Delete",
         "space": "space",
-        "up": "Up", "down": "Down", "left": "Left", "right": "Right",
-        "home": "Home", "end": "End", "pageup": "PageUp", "pagedown": "PageDown",
-        "f1": "F1", "f2": "F2", "f3": "F3", "f4": "F4",
-        "f5": "F5", "f6": "F6", "f7": "F7", "f8": "F8",
-        "f9": "F9", "f10": "F10", "f11": "F11", "f12": "F12",
+        "up": "Up",
+        "down": "Down",
+        "left": "Left",
+        "right": "Right",
+        "home": "Home",
+        "end": "End",
+        "pageup": "PageUp",
+        "pagedown": "PageDown",
+        "f1": "F1",
+        "f2": "F2",
+        "f3": "F3",
+        "f4": "F4",
+        "f5": "F5",
+        "f6": "F6",
+        "f7": "F7",
+        "f8": "F8",
+        "f9": "F9",
+        "f10": "F10",
+        "f11": "F11",
+        "f12": "F12",
     }
     parts = keys.lower().split("+")
     resolved = [KEYMAP.get(p.strip(), p.strip()) for p in parts]
@@ -411,6 +450,7 @@ def _tool_for_windows() -> str:
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
+
 
 @router.post("/screenshot", response_model=ScreenshotResponse)
 async def take_screenshot():
@@ -476,11 +516,26 @@ async def press_keys(req: KeyRequest):
                 m = mod_map.get(mod)
                 if m:
                     mod_args += ["-M", m]
-            key_map = {"return": "Return", "enter": "Return", "tab": "Tab",
-                        "escape": "Escape", "esc": "Escape", "backspace": "BackSpace",
-                        "space": "space", "super": "super"}
+            key_map = {
+                "return": "Return",
+                "enter": "Return",
+                "tab": "Tab",
+                "escape": "Escape",
+                "esc": "Escape",
+                "backspace": "BackSpace",
+                "space": "space",
+                "super": "super",
+            }
             key_val = key_map.get(key_val, key_val)
-            await _run("wtype", *mod_args, "-P", key_val, "-m", "ctrl" if len(parts) > 1 else "", timeout=TIMEOUT)
+            await _run(
+                "wtype",
+                *mod_args,
+                "-P",
+                key_val,
+                "-m",
+                "ctrl" if len(parts) > 1 else "",
+                timeout=TIMEOUT,
+            )
         else:
             translated = _xdotool_key_translate(req.keys)
             await _run("xdotool", "key", translated, timeout=TIMEOUT)
@@ -497,18 +552,28 @@ async def click(req: ClickRequest):
         btn = req.button  # ydotool: 1=left, 2=right, 3=middle
         for _ in range(req.clicks):
             await _run(
-                "ydotool", "mousemove", "--absolute",
-                "-x", str(req.x), "-y", str(req.y),
+                "ydotool",
+                "mousemove",
+                "--absolute",
+                "-x",
+                str(req.x),
+                "-y",
+                str(req.y),
                 timeout=TIMEOUT,
             )
             await _run(
-                "ydotool", "click", str(btn),
+                "ydotool",
+                "click",
+                str(btn),
                 timeout=TIMEOUT,
             )
     else:
         # xdotool
         await _run(
-            "xdotool", "mousemove", str(req.x), str(req.y),
+            "xdotool",
+            "mousemove",
+            str(req.x),
+            str(req.y),
             timeout=TIMEOUT,
         )
         btn = req.button
@@ -531,13 +596,21 @@ async def mouse_move(req: MouseMoveRequest):
 
     if tool == "ydotool":
         await _run(
-            "ydotool", "mousemove", "--absolute",
-            "-x", str(req.x), "-y", str(req.y),
+            "ydotool",
+            "mousemove",
+            "--absolute",
+            "-x",
+            str(req.x),
+            "-y",
+            str(req.y),
             timeout=TIMEOUT,
         )
     else:
         await _run(
-            "xdotool", "mousemove", str(req.x), str(req.y),
+            "xdotool",
+            "mousemove",
+            str(req.x),
+            str(req.y),
             timeout=TIMEOUT,
         )
 
@@ -551,35 +624,53 @@ async def drag(req: DragRequest):
 
     if tool == "ydotool":
         await _run(
-            "ydotool", "mousemove", "--absolute",
-            "-x", str(req.x1), "-y", str(req.y1),
+            "ydotool",
+            "mousemove",
+            "--absolute",
+            "-x",
+            str(req.x1),
+            "-y",
+            str(req.y1),
             timeout=TIMEOUT,
         )
         await _run("ydotool", "mousedown", str(req.button), timeout=TIMEOUT)
         await asyncio.sleep(req.duration_ms / 1000)
         await _run(
-            "ydotool", "mousemove", "--absolute",
-            "-x", str(req.x2), "-y", str(req.y2),
+            "ydotool",
+            "mousemove",
+            "--absolute",
+            "-x",
+            str(req.x2),
+            "-y",
+            str(req.y2),
             timeout=TIMEOUT,
         )
         await _run("ydotool", "mouseup", str(req.button), timeout=TIMEOUT)
     else:
         await _run(
-            "xdotool", "mousemove", str(req.x1), str(req.y1),
+            "xdotool",
+            "mousemove",
+            str(req.x1),
+            str(req.y1),
             timeout=TIMEOUT,
         )
         await _run("xdotool", "mousedown", str(req.button), timeout=TIMEOUT)
         await asyncio.sleep(req.duration_ms / 1000)
         await _run(
-            "xdotool", "mousemove", str(req.x2), str(req.y2),
+            "xdotool",
+            "mousemove",
+            str(req.x2),
+            str(req.y2),
             timeout=TIMEOUT,
         )
         await _run("xdotool", "mouseup", str(req.button), timeout=TIMEOUT)
 
     return DragResponse(
         success=True,
-        from_x=req.x1, from_y=req.y1,
-        to_x=req.x2, to_y=req.y2,
+        from_x=req.x1,
+        from_y=req.y1,
+        to_x=req.x2,
+        to_y=req.y2,
     )
 
 
@@ -597,7 +688,9 @@ async def list_windows() -> list[WindowInfo]:
                 if not wid:
                     continue
                 _, title_out, _ = await _run("xdotool", "getwindowname", wid, timeout=TIMEOUT)
-                _, geom_out, _ = await _run("xdotool", "getwindowgeometry", "--shell", wid, timeout=TIMEOUT)
+                _, geom_out, _ = await _run(
+                    "xdotool", "getwindowgeometry", "--shell", wid, timeout=TIMEOUT
+                )
                 x = y = w = h = 0
                 focused = False
                 for line in geom_out.splitlines():
@@ -611,28 +704,42 @@ async def list_windows() -> list[WindowInfo]:
                         h = int(line.split("=")[1])
                 _, focus_out, _ = await _run("xdotool", "getactivewindow", timeout=TIMEOUT)
                 focused = focus_out.strip() == wid
-                windows.append(WindowInfo(
-                    id=wid, title=title_out.strip(),
-                    x=x, y=y, width=w, height=h, focused=focused,
-                ))
+                windows.append(
+                    WindowInfo(
+                        id=wid,
+                        title=title_out.strip(),
+                        x=x,
+                        y=y,
+                        width=w,
+                        height=h,
+                        focused=focused,
+                    )
+                )
     elif tool == "swaymsg":
         rc, out, _ = await _run("swaymsg", "-t", "get_tree", timeout=TIMEOUT)
         if rc == 0:
             import json
+
             _collect_sway_windows(json.loads(out), windows)
     elif tool == "hyprctl":
         rc, out, _ = await _run("hyprctl", "clients", "-j", timeout=TIMEOUT)
         if rc == 0:
             import json
+
             for c in json.loads(out):
                 at = c.get("at", [0, 0])
                 sz = c.get("size", [0, 0])
-                windows.append(WindowInfo(
-                    id=str(c.get("address", "")),
-                    title=c.get("title", ""),
-                    x=at[0], y=at[1], width=sz[0], height=sz[1],
-                    focused=c.get("focusHistoryID", -1) == 0,
-                ))
+                windows.append(
+                    WindowInfo(
+                        id=str(c.get("address", "")),
+                        title=c.get("title", ""),
+                        x=at[0],
+                        y=at[1],
+                        width=sz[0],
+                        height=sz[1],
+                        focused=c.get("focusHistoryID", -1) == 0,
+                    )
+                )
     elif tool == "wlrctl":
         rc, out, _ = await _run("wlrctl", "toplevel", "list", timeout=TIMEOUT)
         if rc == 0:
@@ -646,13 +753,17 @@ def _collect_sway_windows(node: dict, out: list):
     """Recursively walk sway tree to find leaf windows."""
     if node.get("type") == "con" and node.get("name"):
         r = node.get("rect", {})
-        out.append(WindowInfo(
-            id=str(node.get("id", "")),
-            title=node.get("name", ""),
-            x=r.get("x", 0), y=r.get("y", 0),
-            width=r.get("width", 0), height=r.get("height", 0),
-            focused=node.get("focused", False),
-        ))
+        out.append(
+            WindowInfo(
+                id=str(node.get("id", "")),
+                title=node.get("name", ""),
+                x=r.get("x", 0),
+                y=r.get("y", 0),
+                width=r.get("width", 0),
+                height=r.get("height", 0),
+                focused=node.get("focused", False),
+            )
+        )
     for child in node.get("nodes", []) + node.get("floating_nodes", []):
         _collect_sway_windows(child, out)
 
@@ -667,7 +778,9 @@ async def focus_window(req: FocusRequest):
     else:
         # Find by title
         windows = await list_windows()
-        match = next((w for w in windows if req.title and req.title.lower() in w.title.lower()), None)
+        match = next(
+            (w for w in windows if req.title and req.title.lower() in w.title.lower()), None
+        )
         if not match:
             raise HTTPException(404, f"No window matching title '{req.title}'")
         wid = match.id
@@ -699,9 +812,13 @@ async def click_text(req: ClickTextRequest):
     try:
         Path(tmp_in).write_bytes(img_bytes)
         await _run(
-            "tesseract", tmp_in, tmp_out,
-            "-l", "eng+chi_sim",
-            "--psm", "6",
+            "tesseract",
+            tmp_in,
+            tmp_out,
+            "-l",
+            "eng+chi_sim",
+            "--psm",
+            "6",
             "hocr",
             timeout=TIMEOUT,
         )
@@ -743,8 +860,11 @@ async def click_text(req: ClickTextRequest):
             await _run("xdotool", "click", btn_str, timeout=TIMEOUT)
 
         return ClickTextResponse(
-            success=True, found=True,
-            x=cx, y=cy, matched_text=matched,
+            success=True,
+            found=True,
+            x=cx,
+            y=cy,
+            matched_text=matched,
         )
     finally:
         for p in (tmp_in, tmp_out + ".hocr"):
@@ -810,8 +930,18 @@ async def scroll(amount: int = 3, direction: str = "down"):
 async def rpa_health():
     """Limb RPA health check — lists available tools."""
     tools = {}
-    for name in ("grim", "scrot", "tesseract", "ydotool", "wtype",
-                  "xdotool", "convert", "swaymsg", "hyprctl", "wlrctl"):
+    for name in (
+        "grim",
+        "scrot",
+        "tesseract",
+        "ydotool",
+        "wtype",
+        "xdotool",
+        "convert",
+        "swaymsg",
+        "hyprctl",
+        "wlrctl",
+    ):
         tools[name] = shutil.which(name) is not None
     return {
         "status": "ok",

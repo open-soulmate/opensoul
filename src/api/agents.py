@@ -16,10 +16,14 @@ from pydantic import BaseModel
 from src.api.user import get_current_user
 
 router = APIRouter()
+
+
 @router.get("/health")
 async def agents_health():
     """Agents health check."""
     return {"status": "ok", "component": "Agents"}
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -783,11 +787,13 @@ _detect_cache: dict | None = None
 _detect_cache_time: float = 0
 _DETECT_CACHE_TTL = 300  # 5 minutes
 
+
 @router.get("/detect")
 async def detect_agents():
     """检测本机安装的AI Agent (结果缓存5分钟)"""
     global _detect_cache, _detect_cache_time
     import time
+
     now = time.time()
     if _detect_cache and (now - _detect_cache_time) < _DETECT_CACHE_TTL:
         return _detect_cache
@@ -967,7 +973,9 @@ async def _run_install(agent_id: str, cmd: str):
             if text:
                 task["output"].append(text)
                 lower = text.lower()
-                if any(w in lower for w in ["success", "installed", "complete", "added", "satisfied"]):
+                if any(
+                    w in lower for w in ["success", "installed", "complete", "added", "satisfied"]
+                ):
                     task["progress"] = 100
                 elif any(w in lower for w in ["downloading", "fetching", "receiving"]):
                     task["progress"] = min(task["progress"] + 15, 60)

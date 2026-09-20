@@ -450,9 +450,7 @@ async def get_evolution_proposal(proposal_id: str):
 async def review_evolution_proposal(proposal_id: str, req: ReviewRequest):
     """审批提案（审批人≠发起人；approve后才允许apply）。"""
     try:
-        return evolution_engine.review(
-            proposal_id, req.decision, req.reviewer, comment=req.comment
-        )
+        return evolution_engine.review(proposal_id, req.decision, req.reviewer, comment=req.comment)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -461,9 +459,7 @@ async def review_evolution_proposal(proposal_id: str, req: ReviewRequest):
 async def apply_evolution_proposal(proposal_id: str, req: ApplyRequest):
     """落盘：稀疏锚点替换，改动前先快照，保护区fail-closed。"""
     try:
-        return evolution_engine.apply(
-            proposal_id, actor=req.actor, base_dir=req.base_dir
-        )
+        return evolution_engine.apply(proposal_id, actor=req.actor, base_dir=req.base_dir)
     except ValueError as e:
         raise HTTPException(400, str(e))
 

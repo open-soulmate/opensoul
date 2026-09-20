@@ -302,7 +302,9 @@ class TestLiveJobQueueAPI:
         assert info is not None and info["status"] == "completed", f"job未完成: {info}"
         assert isinstance(info["result"], dict)
         # evaluate_triggers真实返回（fired/breaker_open/suppressed之一必存在）
-        assert any(k in info["result"] for k in ("fired", "breaker_open", "suppressed")), info["result"]
+        assert any(k in info["result"] for k in ("fired", "breaker_open", "suppressed")), info[
+            "result"
+        ]
 
     def test_dream_background_producer(self, client):
         r = client.post("/api/hippo/ltm/dream", json={"messages": [], "background": True})
@@ -338,14 +340,22 @@ class TestLiveJobQueueAPI:
         key = f"itest-{int(time.time())}"
         r1 = client.post(
             "/api/will/jobs/submit",
-            json={"name": "heredity.evaluate_triggers", "params": {"idle_seconds": 0},
-                  "idempotency_key": key, "timeout_s": 1},
+            json={
+                "name": "heredity.evaluate_triggers",
+                "params": {"idle_seconds": 0},
+                "idempotency_key": key,
+                "timeout_s": 1,
+            },
         )
         jid1 = r1.json()["job_id"]
         r2 = client.post(
             "/api/will/jobs/submit",
-            json={"name": "heredity.evaluate_triggers", "params": {"idle_seconds": 0},
-                  "idempotency_key": key, "timeout_s": 1},
+            json={
+                "name": "heredity.evaluate_triggers",
+                "params": {"idle_seconds": 0},
+                "idempotency_key": key,
+                "timeout_s": 1,
+            },
         )
         body2 = r2.json()
         # 第二次提交可能撞上pending/running窗口（deduped）或已完成（新作业），

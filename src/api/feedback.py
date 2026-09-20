@@ -81,10 +81,13 @@ async def feedback_stats(
     from src.database.postgres import db_pool
 
     try:
-        total = await db_pool.fetchval(
-            "SELECT COUNT(*) FROM knowledge WHERE user_id = ? AND content_type = 'feedback'",
-            str(user_id),
-        ) or 0
+        total = (
+            await db_pool.fetchval(
+                "SELECT COUNT(*) FROM knowledge WHERE user_id = ? AND content_type = 'feedback'",
+                str(user_id),
+            )
+            or 0
+        )
 
         by_type = await db_pool.fetch(
             "SELECT json_extract(metadata, '$.feedback_type') as type, COUNT(*) as cnt "

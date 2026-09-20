@@ -122,13 +122,15 @@ async def scan_text_for_display(req: ScanTextRequest):
     for f in result.findings:
         if risk_order.get(f["risk"], 0) < threshold:
             continue
-        findings.append({
-            "type": f["type"],
-            "label": f["label"],
-            "risk": f["risk"],
-            "start": f["position"][0],
-            "end": f["position"][1],
-        })
+        findings.append(
+            {
+                "type": f["type"],
+                "label": f["label"],
+                "risk": f["risk"],
+                "start": f["position"][0],
+                "end": f["position"][1],
+            }
+        )
 
     return {
         "risk_level": result.risk_level,
@@ -373,17 +375,20 @@ async def inspect_request(req: InspectRequest):
     # Emit events for critical threats
     for threat in threats:
         if threat.threat_level.value in ("high", "critical"):
-            push_event({
-                "organ": "immune",
-                "emoji": "🛡",
-                "type": "intrusion_detected",
-                "summary": f"🚨 {threat.attack_type.value} from {threat.source_ip}: {threat.detail}",
-                "detail": threat.to_dict(),
-            })
+            push_event(
+                {
+                    "organ": "immune",
+                    "emoji": "🛡",
+                    "type": "intrusion_detected",
+                    "summary": f"🚨 {threat.attack_type.value} from {threat.source_ip}: {threat.detail}",
+                    "detail": threat.to_dict(),
+                }
+            )
             # Push notification for critical threats
             if threat.threat_level.value == "critical":
                 try:
                     from src.api.notifications import push_notification
+
                     push_notification(
                         source="immune",
                         title=f"🚨 Intrusion: {threat.attack_type.value}",
@@ -407,15 +412,18 @@ async def record_login_attempt(req: LoginAttemptRequest):
     """Record a login attempt for brute-force detection."""
     threat = intrusion.record_login_attempt(req.ip, req.success)
     if threat:
-        push_event({
-            "organ": "immune",
-            "emoji": "🛡",
-            "type": "brute_force",
-            "summary": f"🔒 Brute force detected from {req.ip}",
-            "detail": threat.to_dict(),
-        })
+        push_event(
+            {
+                "organ": "immune",
+                "emoji": "🛡",
+                "type": "brute_force",
+                "summary": f"🔒 Brute force detected from {req.ip}",
+                "detail": threat.to_dict(),
+            }
+        )
         try:
             from src.api.notifications import push_notification
+
             push_notification(
                 source="immune",
                 title=f"🔒 Brute Force: {req.ip}",
@@ -442,7 +450,9 @@ async def get_threats(
     limit: int = Query(default=50, ge=1, le=500),
 ):
     """Query intrusion threat history."""
-    return {"threats": intrusion.get_threats(ip=ip, attack_type=attack_type, level=level, limit=limit)}
+    return {
+        "threats": intrusion.get_threats(ip=ip, attack_type=attack_type, level=level, limit=limit)
+    }
 
 
 @router.get("/intrusion/blocked")
@@ -456,13 +466,15 @@ async def block_ip_intrusion(req: IPBlockRequest):
     """Manually block an IP via intrusion detection."""
     intrusion.block_ip(req.ip, reason="manual")
     ip_control.blacklist_add(req.ip, reason="manual_intrusion_block")
-    push_event({
-        "organ": "immune",
-        "emoji": "🛡",
-        "type": "ip_blocked",
-        "summary": f"🚫 IP manually blocked: {req.ip}",
-        "detail": {"ip": req.ip},
-    })
+    push_event(
+        {
+            "organ": "immune",
+            "emoji": "🛡",
+            "type": "ip_blocked",
+            "summary": f"🚫 IP manually blocked: {req.ip}",
+            "detail": {"ip": req.ip},
+        }
+    )
     return {"message": f"IP {req.ip} blocked"}
 
 
@@ -482,6 +494,7 @@ async def intrusion_stats() -> dict:
 
 # ── P0-3 工具级权限引擎（AgentScope PermissionEngine × kilocode分层） ──
 
+
 class PermissionCheckRequest(BaseModel):
     tool_name: str
     arguments: dict = {}
@@ -492,19 +505,19 @@ class PermissionCheckRequest(BaseModel):
 class PermissionRuleRequest(BaseModel):
     tool_name: str
     rule_content: str | None = None
-    behavior: str = "allow"          # allow / deny / ask
-    source: str = "user"             # user / session
+    behavior: str = "allow"  # allow / deny / ask
+    source: str = "user"  # user / session
     hard: bool = False
     risk: str = "medium"
 
 
 class PermissionOutcomeRequest(BaseModel):
-    outcome: str                     # approved / denied / timeout
+    outcome: str  # approved / denied / timeout
     comment: str = ""
 
 
 class PermissionModeRequest(BaseModel):
-    mode: str                        # default / accept_edits / explore / bypass / dont_ask
+    mode: str  # default / accept_edits / explore / bypass / dont_ask
 
 
 @router.post("/permission/check")
@@ -515,31 +528,46 @@ async def permission_check(req: PermissionCheckRequest):
     deny/ask时决策带rule_source/rule_content（"为什么被拦"）。
     """
     decision = permission_service.check(
-        req.tool_name, req.arguments,
-        session_id=req.session_id, working_dir=req.working_dir,
+        req.tool_name,
+        req.arguments,
+        session_id=req.session_id,
+        working_dir=req.working_dir,
     )
     if decision.behavior.value == "deny":
-        audit.log(AuditAction.CONTENT_BLOCKED,
-                  detail=f"permission deny: {req.tool_name} — {decision.decision_reason}",
-                  risk_level="high" if decision.rule_id else "medium")
-        push_event({
-            "organ": "immune",
-            "emoji": "🛡",
-            "type": "permission_denied",
-            "summary": f"⛔ 工具调用被权限引擎拦截: {req.tool_name} — {decision.decision_reason}",
-            "detail": {"tool": req.tool_name, "reason": decision.decision_reason,
-                       "rule_source": decision.rule_source, "mode": decision.mode},
-        })
+        audit.log(
+            AuditAction.CONTENT_BLOCKED,
+            detail=f"permission deny: {req.tool_name} — {decision.decision_reason}",
+            risk_level="high" if decision.rule_id else "medium",
+        )
+        push_event(
+            {
+                "organ": "immune",
+                "emoji": "🛡",
+                "type": "permission_denied",
+                "summary": f"⛔ 工具调用被权限引擎拦截: {req.tool_name} — {decision.decision_reason}",
+                "detail": {
+                    "tool": req.tool_name,
+                    "reason": decision.decision_reason,
+                    "rule_source": decision.rule_source,
+                    "mode": decision.mode,
+                },
+            }
+        )
     return decision.to_dict()
 
 
 @router.get("/permission/rules")
-async def permission_rules(include_deleted: bool = Query(default=False),
-                           behavior: str = Query(default=""),
-                           tool_name: str = Query(default="")):
+async def permission_rules(
+    include_deleted: bool = Query(default=False),
+    behavior: str = Query(default=""),
+    tool_name: str = Query(default=""),
+):
     """列出权限规则（含builtin基线；hard=true的规则为硬否决）"""
-    return {"rules": permission_service.store.list_rules(
-        include_deleted=include_deleted, behavior=behavior, tool_name=tool_name)}
+    return {
+        "rules": permission_service.store.list_rules(
+            include_deleted=include_deleted, behavior=behavior, tool_name=tool_name
+        )
+    }
 
 
 @router.post("/permission/rules")
@@ -548,8 +576,13 @@ async def permission_add_rule(req: PermissionRuleRequest):
     if req.behavior not in ("allow", "deny", "ask"):
         raise HTTPException(400, f"Invalid behavior: {req.behavior}")
     result = permission_service.store.add_rule(
-        req.tool_name, req.rule_content, req.behavior,
-        source=req.source, hard=req.hard, risk=req.risk)
+        req.tool_name,
+        req.rule_content,
+        req.behavior,
+        source=req.source,
+        hard=req.hard,
+        risk=req.risk,
+    )
     return {"ok": True, **result}
 
 
@@ -573,18 +606,25 @@ async def permission_set_mode(req: PermissionModeRequest):
     try:
         permission_service.store.set_mode(req.mode)
     except ValueError:
-        raise HTTPException(400, f"Invalid mode: {req.mode}. Valid: {[m.value for m in PermissionMode]}")
+        raise HTTPException(
+            400, f"Invalid mode: {req.mode}. Valid: {[m.value for m in PermissionMode]}"
+        )
     return {"ok": True, "mode": req.mode}
 
 
 @router.get("/permission/audit")
-async def permission_audit(limit: int = Query(default=50, ge=1, le=1000),
-                           behavior: str = Query(default=""),
-                           tool_name: str = Query(default=""),
-                           outcome: str = Query(default="")):
+async def permission_audit(
+    limit: int = Query(default=50, ge=1, le=1000),
+    behavior: str = Query(default=""),
+    tool_name: str = Query(default=""),
+    outcome: str = Query(default=""),
+):
     """决策审计轨迹 — 每次判定的behavior+provenance，ASK决策的人工结果回写"""
-    return {"entries": permission_service.store.audit_query(
-        limit=limit, behavior=behavior, tool_name=tool_name, outcome=outcome)}
+    return {
+        "entries": permission_service.store.audit_query(
+            limit=limit, behavior=behavior, tool_name=tool_name, outcome=outcome
+        )
+    }
 
 
 @router.post("/permission/approvals/{decision_id}")
@@ -592,7 +632,9 @@ async def permission_record_outcome(decision_id: str, req: PermissionOutcomeRequ
     """人工审批结果回写（acp-proxy收到前端session/request_permission响应后调用）"""
     ok = permission_service.store.record_outcome(decision_id, req.outcome, req.comment)
     if not ok:
-        raise HTTPException(404, f"Decision not found or invalid outcome: {decision_id} / {req.outcome}")
+        raise HTTPException(
+            404, f"Decision not found or invalid outcome: {decision_id} / {req.outcome}"
+        )
     return {"ok": True, "decision_id": decision_id, "outcome": req.outcome}
 
 

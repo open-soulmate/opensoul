@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.a2a.api import router as a2a_router
-
 from src.api.admin_actions import router as admin_actions_router
 from src.api.agent import router as agent_router
 from src.api.agent_collaboration import router as agent_collab_router
@@ -16,6 +15,7 @@ from src.api.agents import router as agents_router
 from src.api.ai_engine import router as ai_engine_router
 from src.api.ai_groups import router as ai_groups_router
 from src.api.benchmark import router as benchmark_router
+from src.api.brain import router as brain_router
 from src.api.capture import router as capture_router
 from src.api.chat import router as chat_router
 from src.api.config_api import router as config_api_router
@@ -29,6 +29,7 @@ from src.api.enterprise import router as enterprise_router
 from src.api.entity import router as entity_router
 from src.api.event_stream import router as event_stream_router
 from src.api.export import router as export_router
+from src.api.feedback import router as feedback_router
 from src.api.gene import router as gene_router
 from src.api.gene_templates import router as gene_templates_router
 from src.api.git_api import router as git_router
@@ -45,21 +46,19 @@ from src.api.intelligence import router as intelligence_router
 from src.api.kb_sharing import router as kb_sharing_router
 from src.api.knowledge import router as knowledge_router
 from src.api.knowledge_requests import router as knowledge_requests_router
-from src.api.feedback import router as feedback_router
 from src.api.learn import router as learn_router
 from src.api.limb import router as limb_router
 from src.api.limb_rpa import router as limb_rpa_router
 from src.api.link import router as link_router
 from src.api.link_gateway import router as link_gateway_router
 from src.api.llm import router as llm_router
-from src.api.model_router import router as model_router_router
 from src.api.marketplace import router as marketplace_router
 from src.api.marrow import router as marrow_router
 from src.api.mcp import router as mcp_router
 from src.api.metrics_api import router as metrics_router
-from src.api.brain import router as brain_router
 from src.api.mind import router as mind_router
 from src.api.mirror import router as mirror_router
+from src.api.model_router import router as model_router_router
 from src.api.nerve import router as nerve_router
 from src.api.nest import router as nest_router
 from src.api.notifications import router as notifications_router
@@ -88,10 +87,9 @@ from src.api.vision import router as vision_router
 from src.api.vital import router as vital_router
 from src.api.voice import router as voice_router
 from src.api.will import router as will_router
-from src.api.ws_chat import router as ws_chat_router
 from src.api.workflow import router as workflow_router
 from src.api.workspace_api import router as workspace_router
-
+from src.api.ws_chat import router as ws_chat_router
 from src.config import settings
 from src.database.meilisearch import meili_client
 from src.database.postgres import db_pool
@@ -208,6 +206,7 @@ async def lifespan(app: FastAPI):
     # 必须由主进程worker执行（此前worker池从未在主进程启动,job积压pending）
     from src.will.job_handlers import register_default_handlers
     from src.will.job_queue import get_job_queue
+
     jq = get_job_queue()
     register_default_handlers(jq)
     await jq.start()
@@ -279,6 +278,7 @@ async def lifespan(app: FastAPI):
     # Dream记忆蒸馏周期生产者（集成修复#2：hippo.dream此前无调度，全系统仅执行1次）
     # 消息源=opensoul.db agent_messages真实聊天，24h一轮，幂等键按日期防重复
     from src.will.dream_producer import dream_producer_loop
+
     dream_task = asyncio.create_task(dream_producer_loop())
 
     yield
@@ -321,13 +321,18 @@ app.add_middleware(IntrusionDetectionMiddleware)
 # Static files
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
-app.mount("/admin", StaticFiles(directory=os.path.join(_static_dir, "admin"), html=True), name="admin")
+app.mount(
+    "/admin", StaticFiles(directory=os.path.join(_static_dir, "admin"), html=True), name="admin"
+)
 
 
 # Root route — serve admin dashboard
 @app.get("/")
 async def index():
-    return {"message": "OpenSoul API — 前端请访问 OpenMate (http://localhost:3002)", "docs": "/docs"}
+    return {
+        "message": "OpenSoul API — 前端请访问 OpenMate (http://localhost:3002)",
+        "docs": "/docs",
+    }
 
 
 import asyncio

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """工具级权限引擎 — Claude-Code式5模式 × 规则匹配 × 人工审批
 
 调研来源（100-agent研究 SUMMARY.md P0-3，10+方互证）：
@@ -29,27 +28,29 @@ import re
 import sqlite3
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
-from enum import Enum
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("opensoul.immune.permission_engine")
 
 
 # ── 基础类型（AgentScope _types.py 移植） ─────────────────────────
 
-class PermissionMode(str, Enum):
+
+class PermissionMode(StrEnum):
     """权限模式 — 每种模式的评估顺序独立封装（AgentScope语义）"""
 
-    DEFAULT = "default"            # 未匹配任何allow规则的操作都要问
+    DEFAULT = "default"  # 未匹配任何allow规则的操作都要问
     ACCEPT_EDITS = "accept_edits"  # 工作目录内的编辑自动放行，其余走规则
-    EXPLORE = "explore"            # 只读模式，一切修改被否决（allow规则不可覆盖）
-    BYPASS = "bypass"              # 跳过安全询问，仅deny/hard规则兜底
-    DONT_ASK = "dont_ask"          # 无人值守：一切ASK转换为DENY（绝不返回ASK）
+    EXPLORE = "explore"  # 只读模式，一切修改被否决（allow规则不可覆盖）
+    BYPASS = "bypass"  # 跳过安全询问，仅deny/hard规则兜底
+    DONT_ASK = "dont_ask"  # 无人值守：一切ASK转换为DENY（绝不返回ASK）
 
 
-class PermissionBehavior(str, Enum):
+class PermissionBehavior(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     ASK = "ask"
@@ -58,20 +59,67 @@ class PermissionBehavior(str, Enum):
 
 # 工具分类（决定匹配策略与只读快路径）
 READ_ONLY_TOOLS = {
-    "read_file", "read_file_segment", "list_files", "search_files",
-    "web_search", "web_extract", "vision_analyze", "read_image",
-    "check_evolution_status", "todo", "clarify",
+    "read_file",
+    "read_file_segment",
+    "list_files",
+    "search_files",
+    "web_search",
+    "web_extract",
+    "vision_analyze",
+    "read_image",
+    "check_evolution_status",
+    "todo",
+    "clarify",
 }
-FILE_TOOLS = {"read_file", "read_file_segment", "write_file", "patch", "read_image", "vision_analyze"}
+FILE_TOOLS = {
+    "read_file",
+    "read_file_segment",
+    "write_file",
+    "patch",
+    "read_image",
+    "vision_analyze",
+}
 SHELL_TOOLS = {"terminal", "execute_code"}
 MUTATING_TOOLS = {"write_file", "patch", "terminal", "execute_code", "request_evolution"}
 
 # shell只读命令（DEFAULT/EXPLORE下也放行 — AgentScope Bash check_read_only）
 _SHELL_READONLY_PREFIXES = (
-    "ls", "cat", "head", "tail", "less", "more", "wc", "file", "stat", "du", "df",
-    "pwd", "which", "whoami", "id", "date", "echo", "grep", "rg", "find", "tree",
-    "git status", "git log", "git diff", "git show", "git branch", "git remote",
-    "ps", "top -", "free", "uname", "hostname", "env", "printenv", "md5sum", "sha256sum",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "less",
+    "more",
+    "wc",
+    "file",
+    "stat",
+    "du",
+    "df",
+    "pwd",
+    "which",
+    "whoami",
+    "id",
+    "date",
+    "echo",
+    "grep",
+    "rg",
+    "find",
+    "tree",
+    "git status",
+    "git log",
+    "git diff",
+    "git show",
+    "git branch",
+    "git remote",
+    "ps",
+    "top -",
+    "free",
+    "uname",
+    "hostname",
+    "env",
+    "printenv",
+    "md5sum",
+    "sha256sum",
 )
 
 # ── 内置基线策略（source="builtin"，可经API删除/覆盖，hard除外） ──
@@ -128,6 +176,7 @@ BUILTIN_ASK = [
 
 # ── 规则与决策 ─────────────────────────────────────────────────
 
+
 @dataclass
 class PermissionRule:
     """一条权限规则。
@@ -138,14 +187,14 @@ class PermissionRule:
     - 其他工具：对参数JSON做子串匹配；空content = 匹配该工具全部调用
     """
 
-    tool_name: str                       # "terminal" / "read_file" / "*"（全部工具）
-    rule_content: Optional[str]          # None/"" = 整工具级规则
+    tool_name: str  # "terminal" / "read_file" / "*"（全部工具）
+    rule_content: str | None  # None/"" = 整工具级规则
     behavior: PermissionBehavior
-    source: str = "user"                 # builtin / user / session（kilocode三层）
-    hard: bool = False                   # 硬规则：任何模式不可覆盖
-    risk: str = "medium"                 # low/medium/high — ASK时传导给审批UI
+    source: str = "user"  # builtin / user / session（kilocode三层）
+    hard: bool = False  # 硬规则：任何模式不可覆盖
+    risk: str = "medium"  # low/medium/high — ASK时传导给审批UI
     rule_id: str = ""
-    seq: int = 0                         # 后添加者seq大（findLast）
+    seq: int = 0  # 后添加者seq大（findLast）
     created_at: float = 0.0
     is_deleted: bool = False
 
@@ -163,12 +212,12 @@ class PermissionDecision:
     message: str
     decision_reason: str = ""
     rule_id: str = ""
-    rule_source: str = ""                # 命中规则的来源层
-    rule_content: str = ""               # 命中规则的内容
-    requires_human: bool = False         # ASK且必须真人交互（机器不可代答）
+    rule_source: str = ""  # 命中规则的来源层
+    rule_content: str = ""  # 命中规则的内容
+    requires_human: bool = False  # ASK且必须真人交互（机器不可代答）
     risk: str = "medium"
     suggested_rules: list = field(default_factory=list)
-    decision_id: str = ""                # ASK决策的审计ID（人工结果回写用）
+    decision_id: str = ""  # ASK决策的审计ID（人工结果回写用）
     mode: str = ""
 
     def to_dict(self) -> dict:
@@ -190,7 +239,7 @@ def _path_of(tool_input: dict) -> str:
     return str(tool_input.get("path") or "")
 
 
-def match_rule(rule_content: Optional[str], tool_name: str, tool_input: dict) -> bool:
+def match_rule(rule_content: str | None, tool_name: str, tool_input: dict) -> bool:
     """规则匹配 — 按工具类型分流（AgentScope各tool.match_rule的Python复刻）"""
     if not rule_content or rule_content == "*":
         return True  # 空content或"*" = 工具级规则，匹配该工具一切调用
@@ -266,25 +315,38 @@ def generate_suggestions(tool_name: str, tool_input: dict) -> list[dict]:
             content = f"{tokens[0]}:*"
         else:
             content = ""
-        return [{
-            "tool_name": tool_name, "rule_content": content,
-            "behavior": "allow", "source": "session",
-        }]
+        return [
+            {
+                "tool_name": tool_name,
+                "rule_content": content,
+                "behavior": "allow",
+                "source": "session",
+            }
+        ]
     if tool_name in FILE_TOOLS:
         path = _path_of(tool_input)
         parent = os.path.dirname(path) if path else ""
         content = f"{parent}/**" if parent else ""
-        return [{
-            "tool_name": tool_name, "rule_content": content,
-            "behavior": "allow", "source": "session",
-        }]
-    return [{
-        "tool_name": tool_name, "rule_content": "",
-        "behavior": "allow", "source": "session",
-    }]
+        return [
+            {
+                "tool_name": tool_name,
+                "rule_content": content,
+                "behavior": "allow",
+                "source": "session",
+            }
+        ]
+    return [
+        {
+            "tool_name": tool_name,
+            "rule_content": "",
+            "behavior": "allow",
+            "source": "session",
+        }
+    ]
 
 
 # ── 引擎 ───────────────────────────────────────────────────────
+
 
 def _builtin_rules() -> list[PermissionRule]:
     """由BUILTIN_*常量构造内置基线规则（引擎脱离store单独使用时也fail-closed）"""
@@ -292,16 +354,32 @@ def _builtin_rules() -> list[PermissionRule]:
     seq = 0
     for tool, content in BUILTIN_HARD_DENY:
         seq += 1
-        rules.append(PermissionRule(
-            tool_name=tool, rule_content=content,
-            behavior=PermissionBehavior.DENY, source="builtin",
-            hard=True, risk="high", rule_id=f"blt-{seq:03d}", seq=seq))
+        rules.append(
+            PermissionRule(
+                tool_name=tool,
+                rule_content=content,
+                behavior=PermissionBehavior.DENY,
+                source="builtin",
+                hard=True,
+                risk="high",
+                rule_id=f"blt-{seq:03d}",
+                seq=seq,
+            )
+        )
     for tool, content, risk in BUILTIN_ASK:
         seq += 1
-        rules.append(PermissionRule(
-            tool_name=tool, rule_content=content,
-            behavior=PermissionBehavior.ASK, source="builtin",
-            hard=False, risk=risk, rule_id=f"blt-{seq:03d}", seq=seq))
+        rules.append(
+            PermissionRule(
+                tool_name=tool,
+                rule_content=content,
+                behavior=PermissionBehavior.ASK,
+                source="builtin",
+                hard=False,
+                risk=risk,
+                rule_id=f"blt-{seq:03d}",
+                seq=seq,
+            )
+        )
     return rules
 
 
@@ -329,8 +407,8 @@ class PermissionEngine:
     def __init__(
         self,
         mode: PermissionMode = PermissionMode.ACCEPT_EDITS,
-        rules: Optional[list[PermissionRule]] = None,
-        working_directories: Optional[list[str]] = None,
+        rules: list[PermissionRule] | None = None,
+        working_directories: list[str] | None = None,
     ):
         self.mode = mode
         self.rules = [r for r in (rules or []) if not r.is_deleted]
@@ -345,10 +423,11 @@ class PermissionEngine:
         behavior: PermissionBehavior,
         tool_name: str,
         tool_input: dict,
-        hard: Optional[bool] = None,
-    ) -> Optional[PermissionRule]:
+        hard: bool | None = None,
+    ) -> PermissionRule | None:
         candidates = [
-            r for r in self.rules
+            r
+            for r in self.rules
             if r.behavior == behavior
             and (r.tool_name == tool_name or r.tool_name == "*")
             and (hard is None or r.hard == hard)
@@ -361,13 +440,21 @@ class PermissionEngine:
         return None
 
     def _find_last_matching(
-        self, tool_name: str, tool_input: dict,
-        behaviors: tuple = (PermissionBehavior.DENY, PermissionBehavior.ASK, PermissionBehavior.ALLOW),
-    ) -> Optional[PermissionRule]:
+        self,
+        tool_name: str,
+        tool_input: dict,
+        behaviors: tuple = (
+            PermissionBehavior.DENY,
+            PermissionBehavior.ASK,
+            PermissionBehavior.ALLOW,
+        ),
+    ) -> PermissionRule | None:
         """kilocode三层findLast：跨行为类统一排序，最后添加/最高层的匹配规则决定行为"""
         candidates = [
-            r for r in self.rules
-            if not r.hard and r.behavior in behaviors
+            r
+            for r in self.rules
+            if not r.hard
+            and r.behavior in behaviors
             and (r.tool_name == tool_name or r.tool_name == "*")
         ]
         candidates.sort(key=lambda r: (_SOURCE_PRIORITY.get(r.source, 0), r.seq), reverse=True)
@@ -377,8 +464,9 @@ class PermissionEngine:
         return None
 
     @staticmethod
-    def _decision_from_rule(rule: PermissionRule, tool_name: str,
-                            default_message: str = "") -> PermissionDecision:
+    def _decision_from_rule(
+        rule: PermissionRule, tool_name: str, default_message: str = ""
+    ) -> PermissionDecision:
         word = _BEHAVIOR_WORD.get(rule.behavior, rule.behavior.value)
         msg = default_message or (
             f"Permission {word} for {tool_name} "
@@ -395,7 +483,7 @@ class PermissionEngine:
             risk=rule.risk,
         )
 
-    def _read_only_fast_path(self, tool_name: str, tool_input: dict) -> Optional[PermissionDecision]:
+    def _read_only_fast_path(self, tool_name: str, tool_input: dict) -> PermissionDecision | None:
         if tool_name in READ_ONLY_TOOLS and tool_name not in MUTATING_TOOLS:
             return PermissionDecision(
                 behavior=PermissionBehavior.ALLOW,
@@ -412,7 +500,7 @@ class PermissionEngine:
             )
         return None
 
-    def check(self, tool_name: str, tool_input: Optional[dict] = None) -> PermissionDecision:
+    def check(self, tool_name: str, tool_input: dict | None = None) -> PermissionDecision:
         tool_input = tool_input or {}
 
         # Step 0: hard deny — 硬否决，任何模式不可覆盖（kilocode hardRuleset）
@@ -420,7 +508,9 @@ class PermissionEngine:
         if hard:
             d = self._decision_from_rule(hard, tool_name)
             d.message = f"[HARD DENY] {tool_name} blocked by protected rule: {hard.rule_content}"
-            d.decision_reason = f"Hard rule (bypass-immune, source={hard.source}): {hard.rule_content}"
+            d.decision_reason = (
+                f"Hard rule (bypass-immune, source={hard.source}): {hard.rule_content}"
+            )
             d.mode = self.mode.value
             return d
 
@@ -439,7 +529,8 @@ class PermissionEngine:
                         message=f"Permission denied for {tool_name} (dont_ask: ASK→DENY, user unavailable)",
                         decision_reason=(
                             f"DONT_ASK converted ASK to DENY. "
-                            f"Original rule[{matched.source}]: {matched.rule_content}"),
+                            f"Original rule[{matched.source}]: {matched.rule_content}"
+                        ),
                         rule_id=matched.rule_id,
                         rule_source=matched.source,
                         rule_content=matched.rule_content or "",
@@ -521,6 +612,7 @@ class PermissionEngine:
 
 # ── 持久化（mem0审计表模式） ─────────────────────────────────────
 
+
 class PermissionStore:
     """SQLite持久化：规则表 + 决策审计表 + 模式表
 
@@ -582,16 +674,23 @@ class PermissionStore:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS perm_meta (
                     key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_perm_audit_tool ON perm_decision_audit(tool_name, created_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_perm_audit_behavior ON perm_decision_audit(behavior, created_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_perm_rules_tool ON perm_rules(tool_name, is_deleted)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_perm_audit_tool ON perm_decision_audit(tool_name, created_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_perm_audit_behavior ON perm_decision_audit(behavior, created_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_perm_rules_tool ON perm_rules(tool_name, is_deleted)"
+            )
         self._seed_builtin_rules()
 
     def _seed_builtin_rules(self):
         """首次启动播种内置基线策略（幂等：已有builtin规则则跳过）"""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) AS n FROM perm_rules WHERE source='builtin'").fetchone()
+                "SELECT COUNT(*) AS n FROM perm_rules WHERE source='builtin'"
+            ).fetchone()
             if row["n"] > 0:
                 return
             now = time.time()
@@ -601,22 +700,32 @@ class PermissionStore:
                 conn.execute(
                     "INSERT INTO perm_rules (rule_id, tool_name, rule_content, behavior, source, hard, risk, seq, created_at)"
                     " VALUES (?,?,?,?,?,?,?,?,?)",
-                    (uuid.uuid4().hex[:12], tool, content, "deny", "builtin", 1, "high", seq, now))
+                    (uuid.uuid4().hex[:12], tool, content, "deny", "builtin", 1, "high", seq, now),
+                )
             for item in BUILTIN_ASK:
                 tool, content, risk = item
                 seq += 1
                 conn.execute(
                     "INSERT INTO perm_rules (rule_id, tool_name, rule_content, behavior, source, hard, risk, seq, created_at)"
                     " VALUES (?,?,?,?,?,?,?,?,?)",
-                    (uuid.uuid4().hex[:12], tool, content, "ask", "builtin", 0, risk, seq, now))
+                    (uuid.uuid4().hex[:12], tool, content, "ask", "builtin", 0, risk, seq, now),
+                )
             conn.execute(
                 "INSERT OR IGNORE INTO perm_meta (key, value) VALUES ('mode', ?)",
-                (PermissionMode.ACCEPT_EDITS.value,))
+                (PermissionMode.ACCEPT_EDITS.value,),
+            )
         logger.info("permission engine: seeded %d builtin rules", seq)
 
     # ── 规则CRUD ──
-    def add_rule(self, tool_name: str, rule_content: Optional[str], behavior: str,
-                 source: str = "user", hard: bool = False, risk: str = "medium") -> dict:
+    def add_rule(
+        self,
+        tool_name: str,
+        rule_content: str | None,
+        behavior: str,
+        source: str = "user",
+        hard: bool = False,
+        risk: str = "medium",
+    ) -> dict:
         rule_id = uuid.uuid4().hex[:12]
         with self._conn() as conn:
             row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS m FROM perm_rules").fetchone()
@@ -624,18 +733,29 @@ class PermissionStore:
             conn.execute(
                 "INSERT INTO perm_rules (rule_id, tool_name, rule_content, behavior, source, hard, risk, seq, created_at)"
                 " VALUES (?,?,?,?,?,?,?,?,?)",
-                (rule_id, tool_name, rule_content, behavior, source, 1 if hard else 0, risk, seq, time.time()))
+                (
+                    rule_id,
+                    tool_name,
+                    rule_content,
+                    behavior,
+                    source,
+                    1 if hard else 0,
+                    risk,
+                    seq,
+                    time.time(),
+                ),
+            )
         return {"rule_id": rule_id, "seq": seq}
 
     def delete_rule(self, rule_id: str) -> bool:
         """软删（保留审计轨迹；hard规则同样可由人工删除 — 但删除动作被审计）"""
         with self._conn() as conn:
-            cur = conn.execute(
-                "UPDATE perm_rules SET is_deleted=1 WHERE rule_id=?", (rule_id,))
+            cur = conn.execute("UPDATE perm_rules SET is_deleted=1 WHERE rule_id=?", (rule_id,))
             return cur.rowcount > 0
 
-    def list_rules(self, include_deleted: bool = False, behavior: str = "",
-                   tool_name: str = "") -> list[dict]:
+    def list_rules(
+        self, include_deleted: bool = False, behavior: str = "", tool_name: str = ""
+    ) -> list[dict]:
         q = "SELECT * FROM perm_rules WHERE 1=1"
         args: list = []
         if not include_deleted:
@@ -660,17 +780,19 @@ class PermissionStore:
     def get_rules(self) -> list[PermissionRule]:
         rules = []
         for d in self.list_rules():
-            rules.append(PermissionRule(
-                tool_name=d["tool_name"],
-                rule_content=d["rule_content"],
-                behavior=PermissionBehavior(d["behavior"]),
-                source=d["source"],
-                hard=d["hard"],
-                risk=d["risk"],
-                rule_id=d["rule_id"],
-                seq=d["seq"],
-                created_at=d["created_at"],
-            ))
+            rules.append(
+                PermissionRule(
+                    tool_name=d["tool_name"],
+                    rule_content=d["rule_content"],
+                    behavior=PermissionBehavior(d["behavior"]),
+                    source=d["source"],
+                    hard=d["hard"],
+                    risk=d["risk"],
+                    rule_id=d["rule_id"],
+                    seq=d["seq"],
+                    created_at=d["created_at"],
+                )
+            )
         return rules
 
     # ── 模式 ──
@@ -684,11 +806,18 @@ class PermissionStore:
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO perm_meta (key, value) VALUES ('mode', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (mode,))
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (mode,),
+            )
 
     # ── 决策审计 ──
-    def log_decision(self, decision: PermissionDecision, session_id: str = "",
-                     tool_name: str = "", tool_input: Optional[dict] = None) -> None:
+    def log_decision(
+        self,
+        decision: PermissionDecision,
+        session_id: str = "",
+        tool_name: str = "",
+        tool_input: dict | None = None,
+    ) -> None:
         tool_input = tool_input or {}
         try:
             preview = json.dumps(tool_input, ensure_ascii=False)[:500]
@@ -703,11 +832,24 @@ class PermissionStore:
                 "(decision_id, session_id, tool_name, tool_input_digest, tool_input_preview,"
                 " behavior, decision_reason, message, rule_id, rule_source, rule_content,"
                 " requires_human, risk, mode, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (decision.decision_id or uuid.uuid4().hex[:16], session_id, tool_name,
-                 digest, preview, decision.behavior.value, decision.decision_reason,
-                 decision.message, decision.rule_id, decision.rule_source,
-                 decision.rule_content, 1 if decision.requires_human else 0,
-                 decision.risk, decision.mode, time.time()))
+                (
+                    decision.decision_id or uuid.uuid4().hex[:16],
+                    session_id,
+                    tool_name,
+                    digest,
+                    preview,
+                    decision.behavior.value,
+                    decision.decision_reason,
+                    decision.message,
+                    decision.rule_id,
+                    decision.rule_source,
+                    decision.rule_content,
+                    1 if decision.requires_human else 0,
+                    decision.risk,
+                    decision.mode,
+                    time.time(),
+                ),
+            )
 
     def record_outcome(self, decision_id: str, outcome: str, comment: str = "") -> bool:
         """人工审批结果回写（approved/denied/timeout）"""
@@ -716,11 +858,14 @@ class PermissionStore:
         with self._conn() as conn:
             cur = conn.execute(
                 "UPDATE perm_decision_audit SET outcome=?, outcome_comment=?, outcome_at=? "
-                "WHERE decision_id=?", (outcome, comment, time.time(), decision_id))
+                "WHERE decision_id=?",
+                (outcome, comment, time.time(), decision_id),
+            )
             return cur.rowcount > 0
 
-    def audit_query(self, limit: int = 50, behavior: str = "",
-                    tool_name: str = "", outcome: str = "") -> list[dict]:
+    def audit_query(
+        self, limit: int = 50, behavior: str = "", tool_name: str = "", outcome: str = ""
+    ) -> list[dict]:
         q = "SELECT * FROM perm_decision_audit WHERE 1=1"
         args: list = []
         if behavior:
@@ -743,44 +888,59 @@ class PermissionStore:
             total = conn.execute("SELECT COUNT(*) AS n FROM perm_decision_audit").fetchone()["n"]
             by_b = {}
             for r in conn.execute(
-                    "SELECT behavior, COUNT(*) AS n FROM perm_decision_audit GROUP BY behavior"):
+                "SELECT behavior, COUNT(*) AS n FROM perm_decision_audit GROUP BY behavior"
+            ):
                 by_b[r["behavior"]] = r["n"]
             denied = conn.execute(
-                "SELECT COUNT(*) AS n FROM perm_decision_audit WHERE behavior='deny'").fetchone()["n"]
+                "SELECT COUNT(*) AS n FROM perm_decision_audit WHERE behavior='deny'"
+            ).fetchone()["n"]
             pending = conn.execute(
-                "SELECT COUNT(*) AS n FROM perm_decision_audit WHERE behavior='ask' AND outcome=''").fetchone()["n"]
+                "SELECT COUNT(*) AS n FROM perm_decision_audit WHERE behavior='ask' AND outcome=''"
+            ).fetchone()["n"]
             rules_n = conn.execute(
-                "SELECT COUNT(*) AS n FROM perm_rules WHERE is_deleted=0").fetchone()["n"]
+                "SELECT COUNT(*) AS n FROM perm_rules WHERE is_deleted=0"
+            ).fetchone()["n"]
             hard_n = conn.execute(
-                "SELECT COUNT(*) AS n FROM perm_rules WHERE is_deleted=0 AND hard=1").fetchone()["n"]
+                "SELECT COUNT(*) AS n FROM perm_rules WHERE is_deleted=0 AND hard=1"
+            ).fetchone()["n"]
         return {
-            "decisions_total": total, "by_behavior": by_b, "denied": denied,
-            "pending_approvals": pending, "active_rules": rules_n, "hard_rules": hard_n,
+            "decisions_total": total,
+            "by_behavior": by_b,
+            "denied": denied,
+            "pending_approvals": pending,
+            "active_rules": rules_n,
+            "hard_rules": hard_n,
             "mode": self.get_mode(),
         }
 
 
 # ── 服务门面（API与调用方的唯一入口） ─────────────────────────────
 
+
 class PermissionService:
     """store + engine 门面：check() = 构建context → 评估 → 落审计"""
 
-    def __init__(self, store: Optional[PermissionStore] = None, db_path: str = ""):
+    def __init__(self, store: PermissionStore | None = None, db_path: str = ""):
         self.store = store or PermissionStore(db_path)
 
     def build_engine(self, working_dir: str = "") -> PermissionEngine:
         mode = PermissionMode(self.store.get_mode())
         wds = [working_dir] if working_dir else []
-        return PermissionEngine(mode=mode, rules=self.store.get_rules(),
-                                working_directories=wds)
+        return PermissionEngine(mode=mode, rules=self.store.get_rules(), working_directories=wds)
 
-    def check(self, tool_name: str, tool_input: Optional[dict] = None,
-              session_id: str = "", working_dir: str = "") -> PermissionDecision:
+    def check(
+        self,
+        tool_name: str,
+        tool_input: dict | None = None,
+        session_id: str = "",
+        working_dir: str = "",
+    ) -> PermissionDecision:
         engine = self.build_engine(working_dir=working_dir)
         decision = engine.check(tool_name, tool_input or {})
         try:
-            self.store.log_decision(decision, session_id=session_id,
-                                    tool_name=tool_name, tool_input=tool_input or {})
+            self.store.log_decision(
+                decision, session_id=session_id, tool_name=tool_name, tool_input=tool_input or {}
+            )
         except Exception as e:  # 审计失败不阻塞判定
             logger.warning("permission audit log failed: %s", e)
         return decision

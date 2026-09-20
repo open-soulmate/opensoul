@@ -69,13 +69,11 @@ class ExecutionPlan:
 
     def get_ready_steps(self) -> list[PlanStep]:
         """Get steps whose dependencies are all satisfied."""
-        completed_ids = {
-            s.step_id for s in self.steps if s.status == StepStatus.COMPLETED
-        }
+        completed_ids = {s.step_id for s in self.steps if s.status == StepStatus.COMPLETED}
         return [
-            s for s in self.steps
-            if s.status == StepStatus.PENDING
-            and all(dep in completed_ids for dep in s.depends_on)
+            s
+            for s in self.steps
+            if s.status == StepStatus.PENDING and all(dep in completed_ids for dep in s.depends_on)
         ]
 
 
@@ -115,7 +113,7 @@ class DAGPlanner:
         logger.info(f"Created plan {plan_id}: {len(steps)} steps for: {goal[:50]}")
         return plan
 
-    def create_from_llm_response(self, goal: str, llm_response: str) -> Optional[ExecutionPlan]:
+    def create_from_llm_response(self, goal: str, llm_response: str) -> ExecutionPlan | None:
         """Parse LLM response into an execution plan."""
         # Try JSON format
         try:
@@ -141,6 +139,7 @@ class DAGPlanner:
                 current = {"id": f"step_{len(steps_spec)}", "description": line}
             elif current and ("depends" in line.lower() or "依赖" in line):
                 import re
+
                 deps = re.findall(r"step[_\s]*(\d+)", line, re.IGNORECASE)
                 current["depends_on"] = [f"step_{d}" for d in deps]
             elif current:
@@ -155,7 +154,7 @@ class DAGPlanner:
         logger.warning(f"Could not parse LLM response as plan: {llm_response[:200]}")
         return None
 
-    def get_plan(self, plan_id: str) -> Optional[ExecutionPlan]:
+    def get_plan(self, plan_id: str) -> ExecutionPlan | None:
         return self._plans.get(plan_id)
 
     def update_step(
@@ -241,7 +240,6 @@ class DAGPlanner:
         return {
             **self._stats,
             "active_plans": sum(
-                1 for p in self._plans.values()
-                if p.status in ("pending", "running")
+                1 for p in self._plans.values() if p.status in ("pending", "running")
             ),
         }

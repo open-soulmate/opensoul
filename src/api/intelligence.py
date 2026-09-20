@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from src.intelligence.analyzer import InsightType, Severity, SystemIntelligence
-from src.intelligence.intent import IntentClassifier, INTENT_PATTERNS
+from src.intelligence.intent import INTENT_PATTERNS, IntentClassifier
 
 router = APIRouter()
 

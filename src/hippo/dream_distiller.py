@@ -12,12 +12,14 @@
 - nanobot memory.py（archive-as-tool-call: LLM显式确认记忆检查点）
 - kilocode recalledMemory()（15行防记忆回声）
 """
+
 import hashlib
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
 
@@ -31,6 +33,7 @@ class DreamAction:
     Mirrors nanobot's archive-as-tool-call: the LLM explicitly confirms
     each memory action rather than a background heuristic deciding.
     """
+
     action: str  # ADD / UPDATE / DELETE / SKIP
     content: str = ""  # new memory content (for ADD)
     memory_id: str = ""  # target memory (for UPDATE/DELETE)
@@ -48,6 +51,7 @@ class DreamAction:
 @dataclass
 class DreamResult:
     """Result of a Dream distillation run."""
+
     dream_id: str
     actions: list[DreamAction] = field(default_factory=list)
     applied: int = 0
@@ -207,7 +211,7 @@ class DreamDistiller:
     - kilocode memory echo blocker (skip digest if recall was used this turn)
     """
 
-    def __init__(self, ltm_store, llm_call: Optional[Callable] = None):
+    def __init__(self, ltm_store, llm_call: Callable | None = None):
         """Initialize with a LongTermMemoryStore and optional LLM caller.
 
         Args:
@@ -274,7 +278,9 @@ class DreamDistiller:
         Returns:
             DreamResult with parsed actions and execution stats.
         """
-        dream_id = f"dream_{hashlib.sha256(f'{time.time()}:{len(messages)}'.encode()).hexdigest()[:12]}"
+        dream_id = (
+            f"dream_{hashlib.sha256(f'{time.time()}:{len(messages)}'.encode()).hexdigest()[:12]}"
+        )
         result = DreamResult(dream_id=dream_id)
 
         # Memory echo blocker (kilocode)
@@ -386,9 +392,7 @@ class DreamDistiller:
             if mem is None:
                 # gatekeeper/标签门拒绝：计入skipped（可见），不静默当成功（mem0 §1.1）
                 outcome = getattr(self._store, "last_write_outcome", "") or "gate-rejected"
-                logger.info(
-                    "Dream ADD %s: %s", outcome, (action.content or "")[:80]
-                )
+                logger.info("Dream ADD %s: %s", outcome, (action.content or "")[:80])
             return mem is not None
 
         elif action.action == "UPDATE":
@@ -421,6 +425,7 @@ class DreamDistiller:
             # 跨event loop使用导致ollama 400 Bad Request。
             from src.config import settings
             from src.gland.router import ModelRouter
+
             router = ModelRouter()
             if settings.llm_base_url:
                 router.add_provider(

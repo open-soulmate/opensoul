@@ -4,6 +4,7 @@
 只落库真实存在的标准技能文件，不合成虚假执行记录。
 动态增长由cron执行链的extract上报驱动（cron prompt第7步）。
 """
+
 import hashlib
 import json
 import sqlite3
@@ -53,7 +54,10 @@ def seed_standard_skills() -> list[dict]:
             meta = _parse_frontmatter(md)
             name = meta.get("name", skill_dir.name)
             desc = meta.get("description", "")[:200]
-            skill_id = "std_" + hashlib.sha256(f"agent_standard:{skill_dir.name}".encode()).hexdigest()[:12]
+            skill_id = (
+                "std_"
+                + hashlib.sha256(f"agent_standard:{skill_dir.name}".encode()).hexdigest()[:12]
+            )
             now = time.time()
             conn.execute(
                 """INSERT OR IGNORE INTO learned_skills

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Registry同步管线测试 — kilocode discovery.ts移植（fetch/安全计划/origin钉死下载/端到端）
 
 纯函数级+monkeypatch隔离端点测试（marketplace.DB_PATH/SHARED_SKILLS_DIR指向tmp），
@@ -25,7 +24,6 @@ from src.immune.registry_sync import (
 )
 from src.immune.skill_guard import read_origin
 
-
 # ── fixtures ──────────────────────────────────────────────────
 
 
@@ -36,12 +34,16 @@ def make_registry(base: Path, skills: dict, index: dict | None = None) -> Path:
         d = base / name
         d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(content, encoding="utf-8")
-    idx = index if index is not None else {
-        "skills": [
-            {"name": n, "description": f"desc {n}", "version": "1.0.0", "category": "demo"}
-            for n in skills
-        ]
-    }
+    idx = (
+        index
+        if index is not None
+        else {
+            "skills": [
+                {"name": n, "description": f"desc {n}", "version": "1.0.0", "category": "demo"}
+                for n in skills
+            ]
+        }
+    )
     (base / "index.json").write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
     return base
 
@@ -192,12 +194,14 @@ class TestPlanEntries:
         assert accepted == [] and rejected[0]["reason"] == "invalid_entry"
 
     def test_partial_accept_mixed_index(self):
-        accepted, rejected = self._plan([
-            {"name": "good-one"},
-            {"name": "../bad"},
-            {"name": "good-two", "version": "2.0"},
-            {"name": "origin-thief", "download_url": "https://evil.example.com/x"},
-        ])
+        accepted, rejected = self._plan(
+            [
+                {"name": "good-one"},
+                {"name": "../bad"},
+                {"name": "good-two", "version": "2.0"},
+                {"name": "origin-thief", "download_url": "https://evil.example.com/x"},
+            ]
+        )
         assert [p.entry.name for p in accepted] == ["good-one", "good-two"]
         assert {r["reason"] for r in rejected} == {"unsafe_name", "origin_mismatch"}
 
@@ -221,9 +225,9 @@ class TestDownloadPayload:
     def test_local_files_subset_copy(self, tmp_path):
         base = make_registry(tmp_path / "reg", {"skill-a": VALID_MD})
         (base / "skill-a" / "extra.bin").write_text("not-in-list")
-        (base / "index.json").write_text(json.dumps({
-            "skills": [{"name": "skill-a", "files": ["SKILL.md"]}]
-        }))
+        (base / "index.json").write_text(
+            json.dumps({"skills": [{"name": "skill-a", "files": ["SKILL.md"]}]})
+        )
         index = fetch_registry_index(str(base))
         accepted, _ = plan_registry_entries(index)
         staging = tmp_path / "staging"
@@ -238,6 +242,7 @@ class TestDownloadPayload:
         staging = tmp_path / "staging"
         staging.mkdir()
         from src.immune.registry_sync import PlannedEntry
+
         with pytest.raises(RegistrySyncError) as ei:
             download_skill_payload(PlannedEntry(entry=planned_entry, origin="x"), index, staging)
         assert ei.value.reason == "download_failed"
@@ -289,8 +294,10 @@ class TestEndToEndPipeline:
         staging.mkdir()
         payload = download_skill_payload(accepted[0], index, staging)
         from src.immune.skill_guard import promote_staging
-        result = promote_staging(payload, live, origin=accepted[0].origin,
-                                 source_type="registry:custom")
+
+        result = promote_staging(
+            payload, live, origin=accepted[0].origin, source_type="registry:custom"
+        )
         assert result.success and result.swapped
         origin_rec = read_origin(live / "demo-echo-skill")
         assert origin_rec is not None
@@ -310,8 +317,9 @@ class TestEndToEndPipeline:
             staging = tmp_path / f"staging-{reg.name}"
             staging.mkdir()
             payload = download_skill_payload(accepted[0], index, staging)
-            result = promote_staging(payload, live, origin=accepted[0].origin,
-                                     source_type="registry:custom")
+            result = promote_staging(
+                payload, live, origin=accepted[0].origin, source_type="registry:custom"
+            )
             assert result.success is expect_ok, result.errors
         # live仍是registry-A版本
         assert "B version" not in (live / "demo-echo-skill" / "SKILL.md").read_text()
@@ -321,14 +329,16 @@ class TestEndToEndPipeline:
         reg_b = make_registry(tmp_path / "regb", {"demo-echo-skill": VALID_MD + "\nB version\n"})
         live = tmp_path / "live"
         from src.immune.skill_guard import promote_staging
+
         for reg, force in [(reg_a, False), (reg_b, True)]:
             index = fetch_registry_index(str(reg))
             accepted, _ = plan_registry_entries(index)
             staging = tmp_path / f"staging-{reg.name}"
             staging.mkdir()
             payload = download_skill_payload(accepted[0], index, staging)
-            result = promote_staging(payload, live, origin=accepted[0].origin,
-                                     source_type="registry:custom", force=force)
+            result = promote_staging(
+                payload, live, origin=accepted[0].origin, source_type="registry:custom", force=force
+            )
             assert result.success, result.errors
         assert "B version" in (live / "demo-echo-skill" / "SKILL.md").read_text()
         assert read_origin(live / "demo-echo-skill").origin == f"registry:local:{reg_b}"
@@ -359,11 +369,13 @@ class TestMarketplaceSyncEndpoint:
         db.close()
 
     def test_sync_rejects_malicious_entries_visible(self, tmp_db, tmp_path):
-        idx = {"skills": [
-            {"name": "good-skill"},
-            {"name": "../evil"},
-            {"name": "thief", "download_url": "https://evil.example.com/x"},
-        ]}
+        idx = {
+            "skills": [
+                {"name": "good-skill"},
+                {"name": "../evil"},
+                {"name": "thief", "download_url": "https://evil.example.com/x"},
+            ]
+        }
         reg = make_registry(tmp_path / "reg", {"good-skill": VALID_MD}, index=idx)
         sid = add_source(tmp_db, "src-test-2", str(reg))
         resp = asyncio.run(marketplace.sync_skill_source(sid, user_id=uuid.uuid4()))
@@ -371,9 +383,12 @@ class TestMarketplaceSyncEndpoint:
         assert resp["accepted"] == 1
         assert {r["reason"] for r in resp["rejected"]} == {"unsafe_name", "origin_mismatch"}
         db = sqlite3.connect(tmp_db)
-        names = [r[0] for r in db.execute(
-            "SELECT name FROM marketplace_skills WHERE source_id=?", (sid,)
-        ).fetchall()]
+        names = [
+            r[0]
+            for r in db.execute(
+                "SELECT name FROM marketplace_skills WHERE source_id=?", (sid,)
+            ).fetchall()
+        ]
         db.close()
         assert names == ["good-skill"]  # 恶意条目未入库
 
@@ -383,9 +398,9 @@ class TestMarketplaceSyncEndpoint:
         assert resp["success"] is False
         assert resp["error"]["reason"] == "fetch_failed"
         db = sqlite3.connect(tmp_db)
-        err = db.execute(
-            "SELECT last_sync_error FROM skill_sources WHERE id=?", (sid,)
-        ).fetchone()[0]
+        err = db.execute("SELECT last_sync_error FROM skill_sources WHERE id=?", (sid,)).fetchone()[
+            0
+        ]
         db.close()
         assert err and err.startswith("fetch_failed")  # 失败落库可见，非静默假成功
 
@@ -433,9 +448,11 @@ class TestMarketplaceInstallEndpoint:
     def test_install_full_pipeline(self, tmp_db, tmp_path):
         reg = make_registry(tmp_path / "reg", {"demo-echo-skill": VALID_MD})
         self._sync(reg, "src-inst-1")
-        resp = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-1", "demo-echo-skill", user_id=uuid.uuid4()
-        ))
+        resp = asyncio.run(
+            marketplace.marketplace_install_skill(
+                "src-inst-1", "demo-echo-skill", user_id=uuid.uuid4()
+            )
+        )
         assert resp["success"] is True
         assert resp["swapped"] is True
         assert resp["origin"] == f"registry:local:{reg}"
@@ -456,12 +473,12 @@ class TestMarketplaceInstallEndpoint:
         reg = make_registry(tmp_path / "reg", {"demo-echo-skill": VALID_MD})
         self._sync(reg, "src-inst-2")
         uid = uuid.uuid4()
-        first = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-2", "demo-echo-skill", user_id=uid
-        ))
-        second = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-2", "demo-echo-skill", user_id=uid
-        ))
+        first = asyncio.run(
+            marketplace.marketplace_install_skill("src-inst-2", "demo-echo-skill", user_id=uid)
+        )
+        second = asyncio.run(
+            marketplace.marketplace_install_skill("src-inst-2", "demo-echo-skill", user_id=uid)
+        )
         assert first["swapped"] is True
         assert second["success"] is True and second["skipped"] is True  # 指纹一致跳过
 
@@ -469,18 +486,19 @@ class TestMarketplaceInstallEndpoint:
         reg = make_registry(tmp_path / "reg", {"demo-echo-skill": VALID_MD})
         self._sync(reg, "src-inst-3")
         uid = uuid.uuid4()
-        asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-3", "demo-echo-skill", user_id=uid
-        ))
+        asyncio.run(
+            marketplace.marketplace_install_skill("src-inst-3", "demo-echo-skill", user_id=uid)
+        )
         # registry内容更新→重新安装=真实swap
         (reg / "demo-echo-skill" / "SKILL.md").write_text(VALID_MD + "\nupdated v2\n")
-        resp = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-3", "demo-echo-skill", user_id=uid
-        ))
+        resp = asyncio.run(
+            marketplace.marketplace_install_skill("src-inst-3", "demo-echo-skill", user_id=uid)
+        )
         assert resp["success"] is True and resp["swapped"] is True
-        assert "updated v2" in (
-            marketplace.SHARED_SKILLS_DIR / "demo-echo-skill" / "SKILL.md"
-        ).read_text()
+        assert (
+            "updated v2"
+            in (marketplace.SHARED_SKILLS_DIR / "demo-echo-skill" / "SKILL.md").read_text()
+        )
 
     def test_install_cross_registry_origin_mismatch_rejected(self, tmp_db, tmp_path):
         """换源拒绝：registry-B同名skill安装→origin_mismatch，live不被污染；force=true放行"""
@@ -489,45 +507,56 @@ class TestMarketplaceInstallEndpoint:
         self._sync(reg_a, "src-inst-4a")
         self._sync(reg_b, "src-inst-4b")
         uid = uuid.uuid4()
-        ok = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-4a", "demo-echo-skill", user_id=uid
-        ))
+        ok = asyncio.run(
+            marketplace.marketplace_install_skill("src-inst-4a", "demo-echo-skill", user_id=uid)
+        )
         assert ok["success"] is True
-        rejected = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-4b", "demo-echo-skill", user_id=uid
-        ))
+        rejected = asyncio.run(
+            marketplace.marketplace_install_skill("src-inst-4b", "demo-echo-skill", user_id=uid)
+        )
         assert rejected["success"] is False
         assert "origin_mismatch" in rejected["error"]
-        assert "B evil" not in (
-            marketplace.SHARED_SKILLS_DIR / "demo-echo-skill" / "SKILL.md"
-        ).read_text()  # live未被换源污染
-        forced = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-4b", "demo-echo-skill",
-            body=marketplace.MarketplaceInstallRequest(force=True), user_id=uid,
-        ))
+        assert (
+            "B evil"
+            not in (marketplace.SHARED_SKILLS_DIR / "demo-echo-skill" / "SKILL.md").read_text()
+        )  # live未被换源污染
+        forced = asyncio.run(
+            marketplace.marketplace_install_skill(
+                "src-inst-4b",
+                "demo-echo-skill",
+                body=marketplace.MarketplaceInstallRequest(force=True),
+                user_id=uid,
+            )
+        )
         assert forced["success"] is True
-        assert "B evil" in (
-            marketplace.SHARED_SKILLS_DIR / "demo-echo-skill" / "SKILL.md"
-        ).read_text()
+        assert (
+            "B evil" in (marketplace.SHARED_SKILLS_DIR / "demo-echo-skill" / "SKILL.md").read_text()
+        )
 
     def test_install_registry_tamper_detected(self, tmp_db, tmp_path):
         """入库后registry里skill被移除→安装时安全计划重跑拒绝（不信入库快照）"""
         reg = make_registry(tmp_path / "reg", {"demo-echo-skill": VALID_MD})
         self._sync(reg, "src-inst-5")
         import shutil as _sh
+
         _sh.rmtree(reg / "demo-echo-skill")  # 篡改：registry内容消失
-        resp = asyncio.run(marketplace.marketplace_install_skill(
-            "src-inst-5", "demo-echo-skill", user_id=uuid.uuid4()
-        ))
+        resp = asyncio.run(
+            marketplace.marketplace_install_skill(
+                "src-inst-5", "demo-echo-skill", user_id=uuid.uuid4()
+            )
+        )
         assert resp["success"] is False
         assert "安全计划" in resp["error"] or "download" in resp["error"]
 
     def test_install_unknown_skill_404(self, tmp_db, tmp_path):
         from fastapi import HTTPException
+
         reg = make_registry(tmp_path / "reg", {"skill-a": VALID_MD})
         self._sync(reg, "src-inst-6")
         with pytest.raises(HTTPException) as ei:
-            asyncio.run(marketplace.marketplace_install_skill(
-                "src-inst-6", "no-such-skill", user_id=uuid.uuid4()
-            ))
+            asyncio.run(
+                marketplace.marketplace_install_skill(
+                    "src-inst-6", "no-such-skill", user_id=uuid.uuid4()
+                )
+            )
         assert ei.value.status_code == 404

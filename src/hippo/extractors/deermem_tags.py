@@ -31,9 +31,9 @@
   scope∈{task,project} 的事实在自动路径（mode="auto"）删除fail-closed。
 """
 
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
-import time
 
 # ── 合法词表（fail-closed：不在表内即拒绝） ──────────────────────
 VALID_SCOPES = ("user", "task", "project", "session")
@@ -102,15 +102,9 @@ class SafetyTags:
             return None, "tags"
         if not isinstance(raw["scope"], str) or raw["scope"] not in VALID_SCOPES:
             return None, "scope"
-        if (
-            not isinstance(raw["durability"], str)
-            or raw["durability"] not in VALID_DURABILITIES
-        ):
+        if not isinstance(raw["durability"], str) or raw["durability"] not in VALID_DURABILITIES:
             return None, "durability"
-        if (
-            not isinstance(raw["authority"], str)
-            or raw["authority"] not in VALID_AUTHORITIES
-        ):
+        if not isinstance(raw["authority"], str) or raw["authority"] not in VALID_AUTHORITIES:
             return None, "authority"
         return (
             cls(
@@ -131,7 +125,7 @@ class TagDecision:
     rule: str = "ok"  # ok / ok_inferred / bypass / invalid_<field> /
     #                  # requires_explicit_confirmation / replacement_required / protected_scope
     reason: str = ""
-    tags: Optional[SafetyTags] = None
+    tags: SafetyTags | None = None
 
     def to_dict(self) -> dict:
         return {

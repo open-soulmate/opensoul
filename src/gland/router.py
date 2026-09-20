@@ -64,6 +64,8 @@ def extract_chat_text(result) -> str:
             if isinstance(first.get("text"), str) and first["text"]:
                 return first["text"]
     return str(result)
+
+
 _REDACTOR_INIT = False
 # Minimum risk level redacted before text leaves the machine toward an LLM
 # provider. "critical" = API keys/tokens/passwords only; set to "low" to also
@@ -214,6 +216,7 @@ class ModelRouter:
         mode = None
         try:
             from src.gland.route_policy import get_mode
+
             mode = get_mode()
         except Exception:
             pass
@@ -347,7 +350,12 @@ class ModelRouter:
                 )
                 self._mark_success(provider)
                 tried.append(
-                    {"provider": provider.name, "model": call_model, "pass": 1, "outcome": "success"}
+                    {
+                        "provider": provider.name,
+                        "model": call_model,
+                        "pass": 1,
+                        "outcome": "success",
+                    }
                 )
                 return result, provider, call_model
             except Exception as exc:
@@ -384,7 +392,12 @@ class ModelRouter:
                 except Exception as exc:
                     self._mark_failure(provider)
                     tried.append(
-                        {"provider": provider.name, "model": call_model, "pass": 2, "error": str(exc)}
+                        {
+                            "provider": provider.name,
+                            "model": call_model,
+                            "pass": 2,
+                            "error": str(exc),
+                        }
                     )
                     last_error = exc
                     logger.warning(

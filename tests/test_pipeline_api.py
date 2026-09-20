@@ -22,7 +22,13 @@ class TestPipelineHealth:
 class TestPipelineUpload:
     def test_upload_text_file(self, client):
         """Upload a simple text file through the pipeline."""
-        files = {"file": ("test.txt", b"Hello world, this is a test document for pipeline.", "text/plain")}
+        files = {
+            "file": (
+                "test.txt",
+                b"Hello world, this is a test document for pipeline.",
+                "text/plain",
+            )
+        }
         data = {"pipeline": "text", "skip_immune": "true", "skip_knowledge": "true"}
         resp = client.post("/api/pipeline/upload", files=files, data=data)
         assert resp.status_code == 200
@@ -34,7 +40,9 @@ class TestPipelineUpload:
 
     def test_upload_auto_detect(self, client):
         """Auto-detect pipeline type from file extension."""
-        files = {"file": ("readme.md", b"# Test markdown content for auto-detection", "text/markdown")}
+        files = {
+            "file": ("readme.md", b"# Test markdown content for auto-detection", "text/markdown")
+        }
         data = {"pipeline": "auto", "skip_immune": "true", "skip_knowledge": "true"}
         resp = client.post("/api/pipeline/upload", files=files, data=data)
         assert resp.status_code == 200
@@ -60,7 +68,12 @@ class TestPipelineUpload:
     def test_upload_with_tags(self, client):
         """Tags should be included in pipeline metadata."""
         files = {"file": ("tagged.txt", b"Content with tags", "text/plain")}
-        data = {"pipeline": "text", "tags": "test,integration", "skip_immune": "true", "skip_knowledge": "true"}
+        data = {
+            "pipeline": "text",
+            "tags": "test,integration",
+            "skip_immune": "true",
+            "skip_knowledge": "true",
+        }
         resp = client.post("/api/pipeline/upload", files=files, data=data)
         assert resp.status_code == 200
         result = resp.json()

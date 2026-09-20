@@ -22,10 +22,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
 @router.get("/health")
 async def gene_templates_health():
     """GeneTemplates health check."""
     return {"status": "ok", "component": "GeneTemplates"}
+
+
 logger = logging.getLogger(__name__)
 
 # ── Persistence ──────────────────────────────────────────────────────────
@@ -63,38 +67,41 @@ def _save_persisted() -> None:
 
 class TemplateParam(BaseModel):
     """A single configurable parameter in a template."""
+
     name: str
     label: str
-    type: str = "string"          # string, int, float, bool, select, password
+    type: str = "string"  # string, int, float, bool, select, password
     description: str = ""
     default: Any = None
     required: bool = False
-    options: list[str] = []       # for type="select"
+    options: list[str] = []  # for type="select"
     placeholder: str = ""
 
 
 class AdapterTemplate(BaseModel):
     """Definition of an integration template."""
+
     template_id: str
     name: str
     description: str
-    adapter_type: str             # rest, database, cli, rpa, filesystem
+    adapter_type: str  # rest, database, cli, rpa, filesystem
     icon: str = "🔌"
     builtin: bool = True
     params: list[TemplateParam] = []
     capabilities: list[str] = []  # natural-language capability descriptions
-    adapter_class: str = ""       # internal: which adapter class to use
-    configure_action: str = ""    # internal: the 'configure' params template
+    adapter_class: str = ""  # internal: which adapter class to use
+    configure_action: str = ""  # internal: the 'configure' params template
     tags: list[str] = []
 
 
 class AdapterInstance(BaseModel):
     """A running adapter created from a template."""
+
     instance_id: str
     template_id: str
     name: str
     adapter_type: str
-    status: str = "active"        # active, error, stopped
+    status: str = "active"  # active, error, stopped
     config: dict[str, Any] = {}
     capabilities: list[str] = []
     created_at: float = 0.0
@@ -104,12 +111,13 @@ class AdapterInstance(BaseModel):
 
 class CapabilityEntry(BaseModel):
     """A registered capability — what an integration can do."""
+
     capability_id: str
     adapter_instance_id: str
     adapter_name: str
     adapter_type: str
-    description: str              # natural language, e.g. "Can query PostgreSQL databases"
-    actions: list[str] = []       # specific actions available
+    description: str  # natural language, e.g. "Can query PostgreSQL databases"
+    actions: list[str] = []  # specific actions available
     tags: list[str] = []
 
 
@@ -129,6 +137,7 @@ def _get_adapter_registry():
     if _adapter_registry is None:
         try:
             from src.api.soma_discovery import _adapter_registry as reg
+
             _adapter_registry = reg
         except ImportError:
             _adapter_registry = {}
@@ -152,14 +161,29 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "rest",
             "tags": ["git", "api", "devops", "ci-cd"],
             "params": [
-                {"name": "base_url", "label": "API Base URL", "type": "string",
-                 "default": "https://api.github.com", "required": True,
-                 "description": "GitHub API endpoint"},
-                {"name": "auth_token", "label": "Personal Access Token", "type": "password",
-                 "required": False, "placeholder": "ghp_...",
-                 "description": "GitHub PAT for authenticated requests"},
-                {"name": "headers", "label": "Extra Headers", "type": "string",
-                 "default": "", "description": "Additional headers (JSON)"},
+                {
+                    "name": "base_url",
+                    "label": "API Base URL",
+                    "type": "string",
+                    "default": "https://api.github.com",
+                    "required": True,
+                    "description": "GitHub API endpoint",
+                },
+                {
+                    "name": "auth_token",
+                    "label": "Personal Access Token",
+                    "type": "password",
+                    "required": False,
+                    "placeholder": "ghp_...",
+                    "description": "GitHub PAT for authenticated requests",
+                },
+                {
+                    "name": "headers",
+                    "label": "Extra Headers",
+                    "type": "string",
+                    "default": "",
+                    "description": "Additional headers (JSON)",
+                },
             ],
             "capabilities": [
                 "List and search GitHub repositories",
@@ -180,13 +204,28 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "rest",
             "tags": ["monitoring", "health", "uptime"],
             "params": [
-                {"name": "base_url", "label": "Target URL", "type": "string",
-                 "required": True, "placeholder": "https://example.com",
-                 "description": "URL to monitor"},
-                {"name": "timeout", "label": "Timeout (seconds)", "type": "float",
-                 "default": 10.0, "description": "Request timeout"},
-                {"name": "headers", "label": "Custom Headers", "type": "string",
-                 "default": "", "description": "Request headers (JSON)"},
+                {
+                    "name": "base_url",
+                    "label": "Target URL",
+                    "type": "string",
+                    "required": True,
+                    "placeholder": "https://example.com",
+                    "description": "URL to monitor",
+                },
+                {
+                    "name": "timeout",
+                    "label": "Timeout (seconds)",
+                    "type": "float",
+                    "default": 10.0,
+                    "description": "Request timeout",
+                },
+                {
+                    "name": "headers",
+                    "label": "Custom Headers",
+                    "type": "string",
+                    "default": "",
+                    "description": "Request headers (JSON)",
+                },
             ],
             "capabilities": [
                 "Check if a website is reachable and responding",
@@ -206,12 +245,21 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "rest",
             "tags": ["api", "generic"],
             "params": [
-                {"name": "base_url", "label": "Base URL", "type": "string",
-                 "required": True, "description": "API base URL"},
-                {"name": "auth_token", "label": "Auth Token", "type": "password",
-                 "required": False, "description": "Bearer token"},
-                {"name": "timeout", "label": "Timeout", "type": "float",
-                 "default": 30.0},
+                {
+                    "name": "base_url",
+                    "label": "Base URL",
+                    "type": "string",
+                    "required": True,
+                    "description": "API base URL",
+                },
+                {
+                    "name": "auth_token",
+                    "label": "Auth Token",
+                    "type": "password",
+                    "required": False,
+                    "description": "Bearer token",
+                },
+                {"name": "timeout", "label": "Timeout", "type": "float", "default": 30.0},
             ],
             "capabilities": [
                 "Send HTTP requests (GET, POST, PUT, DELETE) to the configured API",
@@ -231,11 +279,21 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "database",
             "tags": ["database", "sql", "postgres"],
             "params": [
-                {"name": "connection_string", "label": "Connection String", "type": "string",
-                 "required": True, "placeholder": "postgresql://user:pass@localhost:5432/dbname",
-                 "description": "PostgreSQL connection DSN"},
-                {"name": "max_queries", "label": "Max Rows", "type": "int",
-                 "default": 100, "description": "Maximum rows returned per query"},
+                {
+                    "name": "connection_string",
+                    "label": "Connection String",
+                    "type": "string",
+                    "required": True,
+                    "placeholder": "postgresql://user:pass@localhost:5432/dbname",
+                    "description": "PostgreSQL connection DSN",
+                },
+                {
+                    "name": "max_queries",
+                    "label": "Max Rows",
+                    "type": "int",
+                    "default": 100,
+                    "description": "Maximum rows returned per query",
+                },
             ],
             "capabilities": [
                 "Query PostgreSQL tables with read-only SQL SELECT statements",
@@ -256,11 +314,15 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "database",
             "tags": ["database", "sql", "sqlite", "local"],
             "params": [
-                {"name": "connection_string", "label": "Database File Path", "type": "string",
-                 "required": True, "placeholder": "/path/to/database.db",
-                 "description": "Path to the SQLite database file"},
-                {"name": "max_queries", "label": "Max Rows", "type": "int",
-                 "default": 100},
+                {
+                    "name": "connection_string",
+                    "label": "Database File Path",
+                    "type": "string",
+                    "required": True,
+                    "placeholder": "/path/to/database.db",
+                    "description": "Path to the SQLite database file",
+                },
+                {"name": "max_queries", "label": "Max Rows", "type": "int", "default": 100},
             ],
             "capabilities": [
                 "Query SQLite database with read-only SQL SELECT statements",
@@ -282,12 +344,21 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "cli-tools",
             "tags": ["containers", "devops", "docker"],
             "params": [
-                {"name": "docker_host", "label": "Docker Host", "type": "string",
-                 "default": "unix:///var/run/docker.sock",
-                 "description": "Docker daemon endpoint"},
-                {"name": "compose_dir", "label": "Compose Directory", "type": "string",
-                 "default": "", "placeholder": "/path/to/project",
-                 "description": "Default docker-compose project directory"},
+                {
+                    "name": "docker_host",
+                    "label": "Docker Host",
+                    "type": "string",
+                    "default": "unix:///var/run/docker.sock",
+                    "description": "Docker daemon endpoint",
+                },
+                {
+                    "name": "compose_dir",
+                    "label": "Compose Directory",
+                    "type": "string",
+                    "default": "",
+                    "placeholder": "/path/to/project",
+                    "description": "Default docker-compose project directory",
+                },
             ],
             "capabilities": [
                 "List, start, stop, and remove Docker containers",
@@ -308,11 +379,21 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "cli-tools",
             "tags": ["version-control", "git", "devops"],
             "params": [
-                {"name": "repo_path", "label": "Repository Path", "type": "string",
-                 "required": False, "placeholder": "/path/to/repo",
-                 "description": "Default repository directory"},
-                {"name": "remote", "label": "Default Remote", "type": "string",
-                 "default": "origin", "description": "Default remote name"},
+                {
+                    "name": "repo_path",
+                    "label": "Repository Path",
+                    "type": "string",
+                    "required": False,
+                    "placeholder": "/path/to/repo",
+                    "description": "Default repository directory",
+                },
+                {
+                    "name": "remote",
+                    "label": "Default Remote",
+                    "type": "string",
+                    "default": "origin",
+                    "description": "Default remote name",
+                },
             ],
             "capabilities": [
                 "Clone Git repositories from remote URLs",
@@ -333,9 +414,14 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "cli-tools",
             "tags": ["cli", "generic"],
             "params": [
-                {"name": "tool_name", "label": "Tool Name", "type": "string",
-                 "required": True, "placeholder": "kubectl",
-                 "description": "Name of the CLI tool"},
+                {
+                    "name": "tool_name",
+                    "label": "Tool Name",
+                    "type": "string",
+                    "required": True,
+                    "placeholder": "kubectl",
+                    "description": "Name of the CLI tool",
+                },
             ],
             "capabilities": [
                 "Check if the CLI tool is installed and available",
@@ -355,11 +441,21 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "rpa",
             "tags": ["browser", "automation", "rpa", "gui"],
             "params": [
-                {"name": "display_server", "label": "Display Server", "type": "select",
-                 "options": ["auto", "wayland", "x11"], "default": "auto",
-                 "description": "Display server type (auto-detected by default)"},
-                {"name": "ocr_lang", "label": "OCR Language", "type": "string",
-                 "default": "eng+chi_sim", "description": "Tesseract language codes"},
+                {
+                    "name": "display_server",
+                    "label": "Display Server",
+                    "type": "select",
+                    "options": ["auto", "wayland", "x11"],
+                    "default": "auto",
+                    "description": "Display server type (auto-detected by default)",
+                },
+                {
+                    "name": "ocr_lang",
+                    "label": "OCR Language",
+                    "type": "string",
+                    "default": "eng+chi_sim",
+                    "description": "Tesseract language codes",
+                },
             ],
             "capabilities": [
                 "Take screenshots of the current screen",
@@ -371,7 +467,15 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
                 "Wait for specific text to appear on screen",
                 "List and manage application windows",
             ],
-            "capability_actions": ["screenshot", "ocr", "type", "key", "click", "mousemove", "clicktext"],
+            "capability_actions": [
+                "screenshot",
+                "ocr",
+                "type",
+                "key",
+                "click",
+                "mousemove",
+                "clicktext",
+            ],
         },
         # ── Filesystem Adapters ─────────────────────────────────────
         {
@@ -384,13 +488,28 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
             "adapter_class": "filesystem",
             "tags": ["backup", "sync", "files", "monitoring"],
             "params": [
-                {"name": "directory", "label": "Directory Path", "type": "string",
-                 "required": True, "placeholder": "~/Documents",
-                 "description": "Directory to monitor"},
-                {"name": "watch", "label": "Enable Watch", "type": "bool",
-                 "default": True, "description": "Start background file watcher"},
-                {"name": "max_depth", "label": "Max Depth", "type": "int",
-                 "default": 5, "description": "Maximum directory recursion depth"},
+                {
+                    "name": "directory",
+                    "label": "Directory Path",
+                    "type": "string",
+                    "required": True,
+                    "placeholder": "~/Documents",
+                    "description": "Directory to monitor",
+                },
+                {
+                    "name": "watch",
+                    "label": "Enable Watch",
+                    "type": "bool",
+                    "default": True,
+                    "description": "Start background file watcher",
+                },
+                {
+                    "name": "max_depth",
+                    "label": "Max Depth",
+                    "type": "int",
+                    "default": 5,
+                    "description": "Maximum directory recursion depth",
+                },
             ],
             "capabilities": [
                 "List files and directories with glob pattern filtering",
@@ -426,22 +545,24 @@ def _build_preset_templates() -> dict[str, dict[str, Any]]:
 
 class InstantiateRequest(BaseModel):
     """Request to instantiate a template."""
-    name: str = ""                    # friendly name for the instance
-    params: dict[str, Any] = {}       # user-provided parameter values
-    auto_configure: bool = True       # automatically call adapter.configure()
+
+    name: str = ""  # friendly name for the instance
+    params: dict[str, Any] = {}  # user-provided parameter values
+    auto_configure: bool = True  # automatically call adapter.configure()
 
 
 class CreateTemplateRequest(BaseModel):
     """Request to create a custom template."""
+
     template_id: str = ""
     name: str
     description: str = ""
-    adapter_type: str                 # rest, database, cli, rpa, filesystem
+    adapter_type: str  # rest, database, cli, rpa, filesystem
     icon: str = "🔌"
     params: list[dict[str, Any]] = []
     capabilities: list[str] = []
     tags: list[str] = []
-    adapter_class: str = ""           # maps to soma_discovery adapter name
+    adapter_class: str = ""  # maps to soma_discovery adapter name
     configure_params: dict[str, Any] = {}
 
 
@@ -462,8 +583,12 @@ def _init():
     _instances.update(persisted.get("instances", {}))
     _capabilities.update(persisted.get("capabilities", {}))
 
-    logger.info("Gene Templates: loaded %d templates, %d instances, %d capabilities",
-                len(_templates), len(_instances), len(_capabilities))
+    logger.info(
+        "Gene Templates: loaded %d templates, %d instances, %d capabilities",
+        len(_templates),
+        len(_instances),
+        len(_capabilities),
+    )
 
 
 _init()
@@ -541,7 +666,9 @@ async def _instantiate_adapter(
 
     elif adapter_type == "cli":
         # CLI adapters don't have a 'configure' action — just verify they exist
-        tool_name = config_params.get("tool_name") or template.get("params", [{}])[0].get("name", "")
+        tool_name = config_params.get("tool_name") or template.get("params", [{}])[0].get(
+            "name", ""
+        )
         # Try to get version as a health check
         try:
             result = await adapter.execute("which", {"name": tool_name})
@@ -614,8 +741,11 @@ async def list_templates(
         if tag and tag not in t.get("tags", []):
             continue
         # Strip internal fields
-        display = {k: v for k, v in t.items()
-                   if k not in ("configure_params", "capability_actions", "adapter_class")}
+        display = {
+            k: v
+            for k, v in t.items()
+            if k not in ("configure_params", "capability_actions", "adapter_class")
+        }
         results.append(display)
 
     return {
@@ -700,18 +830,14 @@ async def instantiate_template(template_id: str, req: InstantiateRequest):
     for p in template.get("params", []):
         if p.get("required") and p["name"] not in req.params and p.get("default") is None:
             raise HTTPException(
-                400,
-                f"Required parameter '{p['name']}' ({p.get('label', '')}) is missing"
+                400, f"Required parameter '{p['name']}' ({p.get('label', '')}) is missing"
             )
 
     # Instantiate adapter
     result = await _instantiate_adapter(template, req.params)
 
     if isinstance(result, dict) and result.get("error"):
-        raise HTTPException(
-            500,
-            f"Adapter instantiation failed: {result['error']}"
-        )
+        raise HTTPException(500, f"Adapter instantiation failed: {result['error']}")
 
     # Create instance record
     instance_id = f"inst-{uuid.uuid4().hex[:8]}"
@@ -748,8 +874,9 @@ async def instantiate_template(template_id: str, req: InstantiateRequest):
     _instances[instance_id] = instance
     _save_persisted()
 
-    logger.info("Instantiated template %s → instance %s (%s)",
-                template_id, instance_id, instance_name)
+    logger.info(
+        "Instantiated template %s → instance %s (%s)", template_id, instance_id, instance_name
+    )
 
     return {
         "instance_id": instance_id,
@@ -780,8 +907,7 @@ async def delete_instance(instance_id: str):
 
     # Remove associated capabilities
     cap_ids_to_remove = [
-        cid for cid, c in _capabilities.items()
-        if c.get("adapter_instance_id") == instance_id
+        cid for cid, c in _capabilities.items() if c.get("adapter_instance_id") == instance_id
     ]
     for cid in cap_ids_to_remove:
         del _capabilities[cid]
@@ -877,9 +1003,9 @@ async def get_dashboard():
             }
             for i in recent
         ],
-        "available_adapter_types": sorted(set(
-            t.get("adapter_type", "") for t in _templates.values()
-        )),
+        "available_adapter_types": sorted(
+            set(t.get("adapter_type", "") for t in _templates.values())
+        ),
     }
 
 

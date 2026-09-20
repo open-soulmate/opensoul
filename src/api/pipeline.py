@@ -374,7 +374,7 @@ async def pipeline_upload(
                 ),
                 timeout=KNOWLEDGE_STEP_TIMEOUT,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             knowledge_result = {
                 "step": "knowledge",
                 "status": "error",
@@ -478,7 +478,7 @@ async def pipeline_run(req: PipelineRunRequest):
                 ),
                 timeout=KNOWLEDGE_STEP_TIMEOUT,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             knowledge_result = {
                 "step": "knowledge",
                 "status": "error",

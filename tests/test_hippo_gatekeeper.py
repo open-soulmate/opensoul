@@ -11,6 +11,7 @@ Covers:
 - get_gatekeeper_stats()可观测性
 - 调用方接线：dream ADD被拒时计入skipped不冒充成功
 """
+
 import json
 import os
 import sys
@@ -247,9 +248,7 @@ class TestDreamCallerWiring:
         from src.hippo.dream_distiller import DreamDistiller
 
         store = _make_store()
-        response = _json.dumps([
-            {"action": "ADD", "content": "ab", "reason": "too short to keep"}
-        ])
+        response = _json.dumps([{"action": "ADD", "content": "ab", "reason": "too short to keep"}])
 
         async def mock_llm(sp, up):
             return response

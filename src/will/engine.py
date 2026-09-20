@@ -89,11 +89,7 @@ class WorkflowEngine:
         """变更后写盘"""
         try:
             self._PERSIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-            data = {
-                "workflows": [
-                    w.model_dump(mode="json") for w in self._workflows.values()
-                ]
-            }
+            data = {"workflows": [w.model_dump(mode="json") for w in self._workflows.values()]}
             self._PERSIST_PATH.write_text(
                 json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
             )

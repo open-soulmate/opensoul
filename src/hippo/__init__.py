@@ -8,15 +8,22 @@ Modules:
 """
 
 from src.hippo.decay import DecayEngine, DecayStrategy
-from src.hippo.memory_store import Memory, MemoryStore
-from src.hippo.session import Session, SessionManager, SessionStatus
+from src.hippo.decision_log import DecisionEntry, DecisionLog, get_decision_log
+from src.hippo.dream_distiller import DreamAction, DreamDistiller, DreamResult
+from src.hippo.extractors.deermem_tags import (
+    SafetyTags,
+    TagDecision,
+    infer_tags,
+    tags_vocab,
+    validate_delete_tags,
+    validate_write_tags,
+)
 from src.hippo.long_term_memory import (
     LongTermMemory,
     LongTermMemoryStore,
     MemoryAuditEntry,
     _normalize_dict_floats,
 )
-from src.hippo.dream_distiller import DreamDistiller, DreamAction, DreamResult
 from src.hippo.memory_pipeline import (
     ConsolidationDecision,
     MemoryPipeline,
@@ -26,16 +33,9 @@ from src.hippo.memory_pipeline import (
     parse_phase1,
     parse_phase2,
 )
-from src.hippo.decision_log import DecisionEntry, DecisionLog, get_decision_log
-from src.hippo.nl_filters import NLFilterResult, parse_nl_query, apply_post_filters
-from src.hippo.extractors.deermem_tags import (
-    SafetyTags,
-    TagDecision,
-    infer_tags,
-    tags_vocab,
-    validate_delete_tags,
-    validate_write_tags,
-)
+from src.hippo.memory_store import Memory, MemoryStore
+from src.hippo.nl_filters import NLFilterResult, apply_post_filters, parse_nl_query
+from src.hippo.session import Session, SessionManager, SessionStatus
 
 __all__ = [
     "DecayEngine",

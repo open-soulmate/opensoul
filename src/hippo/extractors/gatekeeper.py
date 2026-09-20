@@ -130,11 +130,11 @@ class MemoryGatekeeper:
         self.admitted = 0
         self.rejected = 0
         self.rejected_by_rule: dict[str, int] = {}
-        self.last_decision: Optional[GateDecision] = None
+        self.last_decision: GateDecision | None = None
 
     # ── 规则 ──────────────────────────────────────────────
 
-    def _check_secret(self, content: str) -> Optional[tuple[str, str]]:
+    def _check_secret(self, content: str) -> tuple[str, str] | None:
         for pat in _SECRET_PATTERNS:
             m = pat.search(content)
             if m:
@@ -145,7 +145,7 @@ class MemoryGatekeeper:
                 )
         return None
 
-    def _check_control_noise(self, content: str) -> Optional[tuple[str, str]]:
+    def _check_control_noise(self, content: str) -> tuple[str, str] | None:
         if not content:
             return None
         bad = sum(1 for ch in content if ord(ch) < 32 and ch not in "\t\n\r")
@@ -161,7 +161,7 @@ class MemoryGatekeeper:
         self,
         content: str,
         recent_contents: list[tuple[str, str]],
-    ) -> Optional[tuple[str, str, str, float]]:
+    ) -> tuple[str, str, str, float] | None:
         """返回 (rule, reason, duplicate_of, similarity) 或 None。
 
         recent_contents: [(memory_id, content), ...] 既有活跃记忆候选集，
@@ -189,7 +189,7 @@ class MemoryGatekeeper:
         self,
         content: str,
         memory_type: str = "",
-        recent_contents: Optional[list[tuple[str, str]]] = None,
+        recent_contents: list[tuple[str, str]] | None = None,
         force: bool = False,
     ) -> GateDecision:
         """判定一条候选记忆是否准入长期记忆库。
@@ -276,12 +276,8 @@ class MemoryGatekeeper:
             self.admitted += 1
         else:
             self.rejected += 1
-            self.rejected_by_rule[decision.rule] = (
-                self.rejected_by_rule.get(decision.rule, 0) + 1
-            )
-            logger.info(
-                "gatekeeper reject rule=%s reason=%s", decision.rule, decision.reason
-            )
+            self.rejected_by_rule[decision.rule] = self.rejected_by_rule.get(decision.rule, 0) + 1
+            logger.info("gatekeeper reject rule=%s reason=%s", decision.rule, decision.reason)
 
     def stats(self) -> dict:
         """进程内判定统计。跨进程历史见LongTermMemoryStore.get_gatekeeper_stats()。"""

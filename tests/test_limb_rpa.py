@@ -32,7 +32,9 @@ class TestLimbRPAOCR:
     def test_ocr_with_image_data(self, client):
         resp = client.post(
             "/api/limb/rpa/ocr",
-            json={"image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="},
+            json={
+                "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+            },
         )
         assert resp.status_code in (200, 400, 500, 503)
 

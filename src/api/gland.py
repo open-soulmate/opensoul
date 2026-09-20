@@ -175,9 +175,7 @@ async def chat(req: ChatRequest):
     except AllProvidersFailedError as exc:
         # CowAgent: the exhaustion message must reach the caller — it lists
         # every {provider, model, pass, error} tried, not a generic 500.
-        raise HTTPException(
-            status_code=502, detail={"error": str(exc), "tried": exc.tried}
-        )
+        raise HTTPException(status_code=502, detail={"error": str(exc), "tried": exc.tried})
     except NoProviderError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -194,9 +192,7 @@ async def embed(req: EmbedRequest):
         )
         return {"embeddings": embeddings, "count": len(embeddings)}
     except AllProvidersFailedError as exc:
-        raise HTTPException(
-            status_code=502, detail={"error": str(exc), "tried": exc.tried}
-        )
+        raise HTTPException(status_code=502, detail={"error": str(exc), "tried": exc.tried})
     except NoProviderError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:

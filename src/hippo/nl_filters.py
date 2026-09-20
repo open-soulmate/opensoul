@@ -67,8 +67,13 @@ class NLFilterResult:
 # ── Date parsing patterns ──────────────────────────────────────────
 
 _DAY_NAMES = {
-    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-    "friday": 4, "saturday": 5, "sunday": 6,
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
 }
 
 # Relative time patterns: ("regex", unit, count, direction)
@@ -135,9 +140,7 @@ _WORD_FILTER_PATTERNS = [
 ]
 
 
-def _compute_date_range(
-    unit: str, count: int, now: Optional[float] = None
-) -> tuple[float, float]:
+def _compute_date_range(unit: str, count: int, now: float | None = None) -> tuple[float, float]:
     """Compute (date_from, date_to) for a relative time expression."""
     if now is None:
         now = time.time()
@@ -162,15 +165,16 @@ def _compute_date_range(
         start = dt_now - timedelta(days=30 * count)
         start = start.replace(hour=0, minute=0, second=0, microsecond=0)
     elif unit == "year":
-        start = dt_now.replace(year=dt_now.year - count, month=1, day=1,
-                              hour=0, minute=0, second=0, microsecond=0)
+        start = dt_now.replace(
+            year=dt_now.year - count, month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
     else:
         return 0.0, 0.0
 
     return start.timestamp(), now
 
 
-def parse_nl_query(query: str, now: Optional[float] = None) -> NLFilterResult:
+def parse_nl_query(query: str, now: float | None = None) -> NLFilterResult:
     """Parse natural language filters from a memory search query.
 
     Returns NLFilterResult with:
@@ -232,9 +236,9 @@ def parse_nl_query(query: str, now: Optional[float] = None) -> NLFilterResult:
                 elif kind == "month":
                     dt = datetime.strptime(date_str, "%Y-%m")
                     result.date_from = dt.timestamp()
-                    next_month = dt.replace(
-                        day=28
-                    ) + timedelta(days=4)  # safe way to get next month
+                    next_month = dt.replace(day=28) + timedelta(
+                        days=4
+                    )  # safe way to get next month
                     next_month = next_month.replace(
                         day=1, hour=0, minute=0, second=0, microsecond=0
                     )
@@ -281,7 +285,7 @@ def parse_nl_query(query: str, now: Optional[float] = None) -> NLFilterResult:
     for pattern in _WORD_FILTER_PATTERNS:
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
-            word = m.group(1).strip().strip("\"'""''")
+            word = m.group(1).strip().strip("\"'''")
             if word and len(word) >= 2:
                 result.word_filters.append(word)
                 result.parsed_filters.append(f"word_filter: '{word}'")
@@ -296,17 +300,28 @@ def parse_nl_query(query: str, now: Optional[float] = None) -> NLFilterResult:
 
     # Also remove common filter-introduction words left behind
     leftover_patterns = [
-        r"\bshow\s+me\b", r"\bfind\b", r"\bsearch\s+for\b",
-        r"\bmemories?\b", r"\bfrom\b", r"\bin\b(?!\d)",
-        r"\bthat\s+are\b", r"\bwhich\s+are\b", r"\bare\b",
-        r"\bthe\b", r"\bof\b", r"\bwith\b", r"\band\b",
+        r"\bshow\s+me\b",
+        r"\bfind\b",
+        r"\bsearch\s+for\b",
+        r"\bmemories?\b",
+        r"\bfrom\b",
+        r"\bin\b(?!\d)",
+        r"\bthat\s+are\b",
+        r"\bwhich\s+are\b",
+        r"\bare\b",
+        r"\bthe\b",
+        r"\bof\b",
+        r"\bwith\b",
+        r"\band\b",
     ]
     for pat in leftover_patterns:
         clean = re.sub(pat, " ", clean, flags=re.IGNORECASE)
 
     clean = re.sub(r"\s+", " ", clean).strip()
     # Remove leading/trailing prepositions and articles
-    clean = re.sub(r"^(?:from|in|about|with|and|or|the|a|an|on|at|to)\s+", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(
+        r"^(?:from|in|about|with|and|or|the|a|an|on|at|to)\s+", "", clean, flags=re.IGNORECASE
+    )
     clean = re.sub(r"\s+(?:from|in|about|with|and|or|on|at|to)$", "", clean, flags=re.IGNORECASE)
     clean = clean.strip()
 
@@ -314,9 +329,7 @@ def parse_nl_query(query: str, now: Optional[float] = None) -> NLFilterResult:
     return result
 
 
-def apply_post_filters(
-    memories: list[dict], nl_result: NLFilterResult
-) -> list[dict]:
+def apply_post_filters(memories: list[dict], nl_result: NLFilterResult) -> list[dict]:
     """Apply NL filter predicates to a list of memory dicts post-retrieval.
 
     Used when the SQL query doesn't support all filter types natively
@@ -334,16 +347,17 @@ def apply_post_filters(
             continue
 
         # Importance filter
-        if (
-            nl_result.min_importance > 0
-            and mem.get("importance", 0) < nl_result.min_importance
-        ):
+        if nl_result.min_importance > 0 and mem.get("importance", 0) < nl_result.min_importance:
             continue
 
         # Word filters — all words must appear in content or tags
         if nl_result.word_filters:
             content = (mem.get("content", "") or "").lower()
-            tags_str = json.dumps(mem.get("tags", [])).lower() if isinstance(mem.get("tags"), list) else str(mem.get("tags", "")).lower()
+            tags_str = (
+                json.dumps(mem.get("tags", [])).lower()
+                if isinstance(mem.get("tags"), list)
+                else str(mem.get("tags", "")).lower()
+            )
             combined = content + " " + tags_str
             if not all(wf.lower() in combined for wf in nl_result.word_filters):
                 continue

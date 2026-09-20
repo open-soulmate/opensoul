@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Registry同步管线 — kilocode skill/discovery.ts完整移植（P1）
 
 调研来源：feature-matrix/kilocode-source-supplement.md #7：
@@ -187,7 +186,9 @@ def plan_registry_entries(index: RegistryIndex) -> tuple[list[PlannedEntry], lis
 
     for raw in index.entries:
         if not isinstance(raw, dict):
-            rejected.append({"skill": str(raw)[:50], "reason": "invalid_entry", "detail": "非对象条目"})
+            rejected.append(
+                {"skill": str(raw)[:50], "reason": "invalid_entry", "detail": "非对象条目"}
+            )
             continue
         name = str(raw.get("name", "") or "").strip()
         try:
@@ -202,22 +203,26 @@ def plan_registry_entries(index: RegistryIndex) -> tuple[list[PlannedEntry], lis
 
         bad_rel = next((rel for rel in [path] + files if _unsafe_relative(rel)), None)
         if bad_rel is not None:
-            rejected.append({
-                "skill": name,
-                "reason": "path_escape",
-                "detail": f"registry内相对路径含逃逸语义: {bad_rel!r}",
-            })
+            rejected.append(
+                {
+                    "skill": name,
+                    "reason": "path_escape",
+                    "detail": f"registry内相对路径含逃逸语义: {bad_rel!r}",
+                }
+            )
             continue
 
         if download_url and _origin_of(download_url) != index_origin:
-            rejected.append({
-                "skill": name,
-                "reason": "origin_mismatch",
-                "detail": (
-                    f"download_url origin={_origin_of(download_url)!r} ≠ "
-                    f"index origin={index_origin!r} — kilocode:文件下载origin钉死在index源"
-                ),
-            })
+            rejected.append(
+                {
+                    "skill": name,
+                    "reason": "origin_mismatch",
+                    "detail": (
+                        f"download_url origin={_origin_of(download_url)!r} ≠ "
+                        f"index origin={index_origin!r} — kilocode:文件下载origin钉死在index源"
+                    ),
+                }
+            )
             continue
 
         entry = RegistryEntry(
@@ -237,7 +242,9 @@ def plan_registry_entries(index: RegistryIndex) -> tuple[list[PlannedEntry], lis
 # ── origin钉死下载（staging落盘） ──────────────────────────────
 
 
-def download_skill_payload(planned: PlannedEntry, index: RegistryIndex, staging_parent: Path) -> Path:
+def download_skill_payload(
+    planned: PlannedEntry, index: RegistryIndex, staging_parent: Path
+) -> Path:
     """把skill负载下载到staging容器内 <staging_parent>/<name>。
 
     - 本地registry：containment校验后copytree/逐文件copy（path逃逸在此拦）

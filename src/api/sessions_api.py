@@ -20,10 +20,14 @@ from pydantic import BaseModel
 from src.api.user import get_current_user
 
 router = APIRouter()
+
+
 @router.get("/health")
 async def sessions_api_health():
     """SessionsAPI health check."""
     return {"status": "ok", "component": "SessionsAPI"}
+
+
 logger = logging.getLogger(__name__)
 
 _DB_PATH = os.path.expanduser("~/.hermes/state.db")
@@ -58,9 +62,7 @@ def _ensure_session_tags_table(db: sqlite3.Connection):
             PRIMARY KEY (session_id, tag_name)
         )"""
     )
-    db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_session_tags_name ON session_tags(tag_name)"
-    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_session_tags_name ON session_tags(tag_name)")
     db.commit()
 
 
@@ -225,11 +227,18 @@ async def list_sessions(
 
             # Filter by tag if requested
             if tag:
-                all_sessions = [s for s in all_sessions if tag.lower() in [t.lower() for t in s.get("tags", [])]]
+                all_sessions = [
+                    s for s in all_sessions if tag.lower() in [t.lower() for t in s.get("tags", [])]
+                ]
         finally:
             tag_db.close()
 
-    return {"sessions": all_sessions[:limit], "total": len(all_sessions), "limit": limit, "offset": offset}
+    return {
+        "sessions": all_sessions[:limit],
+        "total": len(all_sessions),
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/search")
@@ -412,9 +421,13 @@ async def rename_session(
     adb = _get_agent_db()
     if adb:
         try:
-            row = adb.execute("SELECT id FROM agent_sessions WHERE id = ?", (session_id,)).fetchone()
+            row = adb.execute(
+                "SELECT id FROM agent_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
             if row:
-                adb.execute("UPDATE agent_sessions SET title = ? WHERE id = ?", (new_title, session_id))
+                adb.execute(
+                    "UPDATE agent_sessions SET title = ? WHERE id = ?", (new_title, session_id)
+                )
                 adb.commit()
                 return {"success": True, "id": session_id, "title": new_title}
         finally:
@@ -450,7 +463,9 @@ async def delete_session(
     adb = _get_agent_db()
     if adb:
         try:
-            row = adb.execute("SELECT id FROM agent_sessions WHERE id = ?", (session_id,)).fetchone()
+            row = adb.execute(
+                "SELECT id FROM agent_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
             if row:
                 adb.execute("DELETE FROM agent_messages WHERE session_id = ?", (session_id,))
                 adb.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
@@ -532,12 +547,14 @@ async def get_session_messages(
                             if att_path and os.path.exists(att_path):
                                 with open(att_path, "rb") as af:
                                     att_data = base64.b64encode(af.read()).decode()
-                            attachments_out.append({
-                                "type": att.get("type", "file"),
-                                "name": att.get("name", "file"),
-                                "mime_type": att.get("mime_type", "application/octet-stream"),
-                                "data": att_data,
-                            })
+                            attachments_out.append(
+                                {
+                                    "type": att.get("type", "file"),
+                                    "name": att.get("name", "file"),
+                                    "mime_type": att.get("mime_type", "application/octet-stream"),
+                                    "data": att_data,
+                                }
+                            )
                     except Exception as _att_e:
                         logger.warning("parse attachments error: %s", _att_e)
                 messages.append(
@@ -558,6 +575,7 @@ async def get_session_messages(
 
 
 # ── Session Tags API ──────────────────────────────────────────
+
 
 class TagRequest(BaseModel):
     tag_name: str

@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 """runtime wiring proof: 直接调用src.api.skills的真实端点函数（非仅import验证）"""
+
 import asyncio
 import sys
 import tempfile
@@ -39,7 +39,9 @@ assert r3["success"] is False and "unsafe_name" in r3["error"], r3
 # 3) _sync_to_shared真实迁移路径：staging→校验→origin→原子swap
 src_skill = tmp / "agent-skills" / "demo-skill"
 src_skill.mkdir(parents=True)
-(src_skill / "SKILL.md").write_text("---\nname: demo-skill\ndescription: runtime demo\n---\nbody\n", encoding="utf-8")
+(src_skill / "SKILL.md").write_text(
+    "---\nname: demo-skill\ndescription: runtime demo\n---\nbody\n", encoding="utf-8"
+)
 ok = skills_mod._sync_to_shared(src_skill, "demo-skill")
 print("_sync_to_shared(demo-skill) ->", ok)
 assert ok is True
@@ -52,13 +54,19 @@ assert rec is not None and rec.origin == str(src_skill) and rec.source_type == "
 # 4) origin钉死：同名skill换源迁移必须被拒（模拟供应链攻击）
 evil_src = tmp / "evil-skills" / "demo-skill"
 evil_src.mkdir(parents=True)
-(evil_src / "SKILL.md").write_text("---\nname: demo-skill\ndescription: backdoored\n---\nboom\n", encoding="utf-8")
+(evil_src / "SKILL.md").write_text(
+    "---\nname: demo-skill\ndescription: backdoored\n---\nboom\n", encoding="utf-8"
+)
 from src.immune.skill_guard import make_staging_dir, promote_staging
+
 container = make_staging_dir(skills_mod.SHARED_SKILLS_DIR, "demo-skill")
 payload = container / "demo-skill"
 import shutil
+
 shutil.copytree(evil_src, payload)
-res = promote_staging(payload, skills_mod.SHARED_SKILLS_DIR, origin=str(evil_src), source_type="git")
+res = promote_staging(
+    payload, skills_mod.SHARED_SKILLS_DIR, origin=str(evil_src), source_type="git"
+)
 print("origin-mismatch promote ->", res.success, res.errors)
 assert res.success is False
 assert any(e["type"] == "origin_mismatch" for e in res.errors), res.errors

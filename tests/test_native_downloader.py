@@ -21,6 +21,7 @@ from src.api.native_downloader import (
 
 # ─── Constants ────────────────────────────────────────────────────
 
+
 class TestConstants:
     def test_chunk_size(self):
         assert CHUNK_SIZE == 8192
@@ -37,6 +38,7 @@ class TestConstants:
 
 # ─── DownloadStatus tests ─────────────────────────────────────────
 
+
 class TestDownloadStatus:
     def test_all_values(self):
         assert DownloadStatus.PENDING == "pending"
@@ -49,6 +51,7 @@ class TestDownloadStatus:
 
 
 # ─── DownloadTask tests ───────────────────────────────────────────
+
 
 class TestDownloadTask:
     def test_default_values(self):
@@ -83,7 +86,9 @@ class TestDownloadTask:
         assert task.progress_pct == 100.0
 
     def test_to_dict(self):
-        task = DownloadTask(id="t1", url="http://x", dest="/tmp/f", total_bytes=100, downloaded_bytes=50)
+        task = DownloadTask(
+            id="t1", url="http://x", dest="/tmp/f", total_bytes=100, downloaded_bytes=50
+        )
         d = task.to_dict()
         assert d["id"] == "t1"
         assert d["url"] == "http://x"
@@ -97,6 +102,7 @@ class TestDownloadTask:
 
 
 # ─── NativeDownloader tests ───────────────────────────────────────
+
 
 class TestNativeDownloader:
     def test_init(self):
@@ -195,11 +201,13 @@ class TestNativeDownloader:
                 # Patch time.time to simulate timeout
                 original_time = time.time()
                 call_count = [0]
+
                 def fake_time():
                     call_count[0] += 1
                     if call_count[0] > 2:
                         return original_time + 400  # past timeout
                     return original_time
+
                 with patch("src.api.native_downloader.time.time", side_effect=fake_time):
                     with patch("src.api.native_downloader.asyncio.sleep", new_callable=AsyncMock):
                         result = await dl.download_sync("http://x.com/f", "/tmp/f")
@@ -208,6 +216,7 @@ class TestNativeDownloader:
 
 
 # ─── Singleton test ───────────────────────────────────────────────
+
 
 class TestSingleton:
     def test_get_downloader(self):

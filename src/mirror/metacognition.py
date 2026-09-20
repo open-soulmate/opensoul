@@ -53,7 +53,14 @@ class Metacognition:
             """INSERT INTO metacognition_log
                (tenant_id, agent_id, event_type, decision, reasoning, confidence, created_at)
                VALUES (?, ?, 'decision', ?, ?, ?, ?)""",
-            (self.tenant_id, self.agent_id, decision[:500], reasoning[:1000], confidence, time.time()),
+            (
+                self.tenant_id,
+                self.agent_id,
+                decision[:500],
+                reasoning[:1000],
+                confidence,
+                time.time(),
+            ),
         )
 
     async def log_outcome(self, decision: str, outcome: str, lesson: str = ""):
@@ -119,7 +126,9 @@ class Metacognition:
 
         # 简单校准：高信心决策的成功率
         high_conf = [r for r in rows if r["confidence"] and r["confidence"] > 0.7]
-        high_conf_success = sum(1 for r in high_conf if r["outcome"] and "success" in str(r["outcome"]))
+        high_conf_success = sum(
+            1 for r in high_conf if r["outcome"] and "success" in str(r["outcome"])
+        )
         success_rate = high_conf_success / len(high_conf) if high_conf else 0
 
         return {

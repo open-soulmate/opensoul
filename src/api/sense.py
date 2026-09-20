@@ -6,9 +6,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from src.sense.asr import ASREngine
+from src.sense.environment import EnvironmentSensor
 from src.sense.multimodal import MultimodalAnalyzer
 from src.sense.ocr import HAS_TESSERACT, OCREngine
-from src.sense.environment import EnvironmentSensor
 
 router = APIRouter()
 
