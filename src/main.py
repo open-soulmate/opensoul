@@ -178,6 +178,29 @@ async def lifespan(app: FastAPI):
         status TEXT DEFAULT 'pending', reviewer_id TEXT, review_note TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now')), reviewed_at TEXT)""")
 
+    # 核心业务表自愈初始化（对齐生产data/opensoul.db实际schema——新环境/CI空库自动建表）
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL,
+        email TEXT DEFAULT '', password_hash TEXT NOT NULL,
+        role TEXT DEFAULT 'user', is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS knowledge (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+        title TEXT NOT NULL, content TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]', source TEXT DEFAULT '',
+        content_type TEXT DEFAULT '', metadata TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS knowledge_chunks (
+        id TEXT PRIMARY KEY, knowledge_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL, content TEXT NOT NULL,
+        embedding_id TEXT, token_count INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')))""")
+    await db_pool.execute("""CREATE TABLE IF NOT EXISTS entities (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+        name TEXT NOT NULL, type TEXT DEFAULT '',
+        description TEXT DEFAULT '', properties TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+
     try:
         qdrant_client.ensure_collection()
     except Exception:
