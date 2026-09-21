@@ -13,7 +13,7 @@
 import os
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -43,7 +43,9 @@ class FeedbackRequest(BaseModel):
     user_id: str = "default"
     action: str = ""
     feedback: str = ""
-    rating: int = 3
+    # rating必填且1-5（POST handler校验）：省略时静默记中性分会污染
+    # SelfEvolution._analyze_feedback的满意度均值——评分是显式人类信号
+    rating: int | None = None
 
 
 # ── 模块级单例（和hippo/api.py一样的模式）──────────────
@@ -253,14 +255,57 @@ async def refresh(repo_root: str = ""):
 
 @router.post("/feedback")
 async def feedback(req: FeedbackRequest):
-    """用户反馈：存入记忆"""
+    """用户反馈：短期记忆 + user_feedback表（P0-7进化数据层闭环）。
+
+    22:05轮遗留#3销账：此前反馈只进MemoryStore（"[feedback] ..."记忆行，
+    可观测但不可分析），user_feedback表零写入方 → SelfEvolution
+    ._analyze_feedback永远空表默认值——"人类互通反馈源"到不了进化引擎，
+    style_adjustment提案结构性缺失。本端点双写：记忆保留人看的语境 +
+    表供进化分析；响应携带evolution_facing=进化引擎同源统计
+    （SelfEvolution.feedback_stats，非独立镜像数字）。
+    """
+    action = (req.action or "").strip()
+    if not action:
+        raise HTTPException(status_code=400, detail="action is required")
+    if req.rating is None or not (1 <= int(req.rating) <= 5):
+        raise HTTPException(status_code=400, detail="rating is required and must be an integer 1-5")
+
     store.add(
         session_id=f"user:{req.user_id}",
         content=f"[feedback] {req.action}: {req.feedback} (rating={req.rating})",
         importance=0.8,
         tags=["feedback", str(req.rating)],
     )
-    return {"status": "recorded"}
+
+    from src.database.postgres import db_pool
+    from src.heredity.self_evolution import SelfEvolution
+    from src.mind.user_memory import UserMemory
+
+    um = UserMemory(db_pool, req.tenant_id, req.user_id)
+    await um.record_feedback(action, req.feedback or "", int(req.rating))
+    evo_stats = await SelfEvolution(db_pool, req.tenant_id, req.user_id).feedback_stats()
+    return {"status": "recorded", "memorized": True, "evolution_facing": evo_stats}
+
+
+@router.get("/feedback")
+async def get_feedback(tenant_id: str = "default", user_id: str = "default", limit: int = 20):
+    """查看用户反馈（Khoj信任设计：用户可看AI记录了什么）+ 进化引擎同源统计。"""
+    from src.database.postgres import db_pool
+    from src.heredity.self_evolution import SelfEvolution
+    from src.mind.user_memory import UserMemory
+
+    um = UserMemory(db_pool, tenant_id, user_id)
+    await um._ensure_table()  # 读路径自愈建表（老部署首读不炸）
+    rows = await db_pool.fetch(
+        "SELECT id, action, feedback, rating, created_at FROM user_feedback "
+        "WHERE tenant_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (tenant_id, user_id, max(1, min(int(limit), 200))),
+    )
+    evo_stats = await SelfEvolution(db_pool, tenant_id, user_id).feedback_stats()
+    return {
+        "feedback": [dict(r) for r in rows],
+        "evolution_facing": evo_stats,
+    }
 
 
 @router.post("/learn")

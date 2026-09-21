@@ -123,23 +123,39 @@ class SelfEvolution:
         }
 
     async def _analyze_failure_patterns(self) -> list[dict]:
-        """分析高频失败模式"""
+        """分析高频失败模式。
+
+        20:36轮遗留#3修复：SQL的GROUP BY error是精确文本分组——运行时终态
+        标记（[breaker_open]熔断前缀 / stale recovery动态(n/m)+job_id）会让
+        同根因错误分裂成多个组，单组计数达不到阈值→高频失败漏报、进化提案
+        碎片化。改SQL取原始分组后在Python侧按normalize_error_key合并计数
+        （历史存量行无需数据迁移即正确聚合；采集侧对新行同样写归一化键），
+        阈值cnt>=3作用于合并后计数。
+        """
+        from src.learn.experience_collector import normalize_error_key
+
         rows = await self.db.fetch(
             """
             SELECT error, COUNT(*) as cnt FROM experiences
             WHERE tenant_id = ? AND agent_id = ? AND outcome = 'failure'
             AND created_at > ? AND error IS NOT NULL
             GROUP BY error
-            HAVING cnt >= 3
             ORDER BY cnt DESC
-            LIMIT 5
         """,
             (self.tenant_id, self.agent_id, time.time() - 30 * 86400),
         )
 
-        patterns = []
+        merged: dict[str, int] = {}
         for row in rows:
-            error = row["error"] or ""
+            key = normalize_error_key(row["error"] or "")
+            if not key:
+                continue
+            merged[key] = merged.get(key, 0) + int(row["cnt"])
+
+        patterns = []
+        for error, cnt in sorted(merged.items(), key=lambda kv: -kv[1]):
+            if cnt < 3:
+                break  # 合并后按count降序，首个低于阈值后全部低于
             recommendation = "增加前置检查"
             if "syntax" in error.lower():
                 recommendation = "执行前做语法检查"
@@ -148,10 +164,12 @@ class SelfEvolution:
             patterns.append(
                 {
                     "error_type": error[:100],
-                    "count": row["cnt"],
+                    "count": cnt,
                     "recommendation": recommendation,
                 }
             )
+            if len(patterns) >= 5:
+                break
         return patterns
 
     async def _analyze_feedback(self) -> dict:
@@ -176,6 +194,24 @@ class SelfEvolution:
             "avg_rating": avg,
             "negative_trend": avg < 3.0,
         }
+
+    async def feedback_stats(self) -> dict:
+        """用户反馈统计（22:05轮遗留#3配套：/api/brain/feedback与进化分析
+        共用同一语义源——API展示的"进化引擎看到什么"即analyze_and_evolve
+        真实所见，非独立实现的镜像数字）。
+
+        注意：SelfEvolution构造时agent_id槽位即user_feedback表的user_id
+        （analyze_and_evolve→_analyze_feedback同款映射），调用方传user_id。
+        """
+        stats = await self._analyze_feedback()
+        count = 0
+        if self.db:
+            count = await self.db.fetchval(
+                "SELECT COUNT(*) FROM user_feedback WHERE tenant_id = ? AND user_id = ?",
+                (self.tenant_id, self.agent_id),
+            )
+        stats["feedback_count"] = count or 0
+        return stats
 
     async def _log_evolution(self, evolution: dict):
         await self.db.execute(

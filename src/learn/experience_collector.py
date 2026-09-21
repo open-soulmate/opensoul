@@ -75,6 +75,45 @@ def _message_failure(content: str) -> tuple[str, str]:
     return "success", ""
 
 
+# ── 错误分组键归一化（20:36轮遗留#3销账）────────────────────────────
+# SelfEvolution._analyze_failure_patterns 按 error 精确文本 GROUP BY 计数，
+# job_queue 的运行时终态标记会让同根因错误分裂成多个组（单组计数达不到
+# 阈值→高频失败漏报/提案碎片化）。只动采集/分析侧的分组键语义，
+# job_queue 自身的失败可见原文不改（报告口径：不动 job_queue 语义）。
+
+BREAKER_PREFIX = "[breaker_open] "
+STALE_PREFIX = "stale recovery:"
+
+
+def normalize_error_key(error: str) -> str:
+    """失败error → 稳定分组键。
+
+    归一化对象（均已在生产job_queue.db实证存在）：
+    - "[breaker_open] {原文}"（job_queue.py:553 错误风暴熔断终态前缀）
+      → 剥前缀，根因原文即分组键
+    - "stale recovery: crashed mid-run, retry budget exhausted (n/m) —
+      requeue via POST /api/will/jobs/{id}/requeue"（job_queue.py:226）
+      → 每个作业的 (n/m)/job_id 都不同 → 每条error唯一 → 分组键碎片化；
+      坍缩为稳定键
+    - "stale recovery: previous process exited mid-run"（job_queue.py:235）
+      → 本身稳定，保留原文
+    - 其余error原样（宁可分组保守，绝不误合并不同根因；mem0 §1.1：
+      归一化只剥已知运行时标记，不猜测语义）
+    """
+    key = (error or "").strip()
+    while key.startswith(BREAKER_PREFIX):
+        key = key[len(BREAKER_PREFIX) :].strip()
+    if key.startswith(STALE_PREFIX):
+        rest = key[len(STALE_PREFIX) :].strip()
+        low = rest.lower()
+        if "retry budget exhausted" in low:
+            return "stale recovery: retry budget exhausted"
+        if "previous process exited" in low:
+            return "stale recovery: previous process exited mid-run"
+        return f"stale recovery: {rest}"[:200]
+    return key[:200]
+
+
 def _default_opensoul_db() -> str:
     """与src.database.postgres.SQLitePool同款解析（sqlite:///相对路径按cwd解析，
     两者同进程同cwd→必然指向同一文件；非sqlite部署返回空串→collect显式skip）。"""
@@ -186,13 +225,22 @@ class ExperienceCollector:
         source_ref: str,
         metadata: dict,
     ) -> bool:
-        """写一条经验；source_ref已存在→跳过返回False（agno幂等键）。"""
+        """写一条经验；source_ref已存在→跳过返回False（agno幂等键）。
+
+        error入列前经normalize_error_key归一化（稳定分组键）；归一化改变了
+        原文时metadata["error_raw"]保留原文（mem0审计：分组键稳定≠丢原文，
+        provenance可追溯到作业/消息的原始错误）。
+        """
         if source_ref:
             row = conn.execute(
                 "SELECT 1 FROM experiences WHERE source_ref = ?", (source_ref,)
             ).fetchone()
             if row:
                 return False
+        error_key = normalize_error_key(error)
+        meta = dict(metadata or {})
+        if error and error_key != error.strip()[:200]:
+            meta["error_raw"] = error[:200]
         conn.execute(
             """INSERT INTO experiences
                (tenant_id, agent_id, action, intent_summary, outcome, error, fix,
@@ -204,9 +252,9 @@ class ExperienceCollector:
                 action[:500],
                 intent_summary[:200],
                 outcome,
-                error or None,
+                error_key or None,
                 float(created_at or time.time()),
-                json.dumps(metadata, ensure_ascii=False),
+                json.dumps(meta, ensure_ascii=False),
                 source_ref,
             ),
         )
