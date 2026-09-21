@@ -333,6 +333,61 @@ async def search_sessions(
         db.close()
 
 
+# ── External Session Import API（P0-10 会话资产化：goose import_formats移植）──
+
+
+class SessionImportRequest(BaseModel):
+    file_path: str | None = None
+    content: str | None = None
+    agent_id: str = "imported"
+
+
+@router.post("/import")
+async def import_external_session(
+    body: SessionImportRequest,
+    user_id: UUID = Depends(get_current_user),
+):
+    """Import an external agent transcript (Claude Code / Codex / Pi .jsonl)。
+
+    嗅探格式→canonical转换→写入agent_sessions/agent_messages（前端现有
+    /api/sessions 读路径直接可见）。确定性主键去重：同文件重复导入status=duplicate。
+    未知格式/缺失文件显式报错，不静默。
+    """
+    from src.trajectory.import_formats import (
+        MAX_IMPORT_BYTES,
+        ImportFormatError,
+        convert,
+        import_to_db,
+    )
+
+    if body.content is None and not body.file_path:
+        raise HTTPException(status_code=400, detail="file_path or content required")
+    if body.content is not None:
+        content = body.content
+    else:
+        file_path = body.file_path or ""
+        fp = os.path.abspath(os.path.expanduser(file_path))
+        if not os.path.isfile(fp):
+            raise HTTPException(status_code=404, detail=f"file not found: {fp}")
+        if os.path.getsize(fp) > MAX_IMPORT_BYTES:
+            raise HTTPException(status_code=413, detail="transcript too large")
+        with open(fp, encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    try:
+        conv = convert(content)
+        stats = import_to_db(conv, db_path=_OPENSOUL_DB, agent_id=body.agent_id or "imported")
+    except ImportFormatError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    logger.info(
+        "session import: %s fmt=%s status=%s messages=%s",
+        stats["session_id"],
+        stats["source_format"],
+        stats["status"],
+        stats["messages_written"],
+    )
+    return {"ok": True, **stats}
+
+
 @router.get("/{session_id}")
 async def get_session(
     session_id: str,
