@@ -38,16 +38,19 @@ OpenSoul语义映射：
 - 自定义summarizer异常→降级extractive并显式标记summarizer=extractive-fallback
   + stats携带error（绝不静默吞掉LLM失败装作成功）
 
-LLM summarizer说明：pi用LLM生成结构化摘要（provider依赖）。本实现交付完整管线+
-确定性extractive默认summarizer（离线可测、无provider依赖）+可插拔summarizer
-callable接口（entries→str）；BRANCH_SUMMARY_PROMPT保留pi原文供未来LLM summarizer
-直接使用（provider稳定后接入，见dev-report遗留）。
+LLM summarizer（15:27轮遗留#1销账，本轮接线）：pi用LLM生成结构化摘要（provider依赖），
+本模块交付完整管线 + 可插拔SummarizerFn契约 + llm_branch_summarizer默认LLM实现
+（gland ModelRouter + BRANCH_SUMMARY_PROMPT原文 + pi EXACT格式门禁 + 失败可见降级
+extractive-fallback）。API层经resolve_summarizer(mode)解析：auto=provider已配置→LLM，
+env BRANCH_SUMMARY_SUMMARIZER可强制extractive/llm。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -558,6 +561,136 @@ def extractive_summary(entries: list[dict], tool_ops: dict[str, list[str]]) -> s
     )
 
 
+# ── LLM summarizer（pi generateBranchSummary的LLM路径，15:27轮遗留#1销账）──
+
+# pi BRANCH_SUMMARY_PROMPT要求EXACT格式——LLM输出设格式门禁（deepagents
+# RubricMiddleware"完成=裁判通过"哲学）：空输出/缺必备段落→显式失败→
+# extractive降级，消费方永远拿到pi契约内的结构化摘要，绝不接收格式漂移输出。
+_LLM_REQUIRED_SECTIONS = ("## Goal", "## Progress")
+# LLM调用超时（秒）：摘要是非关键路径，超时=降级extractive，不阻塞fork/导航。
+LLM_SUMMARIZER_TIMEOUT = 60.0
+
+
+async def _call_llm_router(system_prompt: str, user_prompt: str) -> str:
+    """gland ModelRouter调用 — dream_distiller._call_gland_llm同款已验证模式。
+
+    fresh ModelRouter实例绑定当前event loop + 显式provider注册（api/gland.py
+    gateway单例跨loop复用会400——dream_distiller live实证教训）+
+    extract_chat_text权威解包（result.get("content")猜测在真实provider上永远
+    落空——dream live实证bug）。provider链=settings主provider（priority=0）
+    + ollama本地兜底（priority=10，CowAgent有序降级链语义）。
+    """
+    from src.config import settings
+    from src.gland.router import ModelRouter, extract_chat_text
+
+    router = ModelRouter()
+    if settings.llm_base_url:
+        router.add_provider(
+            name="openai",
+            base_url=settings.llm_base_url,
+            models={"chat": settings.llm_model},
+            priority=0,
+        )
+        if settings.llm_api_key:
+            router.key_manager.add_key("openai", settings.llm_api_key)
+    ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
+    router.add_provider(
+        name="ollama",
+        base_url=ollama_url,
+        models={"chat": "deepseek-r1:latest"},
+        priority=10,
+    )
+    result = await router.chat(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,  # 摘要要稳定复现（dream_distiller 0.3同源理由）
+        max_tokens=2048,
+    )
+    return extract_chat_text(result)
+
+
+async def _summarize_via_llm(conversation_text: str) -> str:
+    """带超时的LLM摘要调用：超时/失败上抛，由generate_branch_summary统一降级。"""
+    return await asyncio.wait_for(
+        _call_llm_router(BRANCH_SUMMARY_PROMPT, conversation_text),
+        timeout=LLM_SUMMARIZER_TIMEOUT,
+    )
+
+
+def _run_coro_sync(coro):
+    """sync SummarizerFn契约下执行async LLM调用：独立线程+独立event loop。
+
+    为什么线程：SummarizerFn=Callable[[str,list],str]是同步契约（generate_
+    branch_summary同步编排），而调用方是FastAPI async端点——在running loop里
+    asyncio.run会直接抛错。线程内新建loop，router在该loop内创建（loop亲和，
+    dream_distiller教训），从sync/async任何调用方进入都不死锁。
+    """
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def _validate_llm_summary(body: str) -> str:
+    """pi EXACT格式门禁：空输出/缺必备段落→显式失败（绝不静默接收漂移格式）。"""
+    text = (body or "").strip()
+    if not text:
+        raise ValueError("LLM summarizer returned empty body")
+    missing = [s for s in _LLM_REQUIRED_SECTIONS if s not in text]
+    if missing:
+        raise ValueError(f"LLM summary missing required sections: {', '.join(missing)}")
+    return text
+
+
+def llm_branch_summarizer(conversation_text: str, entries: list[dict]) -> str:
+    """pi generateBranchSummary的LLM summarizer（BRANCH_SUMMARY_PROMPT原文驱动）。
+
+    entries参数为契约兼容（extractive需要条目做启发式，LLM只吃序列化文本）。
+    失败语义：任何异常（provider全链失败/超时/格式门禁不过）上抛，由
+    generate_branch_summary降级extractive + summarizer="extractive-fallback"
+    + error可见——失败必须可见（evolution-engine-patterns §1.1 mem0）。
+    """
+    body = _run_coro_sync(_summarize_via_llm(conversation_text))
+    return _validate_llm_summary(body)
+
+
+llm_branch_summarizer.summarizer_kind = "llm"
+
+
+def resolve_summarizer(mode: str | None = None) -> SummarizerFn | None:
+    """API层summarizer模式解析（LLM summarizer运行时接线）。
+
+    解析优先级：显式mode参数 > 环境变量BRANCH_SUMMARY_SUMMARIZER > "auto"。
+    - "llm"：强制LLM（不做provider预判——失败由降级路径显式可见）
+    - "extractive"：强制确定性启发式（离线/测试环境，无网络依赖）
+    - "auto"：provider已配置（settings.llm_api_key非空 / ollama_base_url显式
+      配置 / llm_base_url非OpenAI默认值，dream_distiller同款判定家族）→
+      LLM summarizer；否则确定性extractive
+    - 未知模式→ValueError（fail-closed，API层映射400）
+    环境变量每次调用live读取（非settings实例缓存）：测试setenv即时生效。
+    """
+    resolved = mode or os.environ.get("BRANCH_SUMMARY_SUMMARIZER", "") or ""
+    resolved = resolved.strip().lower() or None
+    if resolved is None:
+        resolved = "auto"
+    if resolved == "extractive":
+        return None
+    if resolved == "llm":
+        return llm_branch_summarizer
+    if resolved == "auto":
+        from src.config import settings
+
+        provider_ready = (
+            bool(settings.llm_api_key)
+            or bool(getattr(settings, "ollama_base_url", ""))
+            or (settings.llm_base_url not in ("", "https://api.openai.com/v1"))
+        )
+        return llm_branch_summarizer if provider_ready else None
+    raise ValueError(f"unknown summarizer mode: {mode!r}")
+
+
 def generate_branch_summary(
     entries: list[dict],
     summarizer: SummarizerFn | None = None,
@@ -570,7 +703,9 @@ def generate_branch_summary(
       summarize"，显式不写库不伪造）
     - summarizer=None → 确定性extractive（summarizer_used="extractive"）
     - summarizer callable(conversation_text, entries) -> str；异常时降级extractive，
-      summarizer_used="extractive-fallback" + error字段（失败可见，绝不静默）
+      summarizer_used="extractive-fallback" + error字段（失败可见，绝不静默）；
+      callable带summarizer_kind属性时summarizer_used取该值（llm路径标注"llm"，
+      无标注的自定义callable保持"custom"）
     - 最终summary = BRANCH_SUMMARY_PREAMBLE + 正文 + <read-files>/<modified-files>
       附尾（pi同款三段结构）
     """
@@ -593,7 +728,9 @@ def generate_branch_summary(
     if summarizer is not None:
         try:
             body = summarizer(conversation_text, prep["entries"])
-            summarizer_used = "custom"
+            # summarizer_kind属性标注（llm_branch_summarizer.summarizer_kind="llm"）；
+            # 无标注的自定义callable保持"custom"（既有契约test_custom_summarizer_used）
+            summarizer_used = getattr(summarizer, "summarizer_kind", "custom")
         except Exception as exc:  # noqa: BLE001 — 降级必须显式可见
             error = f"summarizer failed, fell back to extractive: {exc}"
             logger.warning("branch summary summarizer failed: %s", exc)

@@ -594,6 +594,10 @@ class TestEndpointDirect:
         )
         monkeypatch.setattr(sessions_api, "_OPENSOUL_DB", db)
         monkeypatch.setattr(sessions_api, "_get_db", lambda: None)
+        # 本文件契约=纯离线：API默认summarizer=auto在provider已配置环境会走
+        # LLM网络调用——env显式强制extractive；LLM路径由test_branch_summary_llm.py
+        # 以stubbed router离线覆盖（resolve_summarizer每次调用live读env）
+        monkeypatch.setenv("BRANCH_SUMMARY_SUMMARIZER", "extractive")
         return ids, db
 
     def _fork(self, sid, message_id):

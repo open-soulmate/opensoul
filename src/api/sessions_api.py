@@ -723,10 +723,17 @@ async def fork_session_at_message(
     # 摘要失败不回滚fork（fork已commit）：branch_summary显式携带error状态（失败可见）。
     if stats.get("status") == "forked":
         try:
-            from src.trajectory.branch_summary import summarize_fork_context
+            from src.trajectory.branch_summary import (
+                resolve_summarizer,
+                summarize_fork_context,
+            )
 
             stats["branch_summary"] = summarize_fork_context(
-                _OPENSOUL_DB, session_id, body.message_id, stats["fork_session_id"]
+                _OPENSOUL_DB,
+                session_id,
+                body.message_id,
+                stats["fork_session_id"],
+                summarizer=resolve_summarizer(None),  # auto：provider可用→LLM
             )
         except Exception as bs_err:
             logger.warning("branch summary after fork failed: %s", bs_err)
@@ -749,6 +756,7 @@ class BranchSummaryRequest(BaseModel):
 
     from_message_id: int | str | None = None  # old leaf（被离开分支的叶）
     target_message_id: int | str | None = None  # 导航目标
+    summarizer: str | None = None  # llm|extractive|auto（默认auto，env可覆盖）
 
 
 @router.post("/{session_id}/branch-summaries")
@@ -760,11 +768,12 @@ async def create_branch_summary(
     """同会话切分支摘要：收集from→公共祖先的被离开分支条目，生成结构化摘要落库。
 
     pi branch-summarization.ts collectEntriesForBranchSummary+generateBranchSummary
-    语义。默认确定性extractive summarizer（离线可测）；BRANCH_SUMMARY_PROMPT保留
-    pi原文供LLM summarizer接入。异常映射与fork端点同款（MessageNotFound→404，
-    Cycle→409）。
+    语义。summarizer模式经resolve_summarizer解析（默认auto：provider已配置→
+    LLM summarizer走BRANCH_SUMMARY_PROMPT原文，失败可见降级extractive；env
+    BRANCH_SUMMARY_SUMMARIZER=extractive可强制离线路径）。异常映射与fork端点
+    同款（MessageNotFound→404，Cycle→409）。
     """
-    from src.trajectory.branch_summary import summarize_branch
+    from src.trajectory.branch_summary import resolve_summarizer, summarize_branch
     from src.trajectory.message_tree import (
         CycleError,
         EmptyChatError,
@@ -780,8 +789,16 @@ async def create_branch_summary(
     if not os.path.exists(_OPENSOUL_DB):
         raise HTTPException(status_code=500, detail="Database not available")
     try:
+        summarizer = resolve_summarizer(body.summarizer)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
         stats = summarize_branch(
-            _OPENSOUL_DB, session_id, body.from_message_id, body.target_message_id
+            _OPENSOUL_DB,
+            session_id,
+            body.from_message_id,
+            body.target_message_id,
+            summarizer=summarizer,
         )
     except SessionNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
