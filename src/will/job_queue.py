@@ -17,11 +17,23 @@
   （agno原版靠heartbeat lease回收；本部署单进程，重启即全部回收，
     差异在此注明，不假装有分布式租约）
 - list_jobs/get/get_stats以SQLite为真源：重启后monitoring面板仍可见历史
+
+retry_or_fail（agno §5.2退避 + §1.4错误风暴熔断，2026-09-21 cron轮，上轮遗留#5销账）：
+- 指数退避：失败重试不立即回队，delay=base×2^(n-1) capped+jitter（cortex/llm_retry.py
+  同款2s×2^n惯例），next_retry_at落盘monitoring可见；退避窗口跨重启保留
+- 错误风暴熔断：同job名连续同错误≥storm_window→抑制重试显式终态（error带
+  [breaker_open]前缀），cooldown过期半开、同名成功自动复位——防系统性故障
+  （provider宕机/密钥失效/handler bug）烧完每个作业的重试预算（agno"连续同错即停"）
+- requeue：POST /api/will/jobs/{id}/requeue 人工续跑终态作业——budget grant=
+  恰好一次（"用户触发的一次续跑绝不静默重跑"），人工意图不受熔断拦截
+- stale回收遵守重试预算：RUNNING崩溃且retries≥max_retries→显式失败不静默重跑
+  （agno at-most-once默认：副作用可能已发生），error指引requeue
 """
 
 import asyncio
 import json
 import logging
+import random
 import sqlite3
 import time
 import uuid
@@ -57,6 +69,7 @@ class Job:
     timeout_s: int = 300
     retries: int = 0
     max_retries: int = 2
+    next_retry_at: float = 0  # agno retry_or_fail退避：下一次重试执行时间（0=无退避等待）
 
     @property
     def duration_s(self) -> float:
@@ -78,13 +91,23 @@ class Job:
             "duration_s": self.duration_s,
             "retries": self.retries,
             "timeout_s": self.timeout_s,
+            "next_retry_at": self.next_retry_at,
         }
 
 
 class JobQueue:
     """后台作业队列 — SQLite持久化 + asyncio worker池"""
 
-    def __init__(self, db_path: str = "", max_workers: int = 3):
+    def __init__(
+        self,
+        db_path: str = "",
+        max_workers: int = 3,
+        retry_base_delay_s: float = 2.0,
+        retry_max_delay_s: float = 60.0,
+        retry_jitter: bool = True,
+        storm_window: int = 3,
+        storm_cooldown_s: float = 300.0,
+    ):
         self._db_path = db_path or str(Path.home() / "opensoul" / "data" / "job_queue.db")
         self._jobs: dict[str, Job] = {}
         self._handlers: dict[str, Callable[..., Awaitable[Any]]] = {}
@@ -92,6 +115,15 @@ class JobQueue:
         self._workers: list[asyncio.Task] = []
         self._max_workers = max_workers
         self._running = False
+        # agno retry_or_fail退避（cortex/llm_retry.py同款2s×2^n capped+jitter惯例）
+        self._retry_base_delay_s = retry_base_delay_s
+        self._retry_max_delay_s = retry_max_delay_s
+        self._retry_jitter = retry_jitter
+        # agno §1.4错误风暴熔断：同job名连续同错误≥window→抑制重试
+        self._storm_window = max(1, storm_window)
+        self._storm_cooldown_s = storm_cooldown_s
+        self._retry_tasks: dict[str, asyncio.Task] = {}
+        self._breakers: dict[str, dict] = {}
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
@@ -116,12 +148,19 @@ class JobQueue:
                     timeout_s INTEGER DEFAULT 300,
                     retries INTEGER DEFAULT 0,
                     max_retries INTEGER DEFAULT 2,
-                    idempotency_key TEXT DEFAULT ''
+                    idempotency_key TEXT DEFAULT '',
+                    next_retry_at REAL DEFAULT 0
                 )
             """)
             # 幂等键列迁移（既有库补列；重复列错误按消息匹配安全吞掉）
             try:
                 conn.execute("ALTER TABLE jobs ADD COLUMN idempotency_key TEXT DEFAULT ''")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+            # 退避列迁移（agno retry_or_fail：next_retry_at跨重启保留退避窗口）
+            try:
+                conn.execute("ALTER TABLE jobs ADD COLUMN next_retry_at REAL DEFAULT 0")
             except sqlite3.OperationalError as e:
                 if "duplicate column" not in str(e).lower():
                     raise
@@ -179,12 +218,28 @@ class JobQueue:
             job = self._row_to_job(row)
             self._jobs[job_id] = job
             if job.status == JobStatus.RUNNING:
-                # 死进程遗留：回pending重跑（retries保留，不静默重置计数）
-                job.status = JobStatus.PENDING
-                job.error = "stale recovery: previous process exited mid-run"
-                self._persist(job)
+                if job.retries >= job.max_retries:
+                    # agno at-most-once默认：崩溃作业显式失败不静默重跑
+                    # （副作用可能已发生）；人工续跑走requeue（grant恰好一次）
+                    job.status = JobStatus.FAILED
+                    job.error = (
+                        "stale recovery: crashed mid-run, retry budget exhausted "
+                        f"({job.retries}/{job.max_retries}) — requeue via "
+                        f"POST /api/will/jobs/{job.id}/requeue"
+                    )
+                    job.finished_at = time.time()
+                    self._persist(job)
+                else:
+                    # 死进程遗留：回pending重跑（retries保留，不静默重置计数）
+                    job.status = JobStatus.PENDING
+                    job.error = "stale recovery: previous process exited mid-run"
+                    self._persist(job)
             if job.status == JobStatus.PENDING:
-                await self._queue.put(job_id)
+                if job.next_retry_at > time.time():
+                    # agno retry_or_fail退避：窗口跨重启保留，到点才回队
+                    self._schedule_retry(job_id, job.next_retry_at - time.time())
+                else:
+                    await self._queue.put(job_id)
                 recovered += 1
         if recovered:
             logger.info(f"JobQueue recovery: re-queued {recovered} stale jobs")
@@ -219,6 +274,7 @@ class JobQueue:
             timeout_s=row["timeout_s"] or 300,
             retries=row["retries"] or 0,
             max_retries=row["max_retries"] if row["max_retries"] is not None else 2,
+            next_retry_at=(row["next_retry_at"] or 0) if "next_retry_at" in row.keys() else 0,
         )
 
     async def stop(self):
@@ -227,6 +283,9 @@ class JobQueue:
         for task in self._workers:
             task.cancel()
         self._workers.clear()
+        for task in self._retry_tasks.values():
+            task.cancel()
+        self._retry_tasks.clear()
         logger.info("JobQueue stopped")
 
     async def submit(
@@ -308,7 +367,11 @@ class JobQueue:
         if job and job.status == JobStatus.PENDING:
             job.status = JobStatus.CANCELLED
             job.finished_at = time.time()
+            job.next_retry_at = 0
             self._persist(job)
+            task = self._retry_tasks.pop(job_id, None)
+            if task and not task.done():
+                task.cancel()
             return True
         return False
 
@@ -343,6 +406,20 @@ class JobQueue:
                     total += int(row["c"])
         except Exception as e:
             logger.error(f"get_stats db read failed: {e}")
+        now = time.time()
+        breakers = {
+            name: {
+                "open": bool(e.get("open")),
+                "count": int(e.get("count", 0)),
+                "blocked": int(e.get("blocked", 0)),
+                "cooldown_remaining_s": (
+                    round(max(0.0, self._storm_cooldown_s - (now - e.get("opened_at", 0))), 1)
+                    if e.get("open")
+                    else 0.0
+                ),
+            }
+            for name, e in self._breakers.items()
+        }
         return {
             "total": total,
             "by_status": counts,
@@ -350,6 +427,8 @@ class JobQueue:
             "workers": len(self._workers),
             "handlers": sorted(self._handlers.keys()),
             "running": self._running,
+            "retry_scheduled": len(self._retry_tasks),
+            "breakers": breakers,
         }
 
     async def _worker_loop(self, worker_name: str):
@@ -377,38 +456,162 @@ class JobQueue:
             # Execute
             job.status = JobStatus.RUNNING
             job.started_at = time.time()
+            job.next_retry_at = 0
             self._persist(job)
 
             try:
                 result = await asyncio.wait_for(handler(**job.params), timeout=job.timeout_s)
                 job.status = JobStatus.COMPLETED
                 job.result = result
+                self._breaker_on_success(job.name)
             except TimeoutError:
-                job.status = JobStatus.TIMEOUT
-                job.error = f"Job timed out after {job.timeout_s}s"
-                if job.retries < job.max_retries:
-                    job.retries += 1
-                    job.status = JobStatus.PENDING
-                    self._persist(job)
-                    await self._queue.put(job_id)
-                    logger.warning(f"Job {job_id} retry {job.retries}/{job.max_retries}")
-                    continue
+                if await self._handle_failure(
+                    job, f"Job timed out after {job.timeout_s}s", is_timeout=True
+                ):
+                    continue  # 已按退避调度延迟重试
             except Exception as e:
-                job.status = JobStatus.FAILED
-                job.error = str(e)[:500]
-                if job.retries < job.max_retries:
-                    job.retries += 1
-                    job.status = JobStatus.PENDING
-                    self._persist(job)
-                    await self._queue.put(job_id)
-                    logger.warning(f"Job {job_id} retry {job.retries}/{job.max_retries}: {e}")
-                    continue
+                if await self._handle_failure(job, str(e)[:500], is_timeout=False):
+                    continue  # 已按退避调度延迟重试
 
             job.finished_at = time.time()
             self._persist(job)
             logger.info(
                 f"[{worker_name}] Job {job_id} ({job.name}): {job.status} in {job.duration_s}s"
             )
+
+    # ── agno retry_or_fail退避 + §1.4错误风暴熔断 + requeue（2026-09-21遗留#5）──
+
+    def _backoff_delay(self, attempt: int) -> float:
+        """指数退避秒数（agno retry_or_fail退避）。attempt=1→首次重试。
+        惯例对齐cortex/llm_retry.py（kilocode 2s×2^n capped，half-jitter防惊群）。"""
+        delay = min(self._retry_base_delay_s * (2 ** max(0, attempt - 1)), self._retry_max_delay_s)
+        if self._retry_jitter:
+            delay *= 0.5 + random.random() * 0.5
+        return delay
+
+    def _breaker_record_failure(self, name: str, error: str) -> bool:
+        """错误风暴熔断（agno environments §1.4：连续同错即停）。
+
+        同job名连续相同错误（signature=error前200字符）≥storm_window→熔断打开，
+        重试被抑制直至cooldown过期（半开：本次失败按新风暴重新计数）或同名作业
+        成功（_breaker_on_success复位）。返回breaker是否允许本次重试。
+        防系统性故障（provider宕机/密钥失效/handler bug）烧完每个作业的重试预算，
+        也防把系统性故障记成N条独立失败（evolution-engine-patterns §1.4）。
+        """
+        sig = (error or "")[:200]
+        now = time.time()
+        entry = self._breakers.get(name)
+        if entry and entry.get("open"):
+            if now - entry.get("opened_at", 0) < self._storm_cooldown_s:
+                entry["blocked"] = int(entry.get("blocked", 0)) + 1
+                return False
+            entry = None  # cooldown过期→半开：本次失败按新风暴重新计数
+        if entry and entry.get("sig") == sig:
+            entry["count"] = int(entry.get("count", 0)) + 1
+        else:
+            entry = {"sig": sig, "count": 1, "open": False, "opened_at": 0, "blocked": 0}
+        self._breakers[name] = entry
+        if entry["count"] >= self._storm_window:
+            entry["open"] = True
+            entry["opened_at"] = now
+            logger.warning(
+                f"JobQueue breaker OPEN for '{name}': {entry['count']} consecutive "
+                f"identical failures — retry suppressed {self._storm_cooldown_s}s"
+            )
+            return False
+        return True
+
+    def _breaker_on_success(self, name: str):
+        """同名作业成功→熔断复位（半开探测成功的语义）"""
+        if self._breakers.pop(name, None):
+            logger.info(f"JobQueue breaker RESET for '{name}': job succeeded")
+
+    async def _handle_failure(self, job: Job, error: str, is_timeout: bool) -> bool:
+        """失败处理（agno retry_or_fail退避 + §1.4熔断 + mem0 §1.1失败可见）。
+
+        返回True=已调度延迟重试（调用方continue worker循环，不占槽位睡眠）；
+        返回False=终态（调用方落finished_at）。
+        - budget未尽且熔断允许 → 指数退避后重排，next_retry_at落盘（monitoring可见）
+        - 熔断打开 → 立即终态，error带[breaker_open]前缀（不烧重试预算）
+        - budget耗尽 → 终态（error原文，重试计数保留可见）
+        """
+        job.status = JobStatus.TIMEOUT if is_timeout else JobStatus.FAILED
+        job.error = error
+        breaker_ok = self._breaker_record_failure(job.name, error)
+        if breaker_ok and job.retries < job.max_retries:
+            job.retries += 1
+            delay = self._backoff_delay(job.retries)
+            job.status = JobStatus.PENDING
+            job.next_retry_at = time.time() + delay
+            self._persist(job)
+            self._schedule_retry(job.id, delay)
+            logger.warning(
+                f"Job {job.id} retry {job.retries}/{job.max_retries} in {delay:.1f}s: {error[:120]}"
+            )
+            return True
+        if not breaker_ok:
+            job.error = f"[breaker_open] {error}"
+        return False
+
+    def _schedule_retry(self, job_id: str, delay: float):
+        """延迟重排：worker不占槽位睡眠，到点由事件循环回队（agno退避语义）。
+        同job旧调度先取消防重复回队；stop()/cancel()时调度任务被取消。
+        """
+        old = self._retry_tasks.pop(job_id, None)
+        if old and not old.done():
+            old.cancel()
+
+        async def _delayed():
+            try:
+                await asyncio.sleep(delay)
+                job = self._jobs.get(job_id)
+                if self._running and job and job.status == JobStatus.PENDING:
+                    await self._queue.put(job_id)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._retry_tasks.pop(job_id, None)
+
+        try:
+            self._retry_tasks[job_id] = asyncio.create_task(_delayed())
+        except RuntimeError:
+            # 无运行中事件循环（同步上下文防御）：退避降级为立即回队，不静默丢作业
+            logger.warning(f"No event loop for delayed retry of {job_id}; enqueue immediately")
+            self._queue.put_nowait(job_id)
+
+    async def requeue(self, job_id: str) -> dict:
+        """agno /queue/jobs/{id}/requeue：终态作业人工续跑。
+
+        budget grant = max_retries = retries（evolution-engine-patterns §5.2：
+        "用户触发的一次续跑绝不静默重跑"）——grant恰好一次执行，成功/失败都显式
+        可见，不因剩余budget静默追加重试。人工意图直跑不受熔断拦截；若作业成功，
+        同名熔断器自动复位。pending/running不requeue（not_terminal）。
+        """
+        job = self._jobs.get(job_id)
+        if not job:
+            try:
+                with self._conn() as conn:
+                    row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            except Exception as e:
+                logger.error(f"requeue db read failed: {e}")
+                row = None
+            if not row:
+                return {"requeued": False, "reason": "not_found"}
+            job = self._row_to_job(row)
+            self._jobs[job_id] = job
+        if job.status not in (JobStatus.FAILED, JobStatus.TIMEOUT, JobStatus.CANCELLED):
+            return {"requeued": False, "reason": f"not_terminal:{job.status}", "job": job.to_dict()}
+        old = self._retry_tasks.pop(job_id, None)
+        if old and not old.done():
+            old.cancel()
+        job.max_retries = job.retries  # agno budget grant：恰好一次，绝不静默重跑
+        job.status = JobStatus.PENDING
+        job.next_retry_at = 0
+        job.finished_at = 0
+        self._persist(job)
+        await self._queue.put(job_id)
+        logger.info(f"JobQueue.requeue: {job_id} ({job.name}) granted one more attempt")
+        return {"requeued": True, "job": job.to_dict()}
 
     def _persist(self, job: Job, idempotency_key: str = ""):
         """持久化作业状态到SQLite"""
@@ -417,8 +620,8 @@ class JobQueue:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO jobs
-                    (id, name, status, params, result, error, created_at, started_at, finished_at, timeout_s, retries, max_retries, idempotency_key)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT idempotency_key FROM jobs WHERE id = ?), ''))
+                    (id, name, status, params, result, error, created_at, started_at, finished_at, timeout_s, retries, max_retries, idempotency_key, next_retry_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT idempotency_key FROM jobs WHERE id = ?), ''), ?)
                 """,
                     (
                         job.id,
@@ -437,6 +640,7 @@ class JobQueue:
                         job.max_retries,
                         idempotency_key or None,
                         job.id,
+                        job.next_retry_at,
                     ),
                 )
         except Exception as e:

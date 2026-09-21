@@ -698,3 +698,18 @@ async def job_cancel(job_id: str):
 
     ok = get_job_queue().cancel(job_id)
     return {"cancelled": ok}
+
+
+@router.post("/jobs/{job_id}/requeue")
+async def job_requeue(job_id: str):
+    """agno /queue/jobs/{id}/requeue：终态（failed/timeout/cancelled）作业人工续跑。
+
+    budget grant=恰好一次（evolution-engine-patterns §5.2 "用户触发的一次续跑
+    绝不静默重跑"）；pending/running返回not_terminal不重复排队。
+    """
+    from src.will.job_queue import get_job_queue
+
+    result = await get_job_queue().requeue(job_id)
+    if result.get("reason") == "not_found":
+        raise HTTPException(404, "Job not found")
+    return result
