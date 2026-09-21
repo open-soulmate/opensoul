@@ -31,7 +31,10 @@ async def sessions_api_health():
 logger = logging.getLogger(__name__)
 
 _DB_PATH = os.path.expanduser("~/.hermes/state.db")
-_OPENSOUL_DB = "/home/climbing/opensoul/data/opensoul.db"
+_OPENSOUL_DB = os.environ.get(
+    "OPENSOUL_DB",
+    os.path.join(os.environ.get("OPENSOUL_ROOT", "/home/climbing/opensoul"), "data", "opensoul.db"),
+)
 
 
 def _get_db():

@@ -12,13 +12,17 @@
 
 import json
 import logging
+import os
 import sqlite3
 import time
 from pathlib import Path
 
 logger = logging.getLogger("opensoul.hippo.session_importer")
 
-OPENSOUL_DB = "/home/climbing/opensoul/data/opensoul.db"
+OPENSOUL_DB = os.environ.get(
+    "OPENSOUL_DB",
+    os.path.join(os.environ.get("OPENSOUL_ROOT", "/home/climbing/opensoul"), "data", "opensoul.db"),
+)
 
 # 噪声会话前缀：测试/系统生成的会话不值得进记忆
 DEFAULT_EXCLUDE_PREFIXES = ("evo-test-", "stress_test", "systemic-test")

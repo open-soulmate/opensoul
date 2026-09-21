@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -38,7 +39,10 @@ from src.trajectory.message_tree import ensure_parent_column
 
 logger = logging.getLogger("opensoul.trajectory.import_formats")
 
-OPENSOUL_DB = "/home/climbing/opensoul/data/opensoul.db"
+OPENSOUL_DB = os.environ.get(
+    "OPENSOUL_DB",
+    os.path.join(os.environ.get("OPENSOUL_ROOT", "/home/climbing/opensoul"), "data", "opensoul.db"),
+)
 MAX_IMPORT_BYTES = 100 * 1024 * 1024
 
 # goose utils.rs sanitize_unicode_tags：剥除Unicode Tags Block（不可见注入字符）

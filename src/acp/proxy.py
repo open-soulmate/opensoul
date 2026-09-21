@@ -170,10 +170,13 @@ class ACPProcess:
         resp = await self._rpc("session/list", {})
         return resp.get("sessions", [])
 
-    async def new_session(self, cwd: str = "/home/climbing") -> dict:
+    async def new_session(self, cwd: str | None = None) -> dict:
         if not self.is_running or not self._initialized:
             await self.start()
-        resp = await self._rpc("session/new", {"cwd": cwd, "mcpServers": []})
+        resp = await self._rpc(
+            "session/new",
+            {"cwd": cwd or os.environ.get("USER_HOME", "/home/climbing"), "mcpServers": []},
+        )
         sid = resp.get("sessionId") or resp.get("session_id")
         if sid:
             self._default_session_id = sid

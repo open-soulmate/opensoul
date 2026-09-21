@@ -153,7 +153,12 @@ def _load_overrides_from_env():
 
 def _sync_acp_proxy_env(url: str, model: str, api_key: str):
     """打通soulmate配置：激活配置同步写入acp-proxy/.env（soulmate agent实际配置源）"""
-    acp_env = "/home/climbing/openmate/acp-proxy/.env"
+    acp_env = os.environ.get(
+        "ACP_PROXY_ENV",
+        os.path.join(
+            os.environ.get("OPENMATE_ROOT", "/home/climbing/openmate"), "acp-proxy", ".env"
+        ),
+    )
     try:
         lines = open(acp_env).read().splitlines() if os.path.exists(acp_env) else []
         updates = {"LLM_BASE_URL": url, "LLM_MODEL": model, "LLM_API_KEY": api_key}
