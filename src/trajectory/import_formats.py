@@ -34,6 +34,8 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 
+from src.trajectory.message_tree import ensure_parent_column
+
 logger = logging.getLogger("opensoul.trajectory.import_formats")
 
 OPENSOUL_DB = "/home/climbing/opensoul/data/opensoul.db"
@@ -676,6 +678,7 @@ _SCHEMA_DDL = (
         content TEXT NOT NULL,
         timestamp REAL NOT NULL,
         attachments TEXT,
+        parent_message_id INTEGER,
         FOREIGN KEY (session_id) REFERENCES agent_sessions(id)
     )""",
 )
@@ -711,6 +714,8 @@ def import_to_db(
     try:
         for ddl in _SCHEMA_DDL:
             conn.execute(ddl)
+        # P0-10消息树：老库缺parent_message_id列时probe+ALTER+backfill（幂等）
+        ensure_parent_column(conn)
         existing = conn.execute(
             "SELECT 1 FROM agent_sessions WHERE id = ? LIMIT 1", (session_id,)
         ).fetchone()
@@ -729,10 +734,17 @@ def import_to_db(
                 len(conv.messages),
             ),
         )
-        conn.executemany(
-            "INSERT INTO agent_messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-            [(session_id, m["role"], m["content"], m["timestamp"]) for m in conv.messages],
-        )
+        # P0-10消息树parentId（pi追加树）：导入transcript是顺序追加的，
+        # 每条消息parent=本会话内前一条新行id（线性主干链）
+        prev_id = None
+        for m in conv.messages:
+            cur = conn.execute(
+                "INSERT INTO agent_messages "
+                "(session_id, role, content, timestamp, parent_message_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, m["role"], m["content"], m["timestamp"], prev_id),
+            )
+            prev_id = cur.lastrowid
         conn.commit()
         stats["messages_written"] = len(conv.messages)
         return stats

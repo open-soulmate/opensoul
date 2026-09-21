@@ -581,9 +581,13 @@ async def get_session_messages(
                 adb.execute("SELECT attachments FROM agent_messages LIMIT 1")
             except Exception:
                 adb.execute("ALTER TABLE agent_messages ADD COLUMN attachments TEXT")
+            # P0-10消息树：读路径同样触发parentId列迁移（幂等，首个触达者完成全库迁移）
+            from src.trajectory.message_tree import ensure_parent_column
+
+            ensure_parent_column(adb)
             rows = adb.execute(
                 """
-                SELECT id, role, content, timestamp, attachments
+                SELECT id, role, content, timestamp, attachments, parent_message_id
                 FROM agent_messages
                 WHERE session_id = ?
                 ORDER BY id
@@ -620,6 +624,12 @@ async def get_session_messages(
                         "timestamp": _ts_to_iso(r["timestamp"]),
                         "source": "agent-db",
                         "attachments": attachments_out if attachments_out else None,
+                        # P0-10消息树parentId（open-webui/pi）：NULL=会话根节点
+                        "parent_id": (
+                            str(r["parent_message_id"])
+                            if r["parent_message_id"] is not None
+                            else None
+                        ),
                     }
                 )
             return {"messages": messages, "total": len(messages)}
@@ -627,6 +637,71 @@ async def get_session_messages(
             adb.close()
 
     return {"messages": [], "total": 0}
+
+
+# ── 消息树 Fork API（P0-10：open-webui build_fork_history + pi parentId追加树）──
+
+
+class SessionForkRequest(BaseModel):
+    message_id: int | str | None = None
+
+
+@router.post("/{session_id}/fork")
+async def fork_session_at_message(
+    session_id: str,
+    body: SessionForkRequest,
+    user_id: UUID = Depends(get_current_user),
+):
+    """Fork会话消息树分支——从message_id沿parent_message_id回溯到根，分支复制为新会话。
+
+    open-webui chat_fork.py build_fork_history语义 + pi追加树数据模型（P0-10四方定案）。
+    确定性主键 fork:{session}:{message}（agno幂等键）：同分支点重复fork返回
+    status=duplicate零重复写入。环/消息不存在/空会话/源会话不存在显式报错不静默。
+    仅agent_sessions路径有消息树；Hermes state.db的sessions无parentId概念不支持fork。
+    """
+    from src.trajectory.message_tree import (
+        CycleError,
+        EmptyChatError,
+        MessageNotFoundError,
+        MessageTreeError,
+        SessionNotFoundError,
+        ensure_parent_column,
+    )
+    from src.trajectory.message_tree import (
+        fork_session as fork_session_tree,
+    )
+
+    if body.message_id is None or str(body.message_id).strip() == "":
+        raise HTTPException(status_code=400, detail="message_id required")
+    if not os.path.exists(_OPENSOUL_DB):
+        raise HTTPException(status_code=500, detail="Database not available")
+    # 读写两侧都先过幂等迁移：历史会话（迁移前创建）同样可fork
+    adb = _get_agent_db()
+    if adb:
+        try:
+            ensure_parent_column(adb)
+        finally:
+            adb.close()
+    try:
+        stats = fork_session_tree(_OPENSOUL_DB, session_id, body.message_id)
+    except SessionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except MessageNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except CycleError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except EmptyChatError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except MessageTreeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    logger.info(
+        "session fork: src=%s point=%s status=%s copied=%s",
+        session_id,
+        body.message_id,
+        stats.get("status"),
+        stats.get("messages_copied"),
+    )
+    return {"ok": True, **stats}
 
 
 # ── Session Tags API ──────────────────────────────────────────
