@@ -223,6 +223,44 @@ async def cancel_execution(execution_id: str):
     return {"status": "cancelled", "execution_id": execution_id}
 
 
+# ── Checkpoint / Resume（STORM分阶段断点续跑 + agno /continue） ──
+
+
+@router.post("/executions/{execution_id}/continue")
+async def continue_execution(execution_id: str):
+    """断点续跑：从checkpoint恢复已完成阶段产物，从失败/中断节点继续（agno /continue语义）。
+
+    仅waiting/failed可续跑；success/cancelled拒绝（409，"绝不静默重跑"）。
+    每次调用恰好续跑一遍，resume_count逐次+1。
+    """
+    execution, reason = await engine.resume_execution(execution_id)
+    if execution is None:
+        status = 404 if reason == "not_found" else 409
+        raise HTTPException(status, f"Cannot resume: {reason}")
+    return {**_execution_dict(execution), "resume": reason}
+
+
+@router.get("/checkpoints")
+async def list_checkpoints(
+    workflow_id: str = Query(default=None),
+    resumable_only: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """列出execution checkpoints（哪些执行可续跑/被打断——monitoring可观测）。"""
+    items = engine.list_checkpoints(
+        workflow_id=workflow_id, resumable_only=resumable_only, limit=limit
+    )
+    return {"checkpoints": items, "count": len(items)}
+
+
+@router.delete("/checkpoints/{execution_id}")
+async def delete_checkpoint(execution_id: str):
+    """删除checkpoint行+执行记录（清理通道）。"""
+    if not engine.delete_checkpoint(execution_id):
+        raise HTTPException(404, "Checkpoint not found")
+    return {"status": "deleted", "execution_id": execution_id}
+
+
 # ── Health / Stats ─────────────────────────────────────────────
 
 
@@ -394,6 +432,7 @@ def _execution_dict(exec: Any) -> dict:
         "variables": exec.variables,
         "error": exec.error,
         "trigger_type": exec.trigger_type,
+        "resume_count": getattr(exec, "resume_count", 0),
     }
 
 

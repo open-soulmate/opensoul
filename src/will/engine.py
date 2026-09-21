@@ -21,6 +21,7 @@ from uuid import uuid4
 
 import httpx
 
+from .checkpoint import RESUMABLE_STATES, CheckpointStore
 from .models import (
     ExecutionStatus,
     NodeType,
@@ -62,12 +63,47 @@ class WorkflowEngine:
 
     _PERSIST_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "will_workflows.json"
 
-    def __init__(self) -> None:
+    def __init__(self, checkpoint_db: Path | None = None) -> None:
         self._workflows: dict[str, Workflow] = {}
         self._executions: dict[str, WorkflowExecution] = {}
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._max_execution_history = 1000
+        # P1 checkpoint断点续跑（STORM分阶段落盘+agno /continue）：
+        # 每个DAG节点执行完即落盘；进程重启后执行历史/可续跑状态从盘上恢复
+        self._checkpoints = CheckpointStore(checkpoint_db)
         self._load()
+        self._recover_executions()
+
+    def _recover_executions(self) -> None:
+        """启动时从checkpoint store恢复执行历史（Langflow"进程重启后按run_id恢复"）。
+
+        - 终态执行（success/failed/cancelled）原样恢复——重启不丢失执行历史（可观测性）
+        - RUNNING/PENDING = 上一进程死在执行中途 → 显式标记WAITING+原因（mem0失败可见），
+          可通过resume_execution断点续跑（STORM"跑到第3阶段崩了不用重跑前2阶段"）
+        """
+        try:
+            for item in self._checkpoints.list_checkpoints(limit=1000):
+                exec_id = item["execution_id"]
+                if exec_id in self._executions:
+                    continue
+                execution = self._checkpoints.load(exec_id)
+                if execution is None:
+                    continue
+                if execution.status in (ExecutionStatus.RUNNING, ExecutionStatus.PENDING):
+                    done = sum(1 for s in execution.steps if s.status == ExecutionStatus.SUCCESS)
+                    execution.status = ExecutionStatus.WAITING
+                    execution.error = (
+                        f"interrupted: process restarted mid-run "
+                        f"({done}/{len(execution.steps)} steps checkpointed) — "
+                        f"resume via POST /api/will/executions/{execution.id}/continue"
+                    )
+                    self._checkpoints.save(execution)
+                    logger.warning(
+                        "Execution %s recovered as WAITING (interrupted mid-run)", exec_id
+                    )
+                self._executions[exec_id] = execution
+        except Exception as exc:
+            logger.warning("Execution recovery failed (non-fatal): %s", exc)
 
     # ── Persistence (P3-③) ─────────────────────────────────────
 
@@ -253,6 +289,9 @@ class WorkflowEngine:
         wf.run_count += 1
         wf.last_run_at = datetime.now(UTC).isoformat()
 
+        # 起始checkpoint：即使第一阶段中途崩溃也有行可恢复（Langflow按run_id落库）
+        self._checkpoints.save(execution)
+
         # Run asynchronously with real I/O
         await self._run_execution_async(wf, execution)
         return execution
@@ -289,6 +328,9 @@ class WorkflowEngine:
         wf.run_count += 1
         wf.last_run_at = datetime.now(UTC).isoformat()
 
+        # 起始checkpoint：即使第一阶段中途崩溃也有行可恢复（Langflow按run_id落库）
+        self._checkpoints.save(execution)
+
         # Try to run in existing loop, fallback to sync
         try:
             loop = asyncio.get_running_loop()
@@ -297,11 +339,20 @@ class WorkflowEngine:
             asyncio.run(self._run_execution_async(wf, execution))
         return execution
 
-    async def _run_execution_async(self, wf: Workflow, execution: WorkflowExecution) -> None:
-        """Execute the workflow DAG from trigger nodes with real async I/O."""
+    async def _run_execution_async(
+        self, wf: Workflow, execution: WorkflowExecution, resume: bool = False
+    ) -> None:
+        """Execute the workflow DAG from trigger nodes with real async I/O.
+
+        resume=True（断点续跑，STORM语义）：
+        - 已完成节点不重新执行——其产物已随checkpoint持久化在execution.variables中
+          （STORM "_load_information_table_from_local_fs从磁盘恢复上一阶段产物"）
+        - 失败/被打断的部分步骤从该节点从头重放（LangGraph §4.5"节点从头重放"）
+        - frontier=已完成节点的出边目标，条件边用checkpoint变量重新求值
+        """
         execution.status = ExecutionStatus.RUNNING
         triggers = wf.get_trigger_nodes()
-        if not triggers:
+        if not triggers and not resume:
             execution.status = ExecutionStatus.FAILED
             execution.error = "No trigger node found"
             execution.completed_at = datetime.now(UTC).isoformat()
@@ -310,6 +361,32 @@ class WorkflowEngine:
         async with httpx.AsyncClient(timeout=60.0) as client:
             queue: list[str] = [t.id for t in triggers]
             visited: set[str] = set()
+            if resume:
+                completed_nodes = {
+                    s.node_id for s in execution.steps if s.status == ExecutionStatus.SUCCESS
+                }
+                # 丢弃失败/中断的部分步骤——重跑时从头重放（LangGraph节点幂等重放语义）
+                execution.steps = [
+                    s for s in execution.steps if s.status == ExecutionStatus.SUCCESS
+                ]
+                if completed_nodes:
+                    frontier: list[str] = []
+                    for nid in completed_nodes:
+                        for edge in wf.get_outgoing_edges(nid):
+                            if edge.target_node_id in completed_nodes:
+                                continue
+                            if edge.condition:
+                                try:
+                                    if not self._eval_condition(
+                                        edge.condition, execution.variables
+                                    ):
+                                        continue
+                                except Exception:
+                                    continue
+                            frontier.append(edge.target_node_id)
+                    if frontier:
+                        queue = frontier
+                    visited = set(completed_nodes)
             max_steps = 200
             step_count = 0
 
@@ -345,11 +422,16 @@ class WorkflowEngine:
                     execution.error = f"Node '{node.display_label}' failed: {e}"
                     execution.completed_at = datetime.now(UTC).isoformat()
                     logger.error("Workflow node '%s' failed: %s", node.display_label, e)
+                    # 分阶段落盘：失败现场（已完成阶段产物+失败步骤）checkpoint持久化
+                    self._checkpoints.save(execution)
                     return
 
                 step.completed_at = datetime.now(UTC).isoformat()
                 if step.started_at and step.completed_at:
                     step.duration_ms = self._calc_duration_ms(step.started_at, step.completed_at)
+
+                # STORM分阶段落盘：每完成一个节点同步checkpoint一次（LangGraph关键写入sync）
+                self._checkpoints.save(execution)
 
                 # Find next nodes
                 outgoing = wf.get_outgoing_edges(node_id)
@@ -366,6 +448,7 @@ class WorkflowEngine:
         if execution.status != ExecutionStatus.FAILED:
             execution.status = ExecutionStatus.SUCCESS
         execution.completed_at = datetime.now(UTC).isoformat()
+        self._checkpoints.save(execution)
         self._trim_history()
 
     async def _execute_node_async(
@@ -709,7 +792,80 @@ class WorkflowEngine:
     # ── Execution History ───────────────────────────────────────
 
     def get_execution(self, execution_id: str) -> WorkflowExecution | None:
-        return self._executions.get(execution_id)
+        # 内存miss时回落checkpoint store（_trim_history裁掉的旧执行仍可按id读回，
+        # Langflow"重启后按run_id恢复"读路径语义）
+        return self._executions.get(execution_id) or self._checkpoints.load(execution_id)
+
+    # ── Checkpoint / Resume（STORM分阶段断点续跑 + agno /continue） ──
+
+    async def resume_execution(self, execution_id: str) -> tuple[WorkflowExecution | None, str]:
+        """断点续跑：从checkpoint恢复已完成阶段产物，从失败/中断节点继续执行。
+
+        agno语义（evolution-engine-patterns §5.2）：
+        - 仅WAITING/FAILED可续跑——SUCCESS/CANCELLED/RUNNING拒绝（"用户触发的一次续跑
+          绝不静默重跑"：已完成的执行绝不自动重放）
+        - 每次resume恰好执行一遍（budget grant），resume_count逐次+1可观测
+        - 失败再次可见：续跑后再失败error原文随执行状态返回，不静默
+
+        返回(execution | None, reason)：None时reason说明为什么不可续跑（API映射404/409）。
+        """
+        execution = self._executions.get(execution_id) or self._checkpoints.load(execution_id)
+        if execution is None:
+            return None, "not_found"
+        if execution.status not in RESUMABLE_STATES:
+            return (
+                None,
+                f"not_resumable: status={execution.status.value} "
+                f"(only waiting/failed executions can be continued)",
+            )
+        wf = self._workflows.get(execution.workflow_id)
+        if wf is None:
+            reason = (
+                f"workflow_missing: workflow {execution.workflow_id} no longer exists — "
+                "cannot resume"
+            )
+            execution.error = reason
+            self._checkpoints.save(execution)
+            return None, reason
+
+        errors = wf.validate_dag()
+        if errors:
+            reason = f"workflow_invalid: {'; '.join(errors)}"
+            execution.error = reason
+            self._checkpoints.save(execution)
+            return None, reason
+
+        done = sum(1 for s in execution.steps if s.status == ExecutionStatus.SUCCESS)
+        execution.resume_count = int(getattr(execution, "resume_count", 0) or 0) + 1
+        execution.status = ExecutionStatus.RUNNING
+        execution.error = None
+        execution.completed_at = None
+        self._executions[execution_id] = execution
+        self._checkpoints.save(execution)
+        logger.info(
+            "Resuming execution %s (resume #%d, %d completed steps replayed from checkpoint)",
+            execution_id,
+            execution.resume_count,
+            done,
+        )
+        await self._run_execution_async(wf, execution, resume=True)
+        return execution, (
+            f"resumed: {done} completed step(s) replayed from checkpoint, "
+            f"resume_count={execution.resume_count}"
+        )
+
+    def list_checkpoints(
+        self, workflow_id: str | None = None, resumable_only: bool = False, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """checkpoint列表（API/monitoring消费：哪些执行可续跑/被打断）。"""
+        return self._checkpoints.list_checkpoints(
+            workflow_id=workflow_id, resumable_only=resumable_only, limit=limit
+        )
+
+    def delete_checkpoint(self, execution_id: str) -> bool:
+        """删除checkpoint行+内存执行记录（清理通道）。"""
+        self._executions.pop(execution_id, None)
+        return self._checkpoints.delete(execution_id)
 
     def list_executions(
         self, workflow_id: str | None = None, limit: int = 50
@@ -725,6 +881,8 @@ class WorkflowEngine:
             return False
         exec.status = ExecutionStatus.CANCELLED
         exec.completed_at = datetime.now(UTC).isoformat()
+        # 取消状态同步落盘（重启后历史一致可见）
+        self._checkpoints.save(exec)
         return True
 
     # ── Stats ───────────────────────────────────────────────────
@@ -734,6 +892,7 @@ class WorkflowEngine:
         success = sum(1 for e in self._executions.values() if e.status == ExecutionStatus.SUCCESS)
         failed = sum(1 for e in self._executions.values() if e.status == ExecutionStatus.FAILED)
         running = sum(1 for e in self._executions.values() if e.status == ExecutionStatus.RUNNING)
+        waiting = sum(1 for e in self._executions.values() if e.status == ExecutionStatus.WAITING)
         return {
             "total_workflows": len(self._workflows),
             "active_workflows": sum(
@@ -743,5 +902,9 @@ class WorkflowEngine:
             "successful": success,
             "failed": failed,
             "running": running,
+            # WAITING=被进程重启打断、可断点续跑的执行（mem0失败可见）
+            "waiting_resume": waiting,
             "success_rate": round(success / total_execs * 100, 1) if total_execs else 0,
+            # checkpoint store统计（resumable/by_status——monitoring可观测）
+            "checkpoints": self._checkpoints.stats(),
         }

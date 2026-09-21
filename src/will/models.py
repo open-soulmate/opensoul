@@ -164,6 +164,8 @@ class WorkflowExecution(BaseModel):
     variables: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
     trigger_type: str = "manual"
+    # agno budget grant语义：每次人工resume恰好+1，"用户触发的一次续跑绝不静默重跑"
+    resume_count: int = 0
 
     @property
     def duration_ms(self) -> float:
