@@ -296,12 +296,23 @@ async def evolve(tenant_id: str = "default", agent_id: str = "default"):
     from src.database.postgres import db_pool
     from src.heredity.evolution_loop import EvolutionEngine
     from src.heredity.self_evolution import SelfEvolution
+    from src.learn.experience_collector import ExperienceCollector
 
     KIND_MAP = {
         "failure_avoidance": "failure_avoidance",
         "strategy_adjustment": "policy_adjustment",
         "style_adjustment": "prompt_strategy",
     }
+
+    # P0-7数据层（TradingAgents outcome回填）：先采集真实执行产物
+    # （agent_messages/jobs/eval实验）→ experiences，再分析——进化永远基于
+    # 最新真实数据。采集异常不阻断分析（表可能已有历史数据可分析），
+    # 错误显式进experience_collection.error（mem0 §1.1失败必须可见）。
+    collection: dict = {}
+    try:
+        collection = ExperienceCollector(tenant_id=tenant_id, agent_id=agent_id).collect()
+    except Exception as e:  # 采集失败可见但不阻断进化分析
+        collection = {"status": "failed", "error": str(e), "written": 0}
 
     evolutions = []
     analysis_error = ""
@@ -315,9 +326,21 @@ async def evolve(tenant_id: str = "default", agent_id: str = "default"):
     declared = []
     for evo in evolutions:
         kind = KIND_MAP.get(evo.get("type", ""), "policy_adjustment")
+        # 去重键=_digest(kind, title)（evolution_loop.declare_intent:490）。
+        # failure模式的action文本全部相同（"自动规避: 增加前置检查"）——只用
+        # action做title会让不同失败模式（不同reason）互相误判duplicate，
+        # 4条不同发现在live实证中被折叠成1条（证据丢失）。title携带reason后
+        # digest按发现内容去重：同一发现重复declare→duplicate，不同发现各建单。
+        _action = str(evo.get("action") or "").strip()
+        _reason = str(evo.get("reason") or "").strip()
+        _title = (
+            f"{_action}: {_reason}"
+            if _action and _reason
+            else (_action or _reason or "auto evolution")
+        )
         result = engine.declare_intent(
             kind=kind,
-            title=str(evo.get("action") or evo.get("reason") or "auto evolution")[:200],
+            title=_title[:200],
             rationale=str(evo.get("reason", "")),
             confidence=0.4,
             evidence_refs=[f"evolution_log:{evo.get('type', 'unknown')}"],
@@ -334,6 +357,7 @@ async def evolve(tenant_id: str = "default", agent_id: str = "default"):
     return {
         "evolutions": evolutions,
         "analysis_error": analysis_error,
+        "experience_collection": collection,
         "declared_proposals": declared,
         "pipeline": engine.get_stats(),
     }

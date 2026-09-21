@@ -20,10 +20,26 @@ def _convert_sql_for_sqlite(sql: str, args: tuple) -> tuple[str, tuple]:
     - ANY($N) → expanded IN (?, ?, ...)
     - NOW() → datetime('now')
     - UUID objects → str for SQLite compatibility
+    - 单tuple/list参数展开（调用约定兼容层，2026-09-21实证修复）
     """
     from uuid import UUID
 
-    # 0. Convert UUID objects to strings (SQLite doesn't support UUID type)
+    # 0. 调用约定兼容：器官模块（heredity/self_evolution、learn/long_term、
+    # learn/experience、mind/user_memory、mirror/metacognition、
+    # cortex/multi_agent_coord，共43处调用点）按"databases"库风格传参：
+    # db.fetch(query, (tenant_id, agent_id, ts))——参数是单个tuple/list；
+    # 而本适配器按asyncpg风格*args展开。此前每个此类查询都以
+    # ProgrammingError绑定失败（"写了≠接线了"的适配层形态：表建好了，
+    # 查询照样全挂）。仅当「单序列参数」且「占位符数量与序列长度一致」
+    # 时展开；数量不一致保持原样→sqlite按原样报绑定错误（不静默吞）。
+    if len(args) == 1 and isinstance(args[0], (list, tuple)):
+        seq = tuple(args[0])
+        n_sqlite = sql.count("?")
+        n_pg = len(_PARAM_RE.findall(sql))
+        if (n_sqlite == len(seq)) or (n_pg == len(seq) and n_sqlite == 0):
+            args = seq
+
+    # 0.1 Convert UUID objects to strings (SQLite doesn't support UUID type)
     args = tuple(str(a) if isinstance(a, UUID) else a for a in args)
 
     # 1. Handle ANY($N) first — expand list args into IN (?, ...)

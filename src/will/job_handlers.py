@@ -17,6 +17,7 @@ api.heredity/api.hippo在main.py启动时已加载，此处延迟import
 避免will→api→will的模块级循环导入（will/__init__已被api/will.py导入）。
 """
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -77,12 +78,29 @@ async def _hippo_memory_pipeline(**params: Any) -> dict:
     return result.to_dict()
 
 
+async def _learn_collect_experiences(**params: Any) -> dict:
+    """learn.collect_experiences：P0-7进化数据层采集后台作业
+    （TradingAgents outcome回填：agent_messages/jobs/eval实验 → experiences表）。
+
+    brain/evolve端点每次分析前也会同步采集（真实HTTP路径）；本handler供
+    cron/monitoring按计划采集（采集与分析解耦——分析随时有最新数据可读）。
+    同步sqlite3采集用to_thread隔离（不阻塞事件循环；单进程队列无并发写冲突）。"""
+    from src.learn.experience_collector import ExperienceCollector
+
+    collector = ExperienceCollector(
+        tenant_id=str(params.get("tenant_id", "default")),
+        agent_id=str(params.get("agent_id", "default")),
+    )
+    return await asyncio.to_thread(collector.collect)
+
+
 # handler注册表：job name → async callable(**params) -> JSON-serializable dict
 # 命名约定 <organ>.<action>：与OpenSoul器官分层一致，作业名即归属声明
 HANDLER_SPECS: dict[str, Callable[..., Awaitable[Any]]] = {
     "heredity.evaluate_triggers": _heredity_evaluate_triggers,
     "hippo.dream": _hippo_dream,
     "hippo.memory_pipeline": _hippo_memory_pipeline,
+    "learn.collect_experiences": _learn_collect_experiences,
 }
 
 
