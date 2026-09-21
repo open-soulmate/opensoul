@@ -9,3 +9,11 @@ dist/
 .ruff_cache/
 data/
 logs/
+*.db
+*.db-journal
+*.tmp
+admin-ui/.tmp/
+node_modules/
+.next/
+target/
+*.log
