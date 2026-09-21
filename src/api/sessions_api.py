@@ -524,6 +524,13 @@ async def delete_session(
             if row:
                 adb.execute("DELETE FROM agent_messages WHERE session_id = ?", (session_id,))
                 adb.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
+                # pi branch-summary配套清理：防agent_branch_summaries孤儿行
+                try:
+                    from src.trajectory.branch_summary import delete_branch_summaries
+
+                    delete_branch_summaries(adb, session_id)
+                except Exception as exc:
+                    logging.getLogger(__name__).debug("branch summary cleanup skipped: %s", exc)
                 adb.commit()
                 return {"success": True, "deleted_session": session_id}
         finally:
@@ -569,7 +576,8 @@ async def get_session_messages(
                             "source": "hermes-db",
                         }
                     )
-                return {"messages": messages, "total": len(messages)}
+                # Hermes路径无消息树/分支摘要概念，契约一致携带空列表
+                return {"messages": messages, "total": len(messages), "branch_summaries": []}
         finally:
             db.close()
 
@@ -632,7 +640,20 @@ async def get_session_messages(
                         ),
                     }
                 )
-            return {"messages": messages, "total": len(messages)}
+            # pi branch-summarization读侧：会话的切分支摘要随消息读路径下发
+            # （BranchSummaryEntry参与上下文的OpenSoul映射；表不存在=空列表自愈）
+            from src.trajectory.branch_summary import (
+                ensure_branch_summary_table,
+                get_branch_summaries,
+            )
+
+            ensure_branch_summary_table(adb)
+            summaries = get_branch_summaries(adb, session_id)
+            return {
+                "messages": messages,
+                "total": len(messages),
+                "branch_summaries": summaries,
+            }
         finally:
             adb.close()
 
@@ -694,6 +715,19 @@ async def fork_session_at_message(
         raise HTTPException(status_code=409, detail=str(e)) from e
     except MessageTreeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    # pi navigateTree {summarize:true}的fork映射：fork=从源会话叶"导航"到fork点，
+    # 被离开的分支=源会话fork点之后的尾部——自动摘要挂fork产物会话名下。
+    # 摘要失败不回滚fork（fork已commit）：branch_summary显式携带error状态（失败可见）。
+    if stats.get("status") == "forked":
+        try:
+            from src.trajectory.branch_summary import summarize_fork_context
+
+            stats["branch_summary"] = summarize_fork_context(
+                _OPENSOUL_DB, session_id, body.message_id, stats["fork_session_id"]
+            )
+        except Exception as bs_err:
+            logger.warning("branch summary after fork failed: %s", bs_err)
+            stats["branch_summary"] = {"status": "error", "error": str(bs_err)}
     logger.info(
         "session fork: src=%s point=%s status=%s copied=%s",
         session_id,
@@ -702,6 +736,96 @@ async def fork_session_at_message(
         stats.get("messages_copied"),
     )
     return {"ok": True, **stats}
+
+
+# ── 切分支自动摘要 API（pi branch-summarization.ts，P0-10遗留#1销账）──
+
+
+class BranchSummaryRequest(BaseModel):
+    """pi navigateTree(targetId, {summarize:true})的HTTP映射。"""
+
+    from_message_id: int | str | None = None  # old leaf（被离开分支的叶）
+    target_message_id: int | str | None = None  # 导航目标
+
+
+@router.post("/{session_id}/branch-summaries")
+async def create_branch_summary(
+    session_id: str,
+    body: BranchSummaryRequest,
+    user_id: UUID = Depends(get_current_user),
+):
+    """同会话切分支摘要：收集from→公共祖先的被离开分支条目，生成结构化摘要落库。
+
+    pi branch-summarization.ts collectEntriesForBranchSummary+generateBranchSummary
+    语义。默认确定性extractive summarizer（离线可测）；BRANCH_SUMMARY_PROMPT保留
+    pi原文供LLM summarizer接入。异常映射与fork端点同款（MessageNotFound→404，
+    Cycle→409）。
+    """
+    from src.trajectory.branch_summary import summarize_branch
+    from src.trajectory.message_tree import (
+        CycleError,
+        EmptyChatError,
+        MessageNotFoundError,
+        MessageTreeError,
+        SessionNotFoundError,
+    )
+
+    if body.from_message_id is None or str(body.from_message_id).strip() == "":
+        raise HTTPException(status_code=400, detail="from_message_id required")
+    if body.target_message_id is None or str(body.target_message_id).strip() == "":
+        raise HTTPException(status_code=400, detail="target_message_id required")
+    if not os.path.exists(_OPENSOUL_DB):
+        raise HTTPException(status_code=500, detail="Database not available")
+    try:
+        stats = summarize_branch(
+            _OPENSOUL_DB, session_id, body.from_message_id, body.target_message_id
+        )
+    except SessionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except MessageNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except CycleError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except EmptyChatError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except MessageTreeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    logger.info(
+        "branch summary: session=%s from=%s target=%s status=%s",
+        session_id,
+        body.from_message_id,
+        body.target_message_id,
+        stats.get("status"),
+    )
+    return {"ok": True, **stats}
+
+
+@router.get("/{session_id}/branches")
+async def get_session_branches(
+    session_id: str,
+    user_id: UUID = Depends(get_current_user),
+):
+    """会话消息树可观测：分支点（parent有≥2子消息的节点）+ 全部切分支摘要。"""
+    from src.trajectory.branch_summary import (
+        get_branch_summaries,
+        list_branch_points,
+    )
+
+    if not os.path.exists(_OPENSOUL_DB):
+        raise HTTPException(status_code=500, detail="Database not available")
+    adb = _get_agent_db()
+    if not adb:
+        return {"session_id": session_id, "branch_points": [], "branch_summaries": []}
+    try:
+        points = list_branch_points(adb, session_id)
+        summaries = get_branch_summaries(adb, session_id)
+        return {
+            "session_id": session_id,
+            "branch_points": points,
+            "branch_summaries": summaries,
+        }
+    finally:
+        adb.close()
 
 
 # ── Session Tags API ──────────────────────────────────────────
