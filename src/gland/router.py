@@ -8,6 +8,12 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from src.gland.harness_profiles import (
+    ModelRole,
+    model_key_for,
+    profile_for,
+    resolve_task,
+)
 from src.gland.key_manager import KeyManager
 from src.gland.token_meter import TokenMeter
 
@@ -187,11 +193,24 @@ class ModelRouter:
     # ── smart routing ────────────────────────────────────────────
 
     def _resolve_model(
-        self, provider: ProviderConfig, task: TaskType, model: str | None
+        self,
+        provider: ProviderConfig,
+        task: TaskType,
+        model: str | None,
+        role: ModelRole | str | None = None,
     ) -> str | None:
-        """Determine the concrete model name for a request."""
+        """Determine the concrete model name for a request.
+
+        Harness Profiles (continue Model Roles): a role resolves to its own model
+        key first (chat/summarize/embedding/rerank each配独立模型), then the task
+        key, then the generic "chat" model.
+        """
         if model:
             return model
+        if role is not None:
+            rk = model_key_for(role)
+            if rk in provider.models:
+                return provider.models[rk]
         return provider.models.get(task.value) or provider.models.get("chat")
 
     def _candidate_providers(self, task: TaskType) -> list[ProviderConfig]:
@@ -299,10 +318,13 @@ class ModelRouter:
     # ── CowAgent ordered fallback chain ─────────────────────────
 
     def _build_links(
-        self, candidates: list[ProviderConfig], task: TaskType, model: str | None
+        self,
+        candidates: list[ProviderConfig],
+        task: TaskType,
+        model: str | None,
+        role: ModelRole | str | None = None,
     ) -> list[tuple[ProviderConfig, str, str]]:
         """Build the ordered {provider, model, api_key} chain.
-
         Keyless providers (e.g. local Ollama) stay in the chain with an
         empty key — _call_chat/_call_embedding omit the Authorization
         header in that case. A provider that rejects keyless calls will
@@ -310,7 +332,7 @@ class ModelRouter:
         """
         links: list[tuple[ProviderConfig, str, str]] = []
         for provider in candidates:
-            resolved_model = self._resolve_model(provider, task, model)
+            resolved_model = self._resolve_model(provider, task, model, role=role)
             if not resolved_model:
                 logger.debug(
                     "Skipping provider=%s: no model for task=%s", provider.name, task.value
@@ -425,35 +447,69 @@ class ModelRouter:
         messages: list[dict],
         *,
         model: str | None = None,
-        task: TaskType = TaskType.CHAT,
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
+        task: TaskType | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         user_id: str | None = None,
         stream: bool = False,
+        role: ModelRole | str | None = None,
     ) -> dict:
-        """Route a chat request through the CowAgent ordered fallback chain."""
+        """Route a chat request through the CowAgent ordered fallback chain.
+
+        Harness Profiles (deepagents + continue): when *role* is set the request is
+        routed to that role's own model and the model's :class:`HarnessProfile`
+        supplies generation defaults (temperature/max_tokens) + a tail-preserving
+        context clamp tuned to the model tier — the structural fix for "多模型共用
+        一套prompt/工具面是小模型效果差的结构性原因". Explicit ``temperature`` /
+        ``max_tokens`` / ``model`` always win over the profile; ``role=None`` keeps
+        the pre-profile behaviour byte-identical.
+        """
+        prof = None
+        if role is not None:
+            role = ModelRole(role)
+            task = TaskType(resolve_task(role))
+        elif task is None:
+            task = TaskType.CHAT
+
         candidates = self._candidate_providers(task)
         if not candidates:
             raise NoProviderError(f"No provider available for task={task.value}")
 
-        links = self._build_links(candidates, task, model)
+        links = self._build_links(candidates, task, model, role=role)
         if not links:
             raise NoProviderError(f"No provider with a usable model for task={task.value}")
 
         async def _invoke(provider: ProviderConfig, api_key: str, model_name: str) -> dict:
+            nonlocal prof
+            eff_temp, eff_max, eff_msgs = temperature, max_tokens, messages
+            if role is not None:
+                prof = profile_for(model_name, role)
+                if eff_temp is None:
+                    eff_temp = prof.temperature
+                if eff_max is None:
+                    eff_max = prof.max_tokens or 2048
+                eff_msgs, _ = prof.clamp_messages(messages)
+            if eff_temp is None:
+                eff_temp = 0.7
+            if eff_max is None:
+                eff_max = 2048
             return await self._call_chat(
                 provider,
                 api_key,
                 model_name,
-                messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                eff_msgs,
+                temperature=eff_temp,
+                max_tokens=eff_max,
                 stream=stream,
             )
 
         tried: list[dict] = []
         self._last_chain_trace = tried
         result, succ_provider, succ_model = await self._walk_chain(links, tried, _invoke)
+        if prof is not None:
+            # Surface the applied harness profile on the chain trace (observability:
+            # "我都不知道他们在干嘛" — which budget/role/tier actually ran).
+            tried.append({"harness_profile": prof.describe(), "resolved_model": succ_model})
 
         # Record token usage on the winning link.
         usage = result.get("usage", {})

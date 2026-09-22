@@ -607,6 +607,7 @@ async def _call_llm_router(system_prompt: str, user_prompt: str) -> str:
         ],
         temperature=0.2,  # 摘要要稳定复现（dream_distiller 0.3同源理由）
         max_tokens=2048,
+        role="summarize",  # Harness Profile: summarize role → own model/budget
     )
     return extract_chat_text(result)
 

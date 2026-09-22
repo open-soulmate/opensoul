@@ -450,6 +450,7 @@ class DreamDistiller:
                 ],
                 temperature=0.3,  # Low temperature for consistent distillation
                 max_tokens=4096,
+                role="summarize",  # Harness Profile: summarize role → own model/budget
             )
             # 权威解包：chat()返回provider原始响应体（choices[0].message.content），
             # 此前的result.get("content")猜测在真实provider上永远落空（live实证bug）

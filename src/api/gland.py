@@ -2,6 +2,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.config import settings
+from src.gland.harness_profiles import (
+    ModelRole,
+    filter_tools_for,
+    profile_for,
+)
 from src.gland.router import (
     AllProvidersFailedError,
     ModelRouter,
@@ -55,8 +60,10 @@ class ChatRequest(BaseModel):
     model: str | None = None
     provider: str | None = None
     task: str = "chat"
-    temperature: float = 0.7
-    max_tokens: int = 2048
+    role: str | None = None  # Harness Profile ModelRole (reasoning/summarize/...)
+    tools: list[str] | None = None  # tool-face input — filtered per model/role
+    temperature: float | None = None  # None → HarnessProfile default (0.7 w/o role)
+    max_tokens: int | None = None  # None → HarnessProfile default (2048 w/o role)
     user_id: str | None = None
 
 
@@ -162,6 +169,12 @@ async def chat(req: ChatRequest):
     except ValueError:
         task = TaskType.CHAT
 
+    if req.role is not None:
+        try:
+            ModelRole(req.role)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown model role: {req.role}") from None
+
     try:
         result = await gateway.chat(
             messages=req.messages,
@@ -170,8 +183,18 @@ async def chat(req: ChatRequest):
             temperature=req.temperature,
             max_tokens=req.max_tokens,
             user_id=req.user_id,
+            role=req.role,
         )
-        return result
+        out = dict(result)
+        if req.role or req.tools:
+            # Harness Profile surfaced to the caller (observability + tool-face):
+            # which budget/tier ran, and which tools this model should see.
+            hp_role = req.role or ModelRole.REASONING
+            prof = profile_for(req.model, hp_role)
+            out["harness_profile"] = prof.describe()
+            if req.tools:
+                out["tools_shown"] = filter_tools_for(req.model, hp_role, req.tools)
+        return out
     except AllProvidersFailedError as exc:
         # CowAgent: the exhaustion message must reach the caller — it lists
         # every {provider, model, pass, error} tried, not a generic 500.
