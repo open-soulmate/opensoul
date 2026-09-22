@@ -118,6 +118,8 @@ class LongTermMemoryStore:
         self.last_write_outcome: str = ""  # added / merged / rejected_tags / rejected_gate
         self.last_tag_decision: TagDecision | None = None
         self.last_delete_decision: TagDecision | None = None
+        # kilocode防记忆回声：get_context_prompt实际注入的记忆id（调用方据此mark_recall）
+        self.last_context_memory_ids: list[str] = []
         self._init_db()
 
     def _init_db(self):
@@ -1291,6 +1293,8 @@ class LongTermMemoryStore:
             memories = self.three_factor_retrieve(query, memory_type=memory_type, limit=5)
         else:
             memories = self.retrieve(query, memory_type=memory_type, limit=5)
+        # kilocode防记忆回声：记录本回合真正注入了哪些记忆（供mark_recall→digest跳过）
+        self.last_context_memory_ids = []
         if not memories:
             return ""
 
@@ -1310,9 +1314,11 @@ class LongTermMemoryStore:
             if len(line) + total_chars > budget_chars:
                 break
             lines.append(line)
+            self.last_context_memory_ids.append(mem.get("memory_id", ""))
             total_chars += len(line)
 
         if len(lines) <= 1:
+            self.last_context_memory_ids = []
             return ""
 
         return "\n".join(lines)

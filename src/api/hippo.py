@@ -62,6 +62,9 @@ class LongTermMemoryRequest(BaseModel):
     dup_policy: str = "reject"  # reject | merge（近重复并入既有fact而非追加）
     safety_tags: dict | None = None  # {scope,durability,authority}；缺省=确定性推断
     write_mode: str = "auto"  # auto | explicit（人工路径可写非user+durable+descriptive组合）
+    # kilocode防记忆回声：回合digest写入需过回声闸（本轮召回过记忆→跳过）；
+    # 显式remember等人工写入可传False绕过
+    echo_guard: bool = True
 
 
 class LongTermSearchRequest(BaseModel):
@@ -395,7 +398,20 @@ async def ltm_add(req: LongTermMemoryRequest):
     P1 gatekeeper：准入判定拒绝时返回added=False+拒绝原因（非错误，是判定）。
     DeerMem写侧安全：outcome标注入库方式（added/merged/rejected_tags/rejected_gate），
     dup_policy="merge"时近重复并入既有fact（响应memory_id=既有fact的id）。
+    kilocode防记忆回声：echo_guard=True且本回合召回过记忆→跳过写入并返回
+    outcome=echo_blocked（"答案来自记忆的回合不能再蒸馏回记忆"，显式reason非静默）。
     """
+    if req.echo_guard and _dream_distiller.should_skip_digest():
+        return {
+            "added": False,
+            "memory_id": "",
+            "outcome": "echo_blocked",
+            "reason": (
+                "memories were recalled this turn — answers from memory must not be "
+                "distilled back (kilocode echo blocker); pass echo_guard=False to override"
+            ),
+            "echo": _dream_distiller.echo_stats,
+        }
     mem = _lt_store.store(
         content=req.content,
         memory_type=req.memory_type,
@@ -522,7 +538,12 @@ async def ltm_context(req: LongTermSearchRequest):
         query=effective_query,
         memory_type=effective_type,
     )
-    return {"context": context, "nl_filters": nl.to_dict()}
+    return {
+        "context": context,
+        "nl_filters": nl.to_dict(),
+        # kilocode防记忆回声：实际注入的记忆id（调用方按此mark_recall，digest据此跳过）
+        "memory_ids": list(_lt_store.last_context_memory_ids),
+    }
 
 
 # ── Long-term Memory CRUD + Audit (Khoj + mem0 pattern) ────
@@ -667,7 +688,10 @@ async def ltm_dream_stats():
 
 from src.hippo.memory_pipeline import MemoryPipeline
 
-_memory_pipeline = MemoryPipeline(ltm_store=_lt_store)
+# echo_check接DreamDistiller的回合回声状态（kilocode：整合入口一行判断）
+_memory_pipeline = MemoryPipeline(
+    ltm_store=_lt_store, echo_check=_dream_distiller.should_skip_digest
+)
 
 
 class PipelineExtractRequest(BaseModel):
@@ -682,6 +706,7 @@ class PipelineRunRequest(BaseModel):
     apply: bool = True  # False=dry-run（只产workspace diff不落库）
     use_llm_phase2: bool = True  # False=确定性整合（不依赖LLM）
     background: bool = False  # P0-8接线：True→提交hippo.memory_pipeline后台作业
+    force: bool = False  # kilocode防记忆回声：True=绕过回声闸（手动触发）
 
 
 class PipelinePruneRequest(BaseModel):
@@ -723,6 +748,7 @@ async def ltm_pipeline_run(req: PipelineRunRequest):
                 "session_id": req.session_id,
                 "apply": req.apply,
                 "use_llm_phase2": req.use_llm_phase2,
+                "force": req.force,
             },
         )
         return {
@@ -738,6 +764,7 @@ async def ltm_pipeline_run(req: PipelineRunRequest):
         candidates=req.candidates,
         apply=req.apply,
         use_llm_phase2=req.use_llm_phase2,
+        force=req.force,
     )
     return result.to_dict()
 

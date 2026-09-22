@@ -74,6 +74,7 @@ async def _hippo_memory_pipeline(**params: Any) -> dict:
         session_id=str(params.get("session_id", "")),
         apply=bool(params.get("apply", True)),
         use_llm_phase2=bool(params.get("use_llm_phase2", True)),
+        force=bool(params.get("force", False)),
     )
     return result.to_dict()
 

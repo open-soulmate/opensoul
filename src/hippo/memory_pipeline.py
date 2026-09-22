@@ -312,6 +312,8 @@ class PipelineResult:
     phase2_meta: dict = field(default_factory=dict)
     diff: list = field(default_factory=list)
     error: str = ""
+    # kilocode防记忆回声：True=本轮召回过记忆，digest被跳过（防自我污染，不静默）
+    echo_blocked: bool = False
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
@@ -324,6 +326,7 @@ class PipelineResult:
             "phase2": self.phase2_meta,
             "diff": self.diff,
             "error": self.error,
+            "echo_blocked": self.echo_blocked,
             "created_at": self.created_at,
         }
 
@@ -331,14 +334,22 @@ class PipelineResult:
 class MemoryPipeline:
     """codex两阶段记忆管线（Phase1提取→Phase2整合→版本化落库→workspace diff）。"""
 
-    def __init__(self, ltm_store, llm_call: Callable | None = None):
+    def __init__(
+        self,
+        ltm_store,
+        llm_call: Callable | None = None,
+        echo_check: Callable[[], bool] | None = None,
+    ):
         """
         Args:
             ltm_store: LongTermMemoryStore实例（写入/版本化的真源）
             llm_call: async callable(system_prompt, user_prompt) -> str；None时走gland router
+            echo_check: kilocode防记忆回声闸（如DreamDistiller.should_skip_digest）；
+                        返回True=本回合召回过记忆，整合（digest）必须跳过
         """
         self._store = ltm_store
         self._llm_call = llm_call
+        self._echo_check = echo_check
         self._init_runs_db()
 
     def _init_runs_db(self):
@@ -547,15 +558,27 @@ class MemoryPipeline:
         candidates: list[dict] | None = None,
         apply: bool = True,
         use_llm_phase2: bool = True,
+        force: bool = False,
     ) -> PipelineResult:
         """端到端：Phase1→Phase2→apply→workspace diff→持久化run记录。
 
         - candidates直供（mode="import"）：跳过Phase1，供外部提取器/确定性live验证
         - messages：走Phase1 LLM提取（mode="llm"）
         - 两者都无→error可见返回（不静默假成功）
+        - kilocode防记忆回声：echo_check()=True（本回合召回过记忆）且非force→
+          digest跳过（"答案来自记忆的回合不能再蒸馏回记忆"），echo_blocked=True可见
         """
         run_id = f"pipe_{hashlib.sha256(f'{time.time()}:{session_id}:{len(messages or [])}:{len(candidates or [])}'.encode()).hexdigest()[:12]}"
         result = PipelineResult(run_id=run_id, session_id=session_id)
+        if not force and self._echo_check is not None and self._echo_check():
+            result.echo_blocked = True
+            result.error = (
+                "echo_blocked: memories were recalled this turn — answers from memory "
+                "must not be distilled back (kilocode echo blocker); pass force=True to override"
+            )
+            self._persist(result, decisions=[])
+            logger.info("Pipeline %s: echo blocked, digest skipped", run_id)
+            return result
         cands: list[Phase1Candidate] = []
         if candidates:
             result.mode = "import"
