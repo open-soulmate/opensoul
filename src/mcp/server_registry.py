@@ -14,6 +14,9 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# 共享真源路径：session_grants（会话级工具隔离）与本registry同一SQLite
+DEFAULT_DB_PATH = os.path.expanduser("~/opensoul/data/mcp/mcp.db")
+
 
 @dataclass
 class McpTool:
@@ -65,7 +68,7 @@ class McpServerRegistry:
     """Manages MCP server registrations, connections, and tool discovery."""
 
     def __init__(self, db_path: str | None = None):
-        db = db_path or os.path.expanduser("~/opensoul/data/mcp/mcp.db")
+        db = db_path or DEFAULT_DB_PATH
         Path(db).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(db, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
