@@ -27,6 +27,7 @@ from src.hippo.extractors.deermem_tags import (
     validate_write_tags,
 )
 from src.hippo.extractors.gatekeeper import GateDecision, MemoryGatekeeper
+from src.hippo.memory_redact import redact_for_memory
 
 logger = logging.getLogger("opensoul.hippo.long_term")
 
@@ -229,10 +230,18 @@ class LongTermMemoryStore:
           (memory_type相同)fact，跨类别近重复维持reject
         - resolved标签写入metadata["deermem_tags"]（删除门的依据）
         """
+        # ── kilocode MemoryRedact 采集前脱敏（supplement3 #6）：凭据绝不落库 ──
+        # store() 是全部LTM写入（ltm_add/dream/import/pipeline）的单一咽喉。
+        # 语义分工：gatekeeper准入判定看**原文**（secret_detected拒绝规则需要
+        # "password=..."真身才拦得住——记忆库不是密钥库，凭据笔记整体拒绝）；
+        # 落库/审计/版本/合并一律用脱敏后文本。force=True 也照常脱敏。
+        raw_content = content or ""
+        content, redact_findings = redact_for_memory(raw_content)
+
         # ── 准入判定（gatekeeper在真实写入路径上，覆盖ltm_add/dream/import三个入口）──
         if self.gatekeeper.enabled and not force:
             decision = self.gatekeeper.evaluate(
-                content,
+                raw_content,
                 memory_type=memory_type,
                 recent_contents=self._recent_memory_contents(),
                 force=False,
@@ -299,7 +308,7 @@ class LongTermMemoryStore:
                 self.last_tag_decision = None
                 return None
         else:
-            self.gatekeeper.evaluate(content, force=True)
+            self.gatekeeper.evaluate(raw_content, force=True)
 
         # ── DeerMem #11 写侧安全标签门（gatekeeper准入之后、入库之前）──
         if force:
@@ -326,6 +335,17 @@ class LongTermMemoryStore:
         # resolved安全标签随metadata落库（删除门/审计的依据）
         resolved_metadata = dict(metadata or {})
         resolved_metadata["deermem_tags"] = tag_dec.tags.to_dict() if tag_dec.tags else {}
+        if redact_findings:
+            # 可观测（mem0 §1.1禁止静默）：只记type/risk，绝不记命中原文
+            resolved_metadata["memory_redact"] = {
+                "count": len(redact_findings),
+                "types": [f["type"] for f in redact_findings],
+            }
+            logger.info(
+                "MemoryRedact: %d span(s) redacted before store (%s)",
+                len(redact_findings),
+                ",".join(f["type"] for f in redact_findings),
+            )
 
         mem = LongTermMemory(
             memory_id=memory_id,
@@ -710,6 +730,16 @@ class LongTermMemoryStore:
         Writes an UPDATE audit record with old/new snapshots.
         Returns the updated memory dict, or None if not found.
         """
+        # ── kilocode MemoryRedact：用户编辑/合并更新的内容同样先脱敏再落库 ──
+        if content is not None:
+            content, _upd_findings = redact_for_memory(content)
+            if _upd_findings:
+                logger.info(
+                    "MemoryRedact: %d span(s) redacted before update_memory (%s)",
+                    len(_upd_findings),
+                    ",".join(f["type"] for f in _upd_findings),
+                )
+
         # Fetch current state
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row

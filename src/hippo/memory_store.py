@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.hippo.decay import DecayEngine, DecayStrategy
+from src.hippo.memory_redact import redact_for_memory
 
 
 @dataclass
@@ -61,6 +62,14 @@ class MemoryStore:
         memory_id: str | None = None,
     ) -> Memory:
         """Add a new memory."""
+        # ── kilocode MemoryRedact 采集前脱敏：短期记忆写入口同样不落凭据 ──
+        content, redact_findings = redact_for_memory(content or "")
+        if redact_findings:
+            metadata = dict(metadata or {})
+            metadata["memory_redact"] = {
+                "count": len(redact_findings),
+                "types": [f["type"] for f in redact_findings],
+            }
         mem = Memory(
             memory_id=memory_id or str(uuid.uuid4()),
             session_id=session_id,
@@ -117,6 +126,9 @@ class MemoryStore:
 
     def update(self, memory_id: str, **kwargs) -> Memory | None:
         """Update memory fields."""
+        # ── kilocode MemoryRedact：更新路径的内容同样先脱敏 ──
+        if isinstance(kwargs.get("content"), str):
+            kwargs["content"], _findings = redact_for_memory(kwargs["content"])
         with self._lock:
             mem = self._memories.get(memory_id)
             if not mem:
