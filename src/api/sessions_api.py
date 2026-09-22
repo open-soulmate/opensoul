@@ -542,6 +542,42 @@ async def delete_session(
     return {"success": False, "error": "Session not found"}
 
 
+def _decode_memory_marker(raw) -> dict | None:
+    """kilocode #9记忆marker读侧解码（marker-meta.ts fromParts语义）。
+
+    agent_messages.metadata JSON的kiloMemory字段（acp-proxy
+    agent/memory_marker.py写入）→ {type,tokens,count,files,items}。files缺失时
+    回退sources键（kilocode：兼容dropped之前的老格式）。损坏/缺失JSON→None：
+    读路径绝不因marker解析失败丢整条消息（deepseek"溢写失败绝不能把成功调用
+    变错"语义）。
+    """
+    if not raw:
+        return None
+    try:
+        meta = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    km = meta.get("kiloMemory")
+    if not isinstance(km, dict):
+        return None
+    files = km.get("files")
+    if not isinstance(files, list):
+        sources = km.get("sources")
+        files = sources if isinstance(sources, list) else []
+    files = [f for f in files if isinstance(f, str)]
+    items = km.get("items")
+    items = [i for i in items if isinstance(i, str)] if isinstance(items, list) else []
+    return {
+        "type": "startup" if km.get("type") == "startup" else "recall",
+        "tokens": km.get("tokens") if isinstance(km.get("tokens"), (int, float)) else 0,
+        "count": km.get("count") if isinstance(km.get("count"), (int, float)) else len(files),
+        "files": files,
+        "items": items,
+    }
+
+
 @router.get("/{session_id}/messages")
 async def get_session_messages(
     session_id: str,
@@ -592,13 +628,18 @@ async def get_session_messages(
                 adb.execute("SELECT attachments FROM agent_messages LIMIT 1")
             except Exception:
                 adb.execute("ALTER TABLE agent_messages ADD COLUMN attachments TEXT")
+            # kilocode #9记忆marker：metadata列probe+ALTER幂等迁移（attachments同款）
+            try:
+                adb.execute("SELECT metadata FROM agent_messages LIMIT 1")
+            except Exception:
+                adb.execute("ALTER TABLE agent_messages ADD COLUMN metadata TEXT")
             # P0-10消息树：读路径同样触发parentId列迁移（幂等，首个触达者完成全库迁移）
             from src.trajectory.message_tree import ensure_parent_column
 
             ensure_parent_column(adb)
             rows = adb.execute(
                 """
-                SELECT id, role, content, timestamp, attachments, parent_message_id
+                SELECT id, role, content, timestamp, attachments, parent_message_id, metadata
                 FROM agent_messages
                 WHERE session_id = ?
                 ORDER BY id
@@ -641,6 +682,9 @@ async def get_session_messages(
                             if r["parent_message_id"] is not None
                             else None
                         ),
+                        # kilocode #9记忆marker（"本回复用了记忆"badge数据源，
+                        # marker-meta.ts synthetic+ignored part的读侧暴露）
+                        "memory_marker": _decode_memory_marker(r["metadata"]),
                     }
                 )
             # pi branch-summarization读侧：会话的切分支摘要随消息读路径下发

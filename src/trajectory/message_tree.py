@@ -149,6 +149,12 @@ def fork_session(
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE agent_messages ADD COLUMN attachments TEXT")
             conn.commit()
+        # kilocode #9记忆marker列（fork随消息复制——审计标记跟消息走）
+        try:
+            conn.execute("SELECT metadata FROM agent_messages LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE agent_messages ADD COLUMN metadata TEXT")
+            conn.commit()
         src = conn.execute(
             "SELECT id, agent_id, title FROM agent_sessions WHERE id = ?",
             (source_session_id,),
@@ -156,7 +162,7 @@ def fork_session(
         if src is None:
             raise SessionNotFoundError(f"session not found: {source_session_id}")
         rows = conn.execute(
-            "SELECT id, role, content, timestamp, attachments, "
+            "SELECT id, role, content, timestamp, attachments, metadata, "
             f"{PARENT_COLUMN} AS parent_id "
             "FROM agent_messages WHERE session_id = ? ORDER BY id",
             (source_session_id,),
@@ -197,8 +203,8 @@ def fork_session(
         for m in branch:
             cur = conn.execute(
                 "INSERT INTO agent_messages "
-                "(session_id, role, content, timestamp, attachments, parent_message_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(session_id, role, content, timestamp, attachments, parent_message_id, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     target_id,
                     m["role"],
@@ -206,6 +212,7 @@ def fork_session(
                     m["timestamp"],
                     m.get("attachments"),
                     prev_id,
+                    m.get("metadata"),
                 ),
             )
             prev_id = cur.lastrowid
