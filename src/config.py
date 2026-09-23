@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o"
 
+    # 记忆模型独立解析链（kilocode supplement3 #8 MemoryModel.port）：
+    # 记忆蒸馏/整合用小模型省成本；无效/不可用→warn回退会话模型（llm_model）
+    memory_model: str = ""  # 记忆蒸馏专用模型（空=回退会话模型）
+    memory_base_url: str = ""  # 空=复用 llm_base_url
+    memory_api_key: str = ""  # 空=复用 llm_api_key
+    memory_llm_timeout_s: float = 120.0  # 端到端超时（timeout+调用方取消双闸）
+    memory_temperature: float | None = None  # 采样按模型解析（None=调用方默认）
+    memory_top_p: float | None = None
+    memory_top_k: int | None = None
+
     # Embedding
     embedding_api_key: str = ""
     embedding_base_url: str = "https://api.openai.com/v1"

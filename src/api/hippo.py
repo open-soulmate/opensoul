@@ -5,6 +5,7 @@ import time
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from src.hippo import memory_model as _memory_model
 from src.hippo.decay import DecayStrategy
 from src.hippo.memory_store import MemoryStore
 from src.hippo.session import SessionManager, SessionStatus
@@ -95,6 +96,9 @@ async def health():
         "long_term_memory": _lt_store.get_stats(),
         "dream_distiller": _dream_distiller.get_stats(),
         "memory_pipeline": _memory_pipeline.get_stats(),
+        # kilocode supplement3 #8：记忆模型独立解析链快照（configured/resolved/
+        # source/fallback/timeout/sampling——"记忆蒸馏用什么模型、有没有回退"可观测）
+        "memory_model": _memory_model.describe(),
         "decision_log": _decision_log.get_stats(),
     }
 

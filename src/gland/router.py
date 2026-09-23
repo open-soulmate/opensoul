@@ -72,6 +72,31 @@ def extract_chat_text(result) -> str:
     return str(result)
 
 
+def _chat_payload(
+    model: str,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    stream: bool,
+    top_p: float | None = None,
+    top_k: int | None = None,
+) -> dict:
+    """chat/completions请求体 — top_p/top_k仅在显式声明时进payload（kilocode #8
+    "temperature/topP/topK按模型解析"）；None时请求体与既有字节恒等（零行为漂移）。"""
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": stream,
+    }
+    if top_p is not None:
+        payload["top_p"] = top_p
+    if top_k is not None:
+        payload["top_k"] = top_k
+    return payload
+
+
 _REDACTOR_INIT = False
 # Minimum risk level redacted before text leaves the machine toward an LLM
 # provider. "critical" = API keys/tokens/passwords only; set to "low" to also
@@ -453,6 +478,8 @@ class ModelRouter:
         user_id: str | None = None,
         stream: bool = False,
         role: ModelRole | str | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
     ) -> dict:
         """Route a chat request through the CowAgent ordered fallback chain.
 
@@ -501,6 +528,8 @@ class ModelRouter:
                 temperature=eff_temp,
                 max_tokens=eff_max,
                 stream=stream,
+                top_p=top_p,
+                top_k=top_k,
             )
 
         tried: list[dict] = []
@@ -575,6 +604,8 @@ class ModelRouter:
         temperature: float,
         max_tokens: int,
         stream: bool,
+        top_p: float | None = None,
+        top_k: int | None = None,
     ) -> dict:
         # Outbound secret guard (Warp blocklist pattern): redact API keys /
         # tokens in message content before it leaves the machine toward the
@@ -602,13 +633,7 @@ class ModelRouter:
         resp = await client.post(
             f"{provider.base_url}/chat/completions",
             headers=headers,
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": stream,
-            },
+            json=_chat_payload(model, messages, temperature, max_tokens, stream, top_p, top_k),
         )
         resp.raise_for_status()
         return resp.json()

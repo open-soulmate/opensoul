@@ -13,6 +13,7 @@
 - kilocode recalledMemory()（15行防记忆回声）
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -22,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
+from src.hippo.memory_model import call_memory_llm
 
 logger = logging.getLogger("opensoul.hippo.dream")
 
@@ -418,43 +420,21 @@ class DreamDistiller:
         return False
 
     async def _call_gland_llm(self, system_prompt: str, user_prompt: str) -> str:
-        """Call LLM via gland router (default when no llm_call provided)."""
-        try:
-            # 每次调用创建fresh ModelRouter实例(绑定当前event loop)+显式注册providers。
-            # 不能复用api/gland.py gateway单例——其http_client在module import时创建，
-            # 跨event loop使用导致ollama 400 Bad Request。
-            from src.config import settings
-            from src.gland.router import ModelRouter
+        """记忆模型独立解析链（kilocode supplement3 #8 MemoryModel.port）。
 
-            router = ModelRouter()
-            if settings.llm_base_url:
-                router.add_provider(
-                    name="openai",
-                    base_url=settings.llm_base_url,
-                    models={"chat": settings.llm_model},
-                    priority=0,
-                )
-                if settings.llm_api_key:
-                    router.key_manager.add_key("openai", settings.llm_api_key)
-            ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
-            router.add_provider(
-                name="ollama",
-                base_url=ollama_url,
-                models={"chat": "deepseek-r1:latest"},
-                priority=10,
-            )
-            result = await router.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.3,  # Low temperature for consistent distillation
-                max_tokens=4096,
-                role="summarize",  # Harness Profile: summarize role → own model/budget
-            )
-            # 权威解包：chat()返回provider原始响应体（choices[0].message.content），
-            # 此前的result.get("content")猜测在真实provider上永远落空（live实证bug）
-            return extract_chat_text(result)
+        委托 src.hippo.memory_model.call_memory_llm：独立记忆模型（settings.
+        memory_model，无效/不可用warn回退会话模型）+ timeout与调用方取消双闸 +
+        temperature/topP/topK按模型解析 + 记忆模型故障一次性回退会话模型。原此处
+        ~40行手搓ModelRouter块与memory_pipeline._call_llm逐字重复，已收敛到
+        memory_model单一真源（fresh ModelRouter/显式provider注册/extract_chat_text
+        权威解包语义原样保留）。dream显式采样temperature=0.3（蒸馏稳定复现）。
+        超时/取消是显式契约原样上抛；其余异常保持"Gland router call failed"包装
+        （既有调用方错误文案契约不变）。
+        """
+        try:
+            return await call_memory_llm(system_prompt, user_prompt, temperature=0.3)
+        except (TimeoutError, asyncio.CancelledError):
+            raise  # 超时/取消=显式契约，不伪装成router故障（失败必须可见）
         except Exception as e:
             raise RuntimeError(f"Gland router call failed: {e}") from e
 

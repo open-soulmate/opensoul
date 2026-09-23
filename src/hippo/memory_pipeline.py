@@ -26,6 +26,7 @@
   gatekeeper+fact_dedup近重复并入兜底），meta.phase2_fallback_reason可见
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -36,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
+from src.hippo.memory_model import call_memory_llm
 
 logger = logging.getLogger("opensoul.hippo.memory_pipeline")
 
@@ -743,44 +745,19 @@ class MemoryPipeline:
     # ── LLM调用与prompt格式化 ──────────────────────────────────
 
     async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
-        """LLM调用：显式llm_call优先；缺省走gland router（dream_distiller同款
-        fresh ModelRouter模式——不复用api/gland单例，避免跨event loop的http_client问题）。"""
+        """LLM调用：显式llm_call优先；缺省走记忆模型独立解析链（kilocode supplement3
+        #8 MemoryModel.port——原~40行手搓ModelRouter块与dream_distiller逐字重复，
+        已收敛到memory_model单一真源）。Phase1/Phase2显式采样temperature=0.2
+        （整合决策要稳定复现）。超时/取消显式上抛；其余异常保持
+        "Gland router call failed"包装（错误文案契约不变）。
+        """
         if self._llm_call:
             return await self._llm_call(system_prompt, user_prompt)
         try:
-            from src.config import settings
-            from src.gland.router import ModelRouter
-
-            router = ModelRouter()
-            if settings.llm_base_url:
-                router.add_provider(
-                    name="openai",
-                    base_url=settings.llm_base_url,
-                    models={"chat": settings.llm_model},
-                    priority=0,
-                )
-                if settings.llm_api_key:
-                    router.key_manager.add_key("openai", settings.llm_api_key)
-            ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
-            router.add_provider(
-                name="ollama",
-                base_url=ollama_url,
-                models={"chat": "deepseek-r1:latest"},
-                priority=10,
-            )
-            result = await router.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.2,
-                max_tokens=4096,
-                role="summarize",  # Harness Profile: summarize role → own model/budget
-            )
-            # 权威解包：chat()返回provider原始响应体（choices[0].message.content），
-            # 此前的result.get("content")猜测在真实provider上永远落空（live实证bug）
-            return extract_chat_text(result)
-        except Exception as e:  # noqa: BLE001
+            return await call_memory_llm(system_prompt, user_prompt, temperature=0.2)
+        except (TimeoutError, asyncio.CancelledError):
+            raise  # 超时/取消=显式契约，不伪装成router故障（失败必须可见）
+        except Exception as e:
             raise RuntimeError(f"Gland router call failed: {e}") from e
 
     @staticmethod
