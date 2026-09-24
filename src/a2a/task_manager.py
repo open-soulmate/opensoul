@@ -42,21 +42,26 @@ class TaskManager:
     def set_agent_card(self, card: AgentCard):
         self.agent_card = card
 
-    async def create_task(self, message: Message) -> Task:
-        """Create a new task from a user message."""
+    async def create_task(self, message: Message, metadata: dict | None = None) -> Task:
+        """Create a new task from a user message. metadata=A2A TaskSendParams.metadata。"""
         task = Task(
             status=TaskStatus(state="submitted"),
             history=[message],
+            metadata=dict(metadata or {}),
         )
         self.tasks[task.id] = task
         logger.info(f"Task created: {task.id}")
         return task
 
-    async def process_task(self, task_id: str, message: Message) -> Task:
+    async def process_task(
+        self, task_id: str, message: Message, metadata: dict | None = None
+    ) -> Task:
         """Process a task - send message and get response."""
         task = self.tasks.get(task_id)
         if not task:
             raise ValueError(f"Task not found: {task_id}")
+        if metadata:
+            task.metadata.update(metadata)
 
         # Add user message to history
         task.history.append(message)
@@ -66,8 +71,16 @@ class TaskManager:
             # Extract text from message parts
             user_text = self._extract_text(message)
 
-            # Process based on skills
-            response_text = await self._process_message(user_text, task)
+            # Process based on skills — 端到端总预算25s（失败三级降级/kilocode）：
+            # 任一处理层挂死都在客户端30s预算内优雅收场，不再有无界等待
+            try:
+                response_text = await asyncio.wait_for(
+                    self._process_message(user_text, task), timeout=25.0
+                )
+            except TimeoutError:
+                response_text = (
+                    f"收到您的消息：{user_text}\n\nAI处理超时（25s总预算耗尽），请稍后重试。"
+                )
 
             # Create agent response
             agent_msg = Message(
@@ -265,6 +278,10 @@ class TaskManager:
 
     async def _handle_chat(self, text: str, task: Task) -> str:
         """AI chat using real LLM proxy or ACP fallback."""
+        # 离线stub模型（agno全隔离测试范式 + CAMEL"能程序化验证的绝不靠LLM"）：
+        # metadata.llm_mode=stub 时零网络确定性应答——集成测试/离线演示不打真实LLM
+        if task.metadata.get("llm_mode") == "stub":
+            return f"[stub-llm] 收到您的消息：{text}\n\n（确定性离线应答，未调用真实LLM）"
         try:
             import httpx
 
@@ -308,7 +325,9 @@ class TaskManager:
                     return data["choices"][0]["message"]["content"]
                 else:
                     logger.warning(f"LLM API error {resp.status_code}, falling back to ACP")
-                    return await self._handle_acp_chat(text, task)
+                    # 与异常路径同款wait_for——此前这里裸await无界（httpx 120s），
+                    # 外部LLM故障时拖穿客户端30s预算（test_chat_fallback ReadTimeout根因）
+                    return await asyncio.wait_for(self._handle_acp_chat(text, task), timeout=10.0)
 
         except Exception as e:
             logger.error(f"Chat handler error: {e}")
@@ -322,7 +341,8 @@ class TaskManager:
         try:
             import httpx
 
-            async with httpx.AsyncClient(timeout=120) as client:
+            # socket超时与调用方10s wait_for预算对齐（原120s让取消与socket互相打架）
+            async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
                     "http://localhost:8092/acp/send",
                     json={"text": text, "session_id": str(task.id)},

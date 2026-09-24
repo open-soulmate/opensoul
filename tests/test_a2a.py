@@ -55,10 +55,11 @@ class TestA2AEndpoint:
                 "id": "test-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "你好"}],
-                    }
+                    },
                 },
             },
         )
@@ -89,10 +90,11 @@ class TestA2AEndpoint:
                 "id": "test-3",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "hello test"}],
-                    }
+                    },
                 },
             },
         )
@@ -147,10 +149,11 @@ class TestA2ASkillRouting:
                 "id": "test-kb-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "搜索知识库中的AI相关内容"}],
-                    }
+                    },
                 },
             },
         )
@@ -172,10 +175,11 @@ class TestA2ASkillRouting:
                 "id": "test-search-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "搜索关于机器学习的知识"}],
-                    }
+                    },
                 },
             },
         )
@@ -193,10 +197,11 @@ class TestA2ASkillRouting:
                 "id": "test-graph-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "查看知识图谱"}],
-                    }
+                    },
                 },
             },
         )
@@ -214,10 +219,11 @@ class TestA2ASkillRouting:
                 "id": "test-chat-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "今天天气怎么样"}],
-                    }
+                    },
                 },
             },
         )
@@ -225,6 +231,9 @@ class TestA2ASkillRouting:
         data = resp.json()
         result = data.get("result", {})
         assert result.get("status", {}).get("state") in ("completed", "failed")
+        # stub接线证据：应答携带确定性marker=服务端llm_mode=stub分支真实生效（且零外部LLM）
+        reply = result["status"]["message"]["parts"][0]["text"]
+        assert reply.startswith("[stub-llm]")
 
 
 class TestA2ATaskLifecycle:
@@ -239,10 +248,11 @@ class TestA2ATaskLifecycle:
                 "id": "lifecycle-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "test lifecycle"}],
-                    }
+                    },
                 },
             },
         )
@@ -290,10 +300,11 @@ class TestA2ATaskLifecycle:
                 "id": "multi-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": "你好，我想了解一下AI"}],
-                    }
+                    },
                 },
             },
         )
@@ -308,6 +319,7 @@ class TestA2ATaskLifecycle:
                 "id": "multi-2",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "id": task_id,
                     "message": {
                         "role": "user",
@@ -321,6 +333,15 @@ class TestA2ATaskLifecycle:
         assert result2["id"] == task_id
         # Should have more history messages now
         assert len(result2.get("history", [])) >= 4  # 2 user + 2 agent
+        # 两次agent回复都走stub确定性应答（本测试全程零外部LLM）
+        agent_replies = [
+            p["text"]
+            for m in result2["history"]
+            if m["role"] == "agent"
+            for p in m["parts"]
+            if p.get("type") == "text"
+        ]
+        assert agent_replies and all(t.startswith("[stub-llm]") for t in agent_replies)
 
 
 class TestA2AEdgeCases:
@@ -334,10 +355,11 @@ class TestA2AEdgeCases:
                 "id": "edge-1",
                 "method": "tasks/send",
                 "params": {
+                    "metadata": {"llm_mode": "stub"},
                     "message": {
                         "role": "user",
                         "parts": [{"type": "text", "text": ""}],
-                    }
+                    },
                 },
             },
         )
@@ -365,10 +387,11 @@ class TestA2AEdgeCases:
                     "id": f"concurrent-{i}",
                     "method": "tasks/send",
                     "params": {
+                        "metadata": {"llm_mode": "stub"},
                         "message": {
                             "role": "user",
                             "parts": [{"type": "text", "text": f"task {i}"}],
-                        }
+                        },
                     },
                 },
             )

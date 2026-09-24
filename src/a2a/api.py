@@ -78,13 +78,16 @@ async def handle_task_send(params: dict) -> dict:
     task_id = params.get("id")
     message_data = params.get("message", {})
     message = Message(**message_data)
+    # A2A TaskSendParams.metadata → task.metadata（协议标准字段；
+    # llm_mode=stub 供集成测试/离线演示走确定性应答，不打真实LLM）
+    metadata = params.get("metadata") or {}
 
     if task_id:
         # Continue existing task
-        task = await task_manager.process_task(task_id, message)
+        task = await task_manager.process_task(task_id, message, metadata=metadata)
     else:
         # Create new task
-        task = await task_manager.create_task(message)
+        task = await task_manager.create_task(message, metadata=metadata)
         task = await task_manager.process_task(task.id, message)
 
     return task.model_dump(exclude_none=True)
