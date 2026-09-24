@@ -20,11 +20,10 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
 from src.hippo.memory_model import call_memory_llm
-from src.hippo.memory_redact import redact_message_bodies
+from src.hippo.memory_redact import redact_for_memory, redact_message_bodies
 
 logger = logging.getLogger("opensoul.hippo.dream")
 
@@ -308,7 +307,11 @@ class DreamDistiller:
 
         # Gather existing memories
         existing = self._store.list_memories(limit=max_existing)
-        existing_text = self._format_memories(existing)
+        # ── kilocode MemoryRedact存量收口（22:57轮遗留#2同源）：现有记忆块出
+        # Dream蒸馏prompt前逐条先脱敏后截断（_format_memories内）——库侧store()
+        # 已脱敏，但历史存量行（脱敏功能上线前写入/外部直写/旧版本）可能含凭据
+        # 原文，绝不抵达记忆蒸馏LLM；span计数并入result.redacted_spans显式透出。
+        existing_text, existing_spans = self._format_memories(existing)
 
         # Format conversation history
         # ── kilocode MemoryRedact收口（supplement3 #6）：进入Dream蒸馏LLM的对话
@@ -316,6 +319,7 @@ class DreamDistiller:
         # （memory_model可能是第三方小模型）；先脱敏后截断（_format_messages的
         # token预算截断在脱敏之后），命中span数在result.redacted_spans显式透出。
         messages, result.redacted_spans = redact_message_bodies(messages)
+        result.redacted_spans += existing_spans
         conv_text = self._format_messages(messages)
 
         # Build user prompt
@@ -449,18 +453,26 @@ class DreamDistiller:
             raise RuntimeError(f"Gland router call failed: {e}") from e
 
     @staticmethod
-    def _format_memories(memories: list[dict]) -> str:
+    def _format_memories(memories: list[dict]) -> tuple[str, int]:
         """Format existing memories for the prompt.
         Token预算控制：每条截断100字+最多20条+总预算1200字。
+
+        kilocode MemoryRedact存量收口（22:57轮遗留#2同源）：每条content**先脱敏
+        后截断**（防token预算把密钥拦腰截成不再匹配规则的半个密钥漏出）——历史
+        存量行（脱敏功能上线前写入/外部直写/旧版本）可能含凭据原文。命中span数
+        随文本返回（调用方显式透出，mem0 §1.1处理必须可见）。
         """
         MAX_CHARS_PER_MEM = 100
         MAX_MEMS = 20
         MAX_TOTAL_CHARS = 1200
         lines = []
         total = 0
+        spans = 0
         for m in memories[:MAX_MEMS]:
             mid = m.get("memory_id", "")
-            content = str(m.get("content", ""))[:MAX_CHARS_PER_MEM]
+            content, findings = redact_for_memory(str(m.get("content", "")))
+            spans += len(findings)
+            content = content[:MAX_CHARS_PER_MEM]
             mtype = m.get("memory_type", "semantic")
             importance = m.get("importance", 0.5)
             line = f"[{mid}] ({mtype}, imp={importance:.1f}) {content}"
@@ -468,7 +480,7 @@ class DreamDistiller:
                 break
             lines.append(line)
             total += len(line)
-        return "\n".join(lines)
+        return "\n".join(lines), spans
 
     @staticmethod
     def _format_messages(messages: list[dict]) -> str:

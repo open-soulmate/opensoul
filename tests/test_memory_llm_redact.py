@@ -16,6 +16,8 @@ digest/提取。本套件锁三条契约：
 """
 
 import asyncio
+import sqlite3
+import time
 
 import pytest
 
@@ -213,3 +215,82 @@ def test_gatekeeper_pattern_unit():
     hit = g._check_secret("用户配置了 [REDACTED:openai_api_key]")
     assert hit is not None and hit[0] == "secret_detected"
     assert g._check_secret("用户喜欢 [REDACTED_email_掩码] 无此标记形态") is None
+
+
+# ── 契约1+2扩展：存量记忆块（[[EXISTING]]/Dream现有记忆）prompt脱敏 ──
+
+
+def seed_raw_memory(store, content: str, memory_id: str = "hist_raw_1") -> None:
+    """模拟历史存量行：脱敏功能上线前写入/外部直写的原文记忆（绕过store()的
+    落库前脱敏直接写SQLite）——复现"库里可能有原文"的真实威胁模型。"""
+    now = time.time()
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute(
+            "INSERT INTO memories (memory_id, content, memory_type, importance, tags, "
+            "metadata, created_at, last_accessed_at) VALUES (?,?,?,?,?,?,?,?)",
+            (memory_id, content, "semantic", 0.5, "[]", "{}", now, now),
+        )
+
+
+class TestExistingMemoryPromptRedaction:
+    """22:57轮遗留#2收口：Phase2 [[EXISTING]]/Dream「现有记忆」块出蒸馏prompt前
+    逐条先脱敏后截断——历史存量行的凭据原文绝不抵达记忆蒸馏LLM（MEMORY_MODEL
+    可能是第三方小模型），span计数显式透出（mem0 §1.1处理必须可见）。"""
+
+    def test_secret_in_existing_memory_never_reaches_phase2_prompt(self, store):
+        seed_raw_memory(store, SECRET_NOTE)
+        llm = CaptureLLM("[]")
+        p = MemoryPipeline(ltm_store=store, llm_call=llm)
+        cands = [Phase1Candidate(content="用户偏好深色主题")]
+        _decisions, meta = run(p.consolidate(cands, use_llm=True))
+        assert llm.prompts, "Phase2 LLM必须被调用（否则测试空转）"
+        assert SECRET_PASSWORD not in llm.all_text
+        assert meta.get("existing_redacted_spans", 0) >= 1
+        assert meta.get("redacted_spans", 0) >= 1
+
+    def test_secret_in_existing_memory_never_reaches_dream_prompt(self, store):
+        seed_raw_memory(store, SECRET_NOTE)
+        llm = CaptureLLM("[]")
+        d = DreamDistiller(ltm_store=store, llm_call=llm)
+        result = run(
+            d.dream(messages=[{"role": "user", "content": "用户偏好深色主题"}], force=True)
+        )
+        assert llm.prompts, "Dream LLM必须被调用（否则测试空转）"
+        assert SECRET_PASSWORD not in llm.all_text
+        assert result.redacted_spans >= 1
+        assert result.to_dict()["redacted_spans"] >= 1  # 可见性（mem0 §1.1）
+
+    def test_existing_redaction_before_truncation(self, store):
+        """先脱敏后截断：存量记忆的100字token预算截断不能把密钥拦腰漏出半个
+        （密钥横跨截断点，修复前截断片段'SuperSec…'会原样进prompt）。"""
+        content = "x" * 80 + " password: " + SECRET_PASSWORD  # 密钥起点≈char 91
+        seed_raw_memory(store, content)
+        llm = CaptureLLM("[]")
+        d = DreamDistiller(ltm_store=store, llm_call=llm)
+        result = run(
+            d.dream(messages=[{"role": "user", "content": "用户偏好深色主题"}], force=True)
+        )
+        assert SECRET_PASSWORD not in llm.all_text
+        assert "SuperSec" not in llm.all_text  # 截断半个密钥也不许漏
+        assert result.redacted_spans >= 1
+
+    def test_clean_existing_memory_passes_unchanged(self, store):
+        """干净存量记忆原样进prompt（脱敏不误伤），计数为0。"""
+        seed_raw_memory(store, "用户偏好深色主题")
+        llm = CaptureLLM("[]")
+        d = DreamDistiller(ltm_store=store, llm_call=llm)
+        result = run(d.dream(messages=[{"role": "user", "content": "今天天气不错"}], force=True))
+        assert "用户偏好深色主题" in llm.all_text
+        assert result.redacted_spans == 0
+
+    def test_phase2_meta_counts_visible_on_fallback(self, store):
+        """fallback路径meta不丢计数：LLM响应不可解析→deterministic降级，
+        存量脱敏计数仍显式透出（既有契约同族回归锁）。"""
+        seed_raw_memory(store, SECRET_NOTE)
+        llm = CaptureLLM("不是JSON")
+        p = MemoryPipeline(ltm_store=store, llm_call=llm)
+        cands = [Phase1Candidate(content="用户偏好深色主题")]
+        _decisions, meta = run(p.consolidate(cands, use_llm=True))
+        assert meta.get("phase2") == "deterministic"
+        assert meta.get("existing_redacted_spans", 0) >= 1
+        assert SECRET_PASSWORD not in llm.all_text

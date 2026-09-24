@@ -428,16 +428,28 @@ class MemoryPipeline:
         if not candidates:
             return [], meta
         # ── kilocode MemoryRedact收口（supplement3 #6）：进入Phase2整合LLM的候选
-        # 文本先过redact（import模式直供候选可含原始会话摘录/evidence原文）。
+        # 文本先过redact（import模式直供候选可含原始会话摘录/evidence原文；
+        # 脱敏在_format_candidates内逐条"先脱敏后截断"）。
         # decisions仍引用原始candidate对象（apply侧store()落库前照常脱敏+gatekeeper
         # 看原文判定），只有出给LLM的prompt文本被脱敏——凭据绝不进记忆蒸馏prompt。
-        cand_block, cand_findings = redact_for_memory(self._format_candidates(candidates))
-        redact_note = {"redacted_spans": len(cand_findings)} if cand_findings else {}
+        cand_block, cand_spans = self._format_candidates(candidates)
+        redact_note = {"redacted_spans": cand_spans} if cand_spans else {}
         if use_llm:
             existing = self._store.list_memories(include_deleted=False, limit=30)
+            # ── 存量记忆块同规（22:57轮遗留#2收口）：库侧store()已脱敏，但历史
+            # 存量行（脱敏功能上线前写入/外部直写/旧版本）可能含凭据原文——
+            # [[EXISTING]]出prompt前逐条先脱敏后截断（_format_memories内），span
+            # 计数并入redact_note显式透出（mem0 §1.1处理必须可见）。
+            exist_block, exist_spans = self._format_memories(existing)
+            if exist_spans:
+                redact_note = {
+                    **redact_note,
+                    "redacted_spans": int(redact_note.get("redacted_spans", 0)) + exist_spans,
+                    "existing_redacted_spans": exist_spans,
+                }
             try:
                 prompt = PHASE2_CONSOLIDATE_PROMPT.replace(
-                    "[[EXISTING]]", self._format_memories(existing) or "（无现有记忆）"
+                    "[[EXISTING]]", exist_block or "（无现有记忆）"
                 ).replace("[[CANDIDATES]]", cand_block)
                 response = await self._call_llm(prompt, "请为每条候选输出整合决策JSON数组。")
                 if not isinstance(response, str):
@@ -632,7 +644,7 @@ class MemoryPipeline:
         result.phase1_count = len(cands)
         decisions, pmeta = await self.consolidate(cands, use_llm=use_llm_phase2)
         result.phase2_meta = pmeta
-        # MemoryRedact收口计数汇总：Phase1（llm模式）+ Phase2候选块的脱敏span总数
+        # MemoryRedact收口计数汇总：Phase1（llm模式）+ Phase2候选块+存量记忆块的脱敏span总数
         result.redacted_spans += int(pmeta.get("redacted_spans", 0) or 0)
         counts: dict[str, int] = {}
         for d in decisions:
@@ -792,32 +804,45 @@ class MemoryPipeline:
             raise RuntimeError(f"Gland router call failed: {e}") from e
 
     @staticmethod
-    def _format_memories(memories: list[dict]) -> str:
-        """现有记忆→prompt文本（token预算：每条100字×20条×总预算1200字，dream同款）。"""
-        lines, total = [], 0
+    def _format_memories(memories: list[dict]) -> tuple[str, int]:
+        """现有记忆→prompt文本（token预算：每条100字×20条×总预算1200字，dream同款）。
+
+        kilocode MemoryRedact存量收口（22:57轮遗留#2）：每条content**先脱敏后截断**
+        （redact_message_bodies同源原则——防token预算把密钥拦腰截成不再匹配规则的
+        半个密钥漏出）。库侧store()已脱敏，但历史存量行（脱敏功能上线前写入/外部
+        直写/旧版本）可能含凭据原文，[[EXISTING]]出prompt前必须再过一道。
+        命中span数随文本返回（调用方显式透出，mem0 §1.1处理必须可见）。
+        """
+        lines, total, spans = [], 0, 0
         for m in memories[:20]:
             mid = m.get("memory_id", "")
-            content = str(m.get("content", ""))[:100]
+            content, findings = redact_for_memory(str(m.get("content", "")))
+            spans += len(findings)
+            content = content[:100]
             line = f"[{mid}] ({m.get('memory_type', 'semantic')}, imp={float(m.get('importance', 0.5)):.1f}) {content}"
             if total + len(line) > 1200:
                 break
             lines.append(line)
             total += len(line)
-        return "\n".join(lines)
+        return "\n".join(lines), spans
 
     @staticmethod
-    def _format_candidates(candidates: list[Phase1Candidate]) -> str:
-        """候选→prompt文本（带candidate_index前缀，Phase2决策的引用键）。"""
-        lines, total = [], 0
+    def _format_candidates(candidates: list[Phase1Candidate]) -> tuple[str, int]:
+        """候选→prompt文本（带candidate_index前缀，Phase2决策的引用键）。
+
+        每条content先脱敏后截断（同_format_memories：import模式直供候选可含
+        原文evidence，截断不能先于脱敏把密钥拦腰漏出），span数随文本返回。
+        """
+        lines, total, spans = [], 0, 0
         for i, c in enumerate(candidates[:30]):
-            line = (
-                f"candidate_index={i} ({c.memory_type}, imp={c.importance:.1f}) {c.content[:150]}"
-            )
+            content, findings = redact_for_memory(str(c.content))
+            spans += len(findings)
+            line = f"candidate_index={i} ({c.memory_type}, imp={c.importance:.1f}) {content[:150]}"
             if total + len(line) > 1800:
                 break
             lines.append(line)
             total += len(line)
-        return "\n".join(lines)
+        return "\n".join(lines), spans
 
     @staticmethod
     def _format_messages(messages: list[dict]) -> str:
