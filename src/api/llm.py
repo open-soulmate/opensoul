@@ -99,12 +99,7 @@ async def list_models(body: LLMModelsRequest):
     base_url = body.base_url.rstrip("/")
     api_key = body.api_key or _active_slot("api_key") or settings.llm_api_key
 
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        if api_key.startswith("tp-"):
-            headers["api-key"] = api_key
-        else:
-            headers["Authorization"] = f"Bearer {api_key}"
+    headers = {"Content-Type": "application/json", **_auth_headers(api_key)}
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -409,51 +404,95 @@ PRESET_VARIANTS: dict[str, list[dict]] = {
 }
 
 
+def _auth_headers(api_key: str | None) -> dict:
+    """Provider auth headers（与 gland/router.py `_auth_headers` 同一约定，收敛手搓）。
+
+    keyless（本地 Ollama/LM Studio）不带认证头；``tp-`` 订阅制 key 走 ``api-key``
+    头（token-plan 约定，live 200 实证）；其余 ``Authorization: Bearer``。
+    """
+    if not api_key:
+        return {}
+    if api_key.startswith("tp-"):
+        return {"api-key": api_key}
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _probe_client(timeout: float) -> httpx.AsyncClient:
+    """探测用 HTTP client 工厂（测试 seam：tests monkeypatch 换 MockTransport）。"""
+    return httpx.AsyncClient(timeout=timeout)
+
+
 async def _probe_variant(base_url: str, api_key: str, model: str = "") -> str:
-    """探测API端点可用性→状态: ok/invalid_key/low_balance/unreachable/not_configured。"""
+    """探测API端点可用性→全量状态分类（禁弱断言：探针响应状态必须逐类判定）。
+
+    状态：ok / unsupported_model / low_balance / invalid_key / unreachable /
+    unknown / not_configured / error_<code>。
+
+    2026-09-25 实锤的弱断言缺陷（dev-report遗留#3）：chat探针只判402，400
+    「Unsupported model」和401都被误判成ok（partial-test占位符配置的绿灯是假绿，
+    差点误导fallback链备胎判断）。现在探针200才算ok：
+    - 400/404/422 → unsupported_model（模型名不被服务，端点本身可能好）
+    - 401/403 → invalid_key
+    - 402 → low_balance
+    - 其余 → error_<code>
+    - 探针异常（/models已通但chat超时/断连）→ unknown（不许冒充ok）
+
+    model为空时用/models列表首个模型做chat探针（绿灯必须是真实chat调用成功）；
+    列表不可解析→unknown（无法验证真实可用性，不冒充ok）。
+    """
     if not api_key or not base_url:
         return "not_configured"
+    root = base_url.rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(
-                f"{base_url.rstrip('/')}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        if resp.status_code in (401, 403):
-            return "invalid_key"
-        if resp.status_code == 402:
-            return "low_balance"
-        if resp.status_code == 200:
-            # models可达≠余额充足：做一次最小chat调用探测真实可用性（max_tokens=1，成本可忽略）
-            try:
-                pass
-                if model:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        probe = await client.post(
-                            f"{base_url.rstrip('/')}/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {api_key}",
-                                "Content-Type": "application/json",
-                            },
-                            json={
-                                "model": model,
-                                "messages": [{"role": "user", "content": "."}],
-                                "max_tokens": 1,
-                            },
-                        )
-                    if probe.status_code == 402:
-                        return "low_balance"
-            except Exception:
-                pass
-            return "ok"
-        return f"error_{resp.status_code}"
+        async with _probe_client(8.0) as client:
+            resp = await client.get(f"{root}/models", headers=_auth_headers(api_key))
     except Exception:
         return "unreachable"
+    if resp.status_code in (401, 403):
+        return "invalid_key"
+    if resp.status_code == 402:
+        return "low_balance"
+    if resp.status_code != 200:
+        return f"error_{resp.status_code}"
+    probe_model = model
+    if not probe_model:
+        try:
+            entries = resp.json().get("data") or []
+            probe_model = entries[0].get("id", "") if isinstance(entries[0], dict) else ""
+        except Exception:
+            probe_model = ""
+    if not probe_model:
+        return "unknown"
+    try:
+        async with _probe_client(10.0) as client:
+            probe = await client.post(
+                f"{root}/chat/completions",
+                headers={"Content-Type": "application/json", **_auth_headers(api_key)},
+                json={
+                    "model": probe_model,
+                    "messages": [{"role": "user", "content": "."}],
+                    "max_tokens": 1,
+                },
+            )
+    except Exception:
+        return "unknown"
+    if probe.status_code == 200:
+        return "ok"
+    if probe.status_code in (401, 403):
+        return "invalid_key"
+    if probe.status_code == 402:
+        return "low_balance"
+    if probe.status_code in (400, 404, 422):
+        return "unsupported_model"
+    return f"error_{probe.status_code}"
 
 
 @router.get("/presets/status")
 async def presets_status():
-    """每个provider×每个API体系独立探测：绿=可用/黄=余额不足/红=Key无效/灰=未配置"""
+    """每个provider×每个API体系独立探测（状态全量分类，见 _probe_variant）：
+    ok=真实chat可用 / unsupported_model=模型不支持 / low_balance=余额不足 /
+    invalid_key=Key无效 / unreachable=不可达 / unknown=未确认 / not_configured=未配置
+    """
     profiles = _migrate_env_to_profiles()
     presets: dict[str, dict] = {}
     for pid, variants in PRESET_VARIANTS.items():
@@ -521,11 +560,7 @@ async def test_connection(body: LLMTestRequest | None = None):
                 f"{base_url}/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    **(
-                        {"api-key": api_key}
-                        if api_key.startswith("tp-")
-                        else {"Authorization": f"Bearer {api_key}"}
-                    ),
+                    **_auth_headers(api_key),
                 },
                 json={
                     "model": model,
@@ -575,11 +610,7 @@ async def completions(req: LLMRequest):
                 f"{base_url}/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    **(
-                        {"api-key": api_key}
-                        if api_key.startswith("tp-")
-                        else {"Authorization": f"Bearer {api_key}"}
-                    ),
+                    **_auth_headers(api_key),
                 },
                 json={
                     "model": model,
