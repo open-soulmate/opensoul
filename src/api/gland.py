@@ -42,6 +42,26 @@ def _ensure_bootstrapped() -> None:
         if settings.embedding_api_key and settings.embedding_api_key != settings.llm_api_key:
             gateway.key_manager.add_key("openai", settings.embedding_api_key)
 
+    # 变体备胎入链（priority=5）：激活变体之外的另一已配置变体（标准API/订阅制
+    # 双体系）——激活端点402/宕机时的真实备胎（2026-09-25 live实证standard
+    # low_balance时subscription仍ok）。fail-safe：解析失败→不注册。
+    try:
+        from src.api.llm import alternate_variant_config
+
+        alt = alternate_variant_config()
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬bootstrap
+        alt = None
+    if alt:
+        alt_name = f"variant-{alt['variant']}"
+        gateway.add_provider(
+            name=alt_name,
+            base_url=alt["base_url"],
+            models={"chat": alt.get("model") or settings.llm_model},
+            priority=5,
+        )
+        if alt.get("api_key"):
+            gateway.key_manager.add_key(alt_name, alt["api_key"])
+
     # Ollama (local, no key needed)
     ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
     gateway.add_provider(

@@ -11,10 +11,12 @@
 
 import asyncio
 import inspect
+import json
 import os
 import sys
 import time
 
+import httpx
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -540,3 +542,131 @@ def _distiller():
 
     store = _store()
     return DreamDistiller(ltm_store=store, llm_call=None), store
+
+
+# ── 变体备胎入链 + live失败形态回归（2026-09-25轮） ─────────────────
+# 根因链：显式model劫持备胎link（`ollama/mimo-v2.5-pro`实录）+ 真实备胎
+# （标准API/订阅制双体系的另一变体）从未入链 + LLM_SUBSCRIPTION_MODEL=
+# partial-test占位符 → dream/Phase1 全链饿死（"All providers failed after
+# 4 chain attempt(s)"，journalctl 2026-09-24 23:00实录）。此处锁死修复后行为。
+
+_OVERRIDES_ACTIVE_STD = {
+    "active_variant": "standard",
+    "base_url": "https://mem.example/v1",
+    "api_key": "sk-std",
+    "model": "m-v",
+    "standard_base_url": "https://mem.example/v1",
+    "standard_api_key": "sk-std",
+    "standard_model": "m-v",
+    "subscription_base_url": "https://sub.example/v1",
+    "subscription_api_key": "tp-sub",
+    "subscription_model": "partial-test",
+}
+
+
+class TestVariantBackupWiring:
+    def test_build_router_registers_variant_backup(self, monkeypatch):
+        monkeypatch.setattr("src.api.llm._llm_overrides", dict(_OVERRIDES_ACTIVE_STD))
+        r = memory_model._build_router(_resolved(model="m-v"))
+        assert "variant-subscription" in r.providers
+        vp = r.providers["variant-subscription"]
+        assert vp.priority == 5
+        assert vp.models == {"chat": "partial-test"}
+        assert r.key_manager.next_key("variant-subscription") == "tp-sub"
+
+    def test_no_backup_when_unconfigured(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.api.llm._llm_overrides",
+            {"active_variant": "standard", "base_url": "https://mem.example/v1"},
+        )
+        r = memory_model._build_router(_resolved())
+        assert not any(n.startswith("variant-") for n in r.providers)
+
+    def test_no_backup_when_same_endpoint(self, monkeypatch):
+        ov = dict(_OVERRIDES_ACTIVE_STD)
+        ov["subscription_base_url"] = "https://mem.example/v1"  # 同端点=非备胎
+        monkeypatch.setattr("src.api.llm._llm_overrides", ov)
+        r = memory_model._build_router(_resolved())
+        assert not any(n.startswith("variant-") for n in r.providers)
+
+    def test_backup_model_falls_back_to_resolved_when_empty(self, monkeypatch):
+        ov = dict(_OVERRIDES_ACTIVE_STD)
+        ov["subscription_model"] = ""
+        monkeypatch.setattr("src.api.llm._llm_overrides", ov)
+        r = memory_model._build_router(_resolved(model="m-v"))
+        assert r.providers["variant-subscription"].models == {"chat": "m-v"}
+
+    def test_alternate_variant_flips_with_active(self, monkeypatch):
+        from src.api.llm import alternate_variant_config
+
+        # 激活subscription时备胎=standard（生效槽位=激活变体的值）
+        ov = dict(_OVERRIDES_ACTIVE_STD)
+        ov.update(
+            {
+                "active_variant": "subscription",
+                "base_url": "https://sub.example/v1",
+                "api_key": "tp-sub",
+                "model": "partial-test",
+            }
+        )
+        monkeypatch.setattr("src.api.llm._llm_overrides", ov)
+        alt = alternate_variant_config()
+        assert alt is not None
+        assert alt["variant"] == "standard"
+        assert alt["base_url"] == "https://mem.example/v1"
+        assert alt["model"] == "m-v"
+
+    @pytest.mark.asyncio
+    async def test_call_memory_llm_survives_primary_402_via_backup(self, monkeypatch):
+        """live失败形态全回归：primary 402 + 备胎占位模型400 → 显式model接住。
+
+        修复前同样输入=AllProvidersFailedError（4链attempt全灭实录）；
+        修复后经变体备胎成活，且tp- key走api-key头、显式model不劫持备胎。
+        """
+        monkeypatch.setattr("src.api.llm._llm_overrides", dict(_OVERRIDES_ACTIVE_STD))
+        # 路由模式钉死：ollama是localhost provider，cost模式会把它排到最前
+        monkeypatch.setattr("src.gland.route_policy.get_mode", lambda: "balance")
+        seen: list[tuple] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            model = json.loads(request.content)["model"]
+            seen.append(
+                (
+                    request.url.host,
+                    model,
+                    request.headers.get("api-key"),
+                    request.headers.get("authorization"),
+                )
+            )
+            if request.url.host == "mem.example":
+                return httpx.Response(402, json={"error": "quota"})
+            if request.url.host == "sub.example":
+                if model == "partial-test":
+                    return httpx.Response(400, json={"error": "Unsupported model partial-test"})
+                return httpx.Response(
+                    200,
+                    json={"choices": [{"message": {"content": "memory-out"}}], "usage": {}},
+                )
+            return httpx.Response(500, json={"error": "unexpected host"})
+
+        def factory(res):
+            router = memory_model._build_router(res)
+            router._http_client = httpx.AsyncClient(
+                transport=httpx.MockTransport(handler), timeout=5
+            )
+            return router
+
+        res = ResolvedMemoryModel(
+            model_id="m-v",
+            base_url="https://mem.example/v1",
+            api_key="sk-std",
+            source="session",
+            sampling={},
+        )
+        out = await call_memory_llm("sys", "usr", resolved=res, router_factory=factory)
+        assert out == "memory-out"
+        assert seen == [
+            ("mem.example", "m-v", None, "Bearer sk-std"),
+            ("sub.example", "partial-test", "tp-sub", None),
+            ("sub.example", "m-v", "tp-sub", None),
+        ]

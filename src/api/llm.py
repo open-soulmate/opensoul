@@ -235,6 +235,34 @@ def _active_slot(field: str) -> str:
     return _llm_overrides.get(prefix + field) or _llm_overrides.get(field, "")
 
 
+def alternate_variant_config() -> dict | None:
+    """激活变体之外的另一个已配置变体（fallback链真实备胎）。
+
+    双体系（标准API/订阅制）两套base_url+api_key并存：激活变体端点级故障
+    （402余额耗尽/宕机）时，另一个变体是现成的真实备胎——2026-09-25 live实证：
+    standard=low_balance(402) 时 subscription(token-plan) 仍然 ok，但此前
+    备胎从未进过 ModelRouter 的fallback链（链上只有激活端点+死掉的ollama），
+    dream/Phase1 全链饿死。
+
+    返回 {"variant", "base_url", "api_key", "model"} 或 None（无备胎/同端点）。
+    fail-safe：任何异常→None（配置解析绝不反噬调用方）。
+    """
+    try:
+        active = _active_variant()
+        other = "subscription" if active == "standard" else "standard"
+        url = _llm_overrides.get(f"{other}_base_url", "")
+        key = _llm_overrides.get(f"{other}_api_key", "")
+        model = _llm_overrides.get(f"{other}_model", "")
+        if not url or not key:
+            return None
+        active_url = _llm_overrides.get("base_url", "") or settings.llm_base_url
+        if str(url).rstrip("/") == str(active_url or "").rstrip("/"):
+            return None  # 同端点=非备胎（避免自我failover空转）
+        return {"variant": other, "base_url": url, "api_key": key, "model": model}
+    except Exception:  # noqa: BLE001 — 配置解析绝不反噬
+        return None
+
+
 def _mask(k: str, masked: bool) -> str:
     return ("***" if masked and k else k) if k else ""
 
