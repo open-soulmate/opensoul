@@ -38,6 +38,7 @@ from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
 from src.hippo.memory_model import call_memory_llm
+from src.hippo.memory_redact import redact_for_memory, redact_message_bodies
 
 logger = logging.getLogger("opensoul.hippo.memory_pipeline")
 
@@ -287,6 +288,9 @@ class Phase1Result:
     candidates: list[Phase1Candidate] = field(default_factory=list)
     raw_response: str = ""
     error: str = ""
+    # kilocode MemoryRedact收口：进入Phase1提取LLM前脱敏的敏感span数（0=无命中，
+    # 处理结果必须可见——mem0 §1.1）
+    redacted_spans: int = 0
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
@@ -298,6 +302,7 @@ class Phase1Result:
             "error": self.error,
             # 失败可见：count=0时调用方可审计LLM原始返回（截断500字）
             "raw_response": self.raw_response[:500],
+            "redacted_spans": self.redacted_spans,
             "created_at": self.created_at,
         }
 
@@ -316,6 +321,8 @@ class PipelineResult:
     error: str = ""
     # kilocode防记忆回声：True=本轮召回过记忆，digest被跳过（防自我污染，不静默）
     echo_blocked: bool = False
+    # kilocode MemoryRedact收口：Phase1+Phase2进入记忆LLM前脱敏的敏感span总数
+    redacted_spans: int = 0
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
@@ -329,6 +336,7 @@ class PipelineResult:
             "diff": self.diff,
             "error": self.error,
             "echo_blocked": self.echo_blocked,
+            "redacted_spans": self.redacted_spans,
             "created_at": self.created_at,
         }
 
@@ -383,6 +391,11 @@ class MemoryPipeline:
         if not messages:
             res.error = "no messages to extract"
             return res
+        # ── kilocode MemoryRedact收口（supplement3 #6）：进入Phase1提取LLM的会话
+        # 文本先过redact（ports.ts text()源端语义）——凭据绝不进记忆蒸馏prompt
+        # （MEMORY_MODEL可能是第三方小模型）。先脱敏后截断（_format_messages的
+        # token预算截断在脱敏之后），命中的span数在res.redacted_spans显式透出。
+        messages, res.redacted_spans = redact_message_bodies(messages)
         conv_text = self._format_messages(messages)
         user_prompt = (
             f"## 会话历史\n{conv_text}\n\n请按铁律提取值得进入长期记忆的候选事实，输出JSON数组。"
@@ -414,29 +427,44 @@ class MemoryPipeline:
         meta: dict = {"phase2": "deterministic"}
         if not candidates:
             return [], meta
+        # ── kilocode MemoryRedact收口（supplement3 #6）：进入Phase2整合LLM的候选
+        # 文本先过redact（import模式直供候选可含原始会话摘录/evidence原文）。
+        # decisions仍引用原始candidate对象（apply侧store()落库前照常脱敏+gatekeeper
+        # 看原文判定），只有出给LLM的prompt文本被脱敏——凭据绝不进记忆蒸馏prompt。
+        cand_block, cand_findings = redact_for_memory(self._format_candidates(candidates))
+        redact_note = {"redacted_spans": len(cand_findings)} if cand_findings else {}
         if use_llm:
             existing = self._store.list_memories(include_deleted=False, limit=30)
             try:
                 prompt = PHASE2_CONSOLIDATE_PROMPT.replace(
                     "[[EXISTING]]", self._format_memories(existing) or "（无现有记忆）"
-                ).replace("[[CANDIDATES]]", self._format_candidates(candidates))
+                ).replace("[[CANDIDATES]]", cand_block)
                 response = await self._call_llm(prompt, "请为每条候选输出整合决策JSON数组。")
                 if not isinstance(response, str):
                     response = extract_chat_text(response)
                 decisions, pmeta = parse_phase2(response or "", candidates)
                 if decisions:
-                    meta = {"phase2": "llm", **pmeta}
+                    meta = {"phase2": "llm", **redact_note, **pmeta}
                     return decisions, meta
                 meta = {
                     "phase2": "deterministic",
                     "phase2_fallback_reason": "llm_response_empty_or_unparseable",
+                    **redact_note,
                     **pmeta,
                 }
             except Exception as e:  # noqa: BLE001
-                meta = {"phase2": "deterministic", "phase2_fallback_reason": f"llm_error:{e}"}
+                meta = {
+                    "phase2": "deterministic",
+                    "phase2_fallback_reason": f"llm_error:{e}",
+                    **redact_note,
+                }
                 logger.warning("Pipeline Phase2 LLM failed, deterministic fallback: %s", e)
         else:
-            meta = {"phase2": "deterministic", "phase2_fallback_reason": "use_llm_phase2=False"}
+            meta = {
+                "phase2": "deterministic",
+                "phase2_fallback_reason": "use_llm_phase2=False",
+                **redact_note,
+            }
         return self._deterministic_decisions(candidates), meta
 
     @staticmethod
@@ -596,6 +624,7 @@ class MemoryPipeline:
                 self._persist(result, decisions=[])
                 return result
             cands = p1.candidates
+            result.redacted_spans = p1.redacted_spans
         else:
             result.error = "no messages and no candidates"
             self._persist(result, decisions=[])
@@ -603,6 +632,8 @@ class MemoryPipeline:
         result.phase1_count = len(cands)
         decisions, pmeta = await self.consolidate(cands, use_llm=use_llm_phase2)
         result.phase2_meta = pmeta
+        # MemoryRedact收口计数汇总：Phase1（llm模式）+ Phase2候选块的脱敏span总数
+        result.redacted_spans += int(pmeta.get("redacted_spans", 0) or 0)
         counts: dict[str, int] = {}
         for d in decisions:
             counts[d.op] = counts.get(d.op, 0) + 1

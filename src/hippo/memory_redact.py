@@ -90,3 +90,50 @@ def redact_for_memory(
         # Fail-safe but visible (mem0 §1.1: silent degradation = poisoned memory).
         logger.warning("MemoryRedact failed (storing raw text): %s", exc)
         return text, []
+
+
+def redact_message_bodies(
+    messages: list | None, min_risk: str = MEMORY_REDACT_MIN_RISK
+) -> tuple[list, int]:
+    """Redact each conversation message body BEFORE it enters a memory LLM prompt.
+
+    kilocode MemoryRedact 采集前脱敏收口（supplement3 #6）：kilocode ports.ts text()
+    对每条正文过 MemoryRedact.text——脱敏发生在**进入记忆处理的源端**（Phase1提取/
+    Dream蒸馏的prompt拼装之前），凭据绝不抵达记忆蒸馏LLM（MEMORY_MODEL可能是
+    第三方小模型）。本此前只在store()落库前脱敏——库是干净的，但蒸馏prompt里
+    凭据原文仍在出境。
+
+    行为语义：
+    - 非破坏性：返回新列表，输入不被就地修改；仅content为str的条目参与脱敏，
+      其余形态（OpenAI parts列表等）原样保留（这些路径的载荷契约是str）。
+    - 先脱敏后截断：调用方的token预算截断（_format_messages）发生在脱敏之后，
+      避免把密钥拦腰截断成不再匹配规则的半个密钥漏出。
+    - 计数返回命中span数（0=无命中）——调用方必须在结果里显式透出（mem0 §1.1
+      降级/处理必须可见）。
+    - fail-safe绝不抛出（与redact_for_memory同源：采集端异常不反噬宿主会话流）。
+    """
+    if not messages:
+        return [], 0
+    out: list = []
+    total = 0
+    try:
+        for msg in messages:
+            if not isinstance(msg, dict):
+                out.append(msg)
+                continue
+            content = msg.get("content")
+            if not isinstance(content, str) or not content:
+                out.append(msg)
+                continue
+            redacted, findings = redact_for_memory(content, min_risk=min_risk)
+            if not findings:
+                out.append(msg)
+                continue
+            new_msg = dict(msg)
+            new_msg["content"] = redacted
+            out.append(new_msg)
+            total += len(findings)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("redact_message_bodies failed (passing raw messages): %s", exc)
+        return list(messages or []), total
+    return out, total

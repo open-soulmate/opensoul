@@ -113,12 +113,12 @@ class TestMarrowSchedules:
         resp = client.delete(f"/api/marrow/schedules/{schedule_id}")
         assert resp.status_code == 200
 
-    def test_create_schedule_invalid_interval(self, client):
+    def test_create_schedule_invalid_interval(self, client, tmp_path):
         resp = client.post(
             "/api/marrow/schedules",
             json={
                 "name": "bad_schedule",
-                "source_dirs": ["/tmp"],
+                "source_dirs": [str(tmp_path)],
                 "interval": "invalid",
             },
         )

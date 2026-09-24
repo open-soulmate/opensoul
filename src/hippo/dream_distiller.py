@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from src.gland.router import extract_chat_text
 from src.hippo.memory_model import call_memory_llm
+from src.hippo.memory_redact import redact_message_bodies
 
 logger = logging.getLogger("opensoul.hippo.dream")
 
@@ -62,6 +63,9 @@ class DreamResult:
     echo_blocked: bool = False  # True if digest was skipped due to memory echo
     raw_response: str = ""
     error: str = ""
+    # kilocode MemoryRedact收口：进入Dream蒸馏LLM前脱敏的敏感span数（0=无命中，
+    # 处理结果必须可见——mem0 §1.1）
+    redacted_spans: int = 0
     created_at: float = field(default_factory=time.time)
 
     @property
@@ -83,6 +87,7 @@ class DreamResult:
             "error": self.error,
             # 失败可见：0 actions时调用方可审计LLM原始返回（截断500字）
             "raw_response": (self.raw_response or "")[:500],
+            "redacted_spans": self.redacted_spans,
             "created_at": self.created_at,
         }
 
@@ -306,6 +311,11 @@ class DreamDistiller:
         existing_text = self._format_memories(existing)
 
         # Format conversation history
+        # ── kilocode MemoryRedact收口（supplement3 #6）：进入Dream蒸馏LLM的对话
+        # 文本先过redact（ports.ts text()源端语义）——凭据绝不进记忆蒸馏prompt
+        # （memory_model可能是第三方小模型）；先脱敏后截断（_format_messages的
+        # token预算截断在脱敏之后），命中span数在result.redacted_spans显式透出。
+        messages, result.redacted_spans = redact_message_bodies(messages)
         conv_text = self._format_messages(messages)
 
         # Build user prompt

@@ -45,6 +45,18 @@ _SECRET_PATTERNS = [
     re.compile(
         r"(?i)\b(api[_-]?key|secret[_-]?key|access[_-]?token|password|passwd)\b\s*[=:：]\s*\S{8,}"
     ),
+    # ── kilocode MemoryRedact收口：凭据类脱敏标记同样按凭据笔记拒绝 ──
+    # "脱敏≠洗白"：内容一旦携带凭据类[REDACTED:<type>]标记（MemoryRedact对
+    # password_leak/jwt/url_with_auth/*_api_key/*_pat等凭据类的整段掩码产物），
+    # 说明这条笔记的本体就是凭据笔记——记忆库不是密钥库，整体拒绝语义不变。
+    # 只列凭据类type（bank_card/id_card_cn/email/phone_cn走部分掩码无标记，不受影响）；
+    # immune/moderator新增凭据类pattern时此处需同步追加type名。
+    re.compile(
+        r"\[REDACTED:(?:password_leak|jwt|url_with_auth|google_api_key|aws_access_id"
+        r"|slack_app_token|github_classic_pat|github_fine_grained_pat|github_oauth_token"
+        r"|github_user_to_server_token|github_server_to_server_token|stripe_key"
+        r"|openai_api_key|anthropic_api_key|generic_sk_api_key|fireworks_api_key)\]"
+    ),
 ]
 
 # 拉丁字母或CJK统一表意文字（有实质内容）
