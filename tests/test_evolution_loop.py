@@ -612,3 +612,128 @@ class TestEvolutionAPI:
         data = resp.json()
         assert "proposals" in data
         assert "ledger_events" in data
+
+
+# ── ⑧ 预算自愈回归（实盘教训：20/20 pending卡死→budget_exceeded永久拒绝一切声明） ──
+
+
+class TestDigestVolatileNormalization:
+    def test_count_reading_collapses(self, engine):
+        """同一问题的失败计数读数(31次)/(310次)必须同digest→去重生效。"""
+        a = _declare(engine, title="高频失败: No handler for job type 'test_job' (31次)")
+        b = _declare(engine, title="高频失败: no handler for job type 'test_job' (310次)")
+        assert b["duplicate"] is True
+        assert b["proposal_id"] == a["proposal_id"]
+
+    def test_rate_reading_collapses(self, engine):
+        """成功率趋势读数"32% vs 90%"/"50% vs 93%"是同一问题→同digest。"""
+        a = _declare(engine, title="切换到更保守的策略: 成功率下降: 32% vs 90%")
+        b = _declare(engine, title="切换到更保守的策略: 成功率下降: 50% vs 93%")
+        assert b["duplicate"] is True
+        assert b["proposal_id"] == a["proposal_id"]
+
+    def test_distinct_titles_stay_distinct(self, engine):
+        a = _declare(engine, title="增加tool_calls前置检查")
+        b = _declare(engine, title="增加session前置检查")
+        assert b["duplicate"] is False
+        assert a["proposal_id"] != b["proposal_id"]
+
+    def test_plain_percentage_change_not_collapsed(self):
+        """保守归一化：只折叠"(N次)"读数与"N% vs N%"趋势对，普通百分比改动保持区分度。"""
+        d1 = EvolutionEngine._digest("policy_adjustment", "把阈值从32%调到40%")
+        d2 = EvolutionEngine._digest("policy_adjustment", "把阈值从50%调到60%")
+        assert d1 != d2
+
+
+class TestStalePendingSweep:
+    def test_sweep_retires_stale_and_keeps_fresh(self, engine):
+        stale = _declare(engine, title="old junk")
+        fresh = _declare(engine, title="new item")
+        engine.store.update_proposal(stale["proposal_id"], created_at=time.time() - 3 * 86400)
+        retired = engine.store.retire_stale_pending(engine.pending_ttl_s)
+        assert retired == [stale["proposal_id"]]
+        got = engine.store.get_proposal(stale["proposal_id"])
+        assert got.status == "rejected"
+        assert got.reject_reason == "stale_pending_expired"
+        assert engine.store.get_proposal(fresh["proposal_id"]).status == "pending"
+        events = [e["event"] for e in engine.store.get_ledger(proposal_id=stale["proposal_id"])]
+        assert events == ["DECLARED", "REJECTED"]  # 退役必须账本可见（mem0失败不静默）
+
+    def test_budget_self_heals_on_declare(self, tmp_path):
+        """实盘回归：预算被超龄pending占死→新声明时惰性清扫先退役，预算自愈。"""
+        engine = EvolutionEngine(db_path=str(tmp_path / "e.db"), max_pending=2)
+        for t in ("junk1", "junk2"):
+            r = _declare(engine, title=t)
+            engine.store.update_proposal(r["proposal_id"], created_at=time.time() - 3 * 86400)
+        result = _declare(engine, title="fresh idea")
+        assert result["status"] == "pending"
+        assert result["reject_reason"] == ""
+        assert engine.store.count_by_status("pending") == 1  # junk已退役，只余新单
+
+    def test_budget_still_blocks_fresh_saturation(self, tmp_path):
+        """预算语义保留：全是新单时饱和仍然拦截（防测试把budget上限改没了）。"""
+        engine = EvolutionEngine(db_path=str(tmp_path / "e.db"), max_pending=2)
+        _declare(engine, title="f1")
+        _declare(engine, title="f2")
+        result = _declare(engine, title="f3")
+        assert result["status"] == "rejected"
+        assert "budget_exceeded" in result["reject_reason"]
+
+    def test_count_stale_pending(self, engine):
+        p = _declare(engine, title="aging")
+        assert engine.store.count_stale_pending(engine.pending_ttl_s) == 0
+        engine.store.update_proposal(p["proposal_id"], created_at=time.time() - 3 * 86400)
+        assert engine.store.count_stale_pending(engine.pending_ttl_s) == 1
+
+    def test_stats_expose_sweep_observability(self, engine):
+        stats = engine.get_stats()
+        assert stats["pending_stale"] == 0
+        assert stats["pending_ttl_s"] > 0
+        assert stats["redeclare_cooldown_s"] > 0
+
+
+class TestDecidedEcho:
+    def test_reviewer_rejected_not_reproposed(self, engine):
+        """kilocode防回声推广：人类已裁决拒绝的问题，冷却期内不重复建单。"""
+        first = _declare(engine, title="增加前置检查")
+        engine.review(first["proposal_id"], "reject", "human_reviewer", comment="not now")
+        again = _declare(engine, title="增加前置检查")
+        assert again["duplicate"] is True
+        assert again["proposal_id"] == first["proposal_id"]
+        assert engine.store.count_by_status("pending") == 0  # 不重复建单
+
+    def test_rolled_back_not_reproposed(self, engine):
+        """试过并回滚=最强的'别再提'信号，冷却期内不重复建单。"""
+        tmp = Path(engine.store.db_path).parent / "rb.md"
+        tmp.write_text("old\n", encoding="utf-8")
+        first = _declare(
+            engine,
+            title="改配置rb",
+            proposed_change={"target": str(tmp), "anchor_old": "old", "anchor_new": "new"},
+        )
+        engine.review(first["proposal_id"], "approve", "human_reviewer")
+        engine.apply(first["proposal_id"], actor="human_reviewer")
+        engine.rollback(first["proposal_id"], actor="human_reviewer", reason="bad idea")
+        again = _declare(engine, title="改配置rb")
+        assert again["duplicate"] is True
+        assert again["proposal_id"] == first["proposal_id"]
+
+    def test_guard_reject_stays_reproposable(self, engine):
+        """guard瞬态拒绝（evidence_required等无reviewer）不算裁决，补证据后必须可重提。"""
+        first = _declare(engine, title="increase retries", evidence_refs=[])
+        assert first["status"] == "rejected"
+        again = _declare(
+            engine,
+            title="increase retries",
+            evidence_refs=["trajectory:sess_new"],
+        )
+        assert again["duplicate"] is False
+        assert again["status"] == "pending"
+
+    def test_cooldown_expiry_allows_redeclare(self, engine):
+        first = _declare(engine, title="增加前置检查")
+        engine.review(first["proposal_id"], "reject", "human_reviewer")
+        engine.store.update_proposal(first["proposal_id"], reviewed_at=time.time() - 8 * 86400)
+        again = _declare(engine, title="增加前置检查")
+        assert again["duplicate"] is False
+        assert again["proposal_id"] != first["proposal_id"]

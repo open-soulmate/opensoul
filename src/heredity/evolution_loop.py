@@ -24,6 +24,7 @@ apply必须经过approved状态，且目标文件在改动前先做快照。
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 import time
 import uuid
@@ -69,6 +70,10 @@ LEDGER_APPLIED = "APPLIED"
 LEDGER_APPLY_FAILED = "APPLY_FAILED"
 LEDGER_ROLLED_BACK = "ROLLED_BACK"
 LEDGER_TRIGGERED = "TRIGGERED"
+
+# ── 预算自愈常量（实盘教训：pending占死预算→budget_exceeded永久拒绝一切新声明） ──
+PENDING_TTL_S = 48 * 3600  # pending超龄退役时限（agno stale回收）
+REDECLARE_COOLDOWN_S = 7 * 24 * 3600  # 已裁决提案重复声明冷却（kilocode防回声推广）
 
 
 def is_protected_target(target: str) -> bool:
@@ -275,6 +280,64 @@ class EvolutionStore:
                 (status,),
             ).fetchone()[0]
 
+    def count_stale_pending(self, ttl_s: float, now: float | None = None) -> int:
+        cutoff = (now if now is not None else time.time()) - ttl_s
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM evolution_proposals WHERE status = ? AND created_at < ?",
+                (STATUS_PENDING, cutoff),
+            ).fetchone()[0]
+
+    def retire_stale_pending(self, ttl_s: float, now: float | None = None) -> list:
+        """agno stale回收：超龄pending转rejected（stale_pending_expired）+账本可见。
+
+        没有审批人的自主生产者（self_evolution触发器）会让pending永远没人处理，
+        max_pending预算一经烧光就永久拒绝一切新声明=进化闭环瘫痪（实盘教训）。
+        退役是账本可见的终态（REJECTED actor=retention），不是静默丢弃（mem0失败
+        必须可见）；声明方可重提，冷却期只对"人类裁决/试过并回滚"生效。
+        """
+        cutoff = (now if now is not None else time.time()) - ttl_s
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT proposal_id FROM evolution_proposals WHERE status = ? AND created_at < ?",
+                (STATUS_PENDING, cutoff),
+            ).fetchall()
+        retired = [r["proposal_id"] for r in rows]
+        for pid in retired:
+            self.update_proposal(
+                pid,
+                status=STATUS_REJECTED,
+                reject_reason="stale_pending_expired",
+            )
+            self.write_ledger(
+                pid,
+                LEDGER_REJECTED,
+                actor="retention",
+                old_value=STATUS_PENDING,
+                new_value=STATUS_REJECTED,
+                reason=f"stale_pending_expired:ttl={int(ttl_s)}s",
+            )
+        return retired
+
+    def find_decided_echo(self, digest: str, cutoff: float) -> EvolutionProposal | None:
+        """kilocode防记忆回声推广：同digest已有「人类裁决/试过并回滚」且在冷却期内
+        → 不重复建单（自主触发器对同一问题反复声明的解药）。
+
+        只认终态裁决：rejected且reviewed_by非空（guard瞬态拒绝如budget_exceeded/
+        stale_pending_expired无reviewer，不算裁决，允许重提）或rolled_back
+        （试过并回退=最强的"别再提"信号）。
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM evolution_proposals
+                    WHERE dedup_digest = ?
+                      AND ((status = ? AND reviewed_by != '' AND reviewed_at >= ?)
+                        OR (status = ? AND applied_at >= ?))
+                    ORDER BY created_at DESC LIMIT 1""",
+                (digest, STATUS_REJECTED, cutoff, STATUS_ROLLED_BACK, cutoff),
+            ).fetchone()
+        return self._row_to_proposal(row) if row else None
+
     def list_proposals(self, status: str = "", limit: int = 50) -> list:
         with self._connect() as conn:
             if status:
@@ -409,17 +472,29 @@ class EvolutionEngine:
         idle_threshold_s: float = 60.0,
         context_pressure_threshold: float = 0.8,
         storm_window: int = 3,
+        pending_ttl_s: float = PENDING_TTL_S,
+        redeclare_cooldown_s: float = REDECLARE_COOLDOWN_S,
     ):
         self.store = EvolutionStore(db_path)
         self.max_pending = max_pending
         self.idle_threshold_s = idle_threshold_s
         self.context_pressure_threshold = context_pressure_threshold
         self.storm_window = storm_window
+        self.pending_ttl_s = pending_ttl_s
+        self.redeclare_cooldown_s = redeclare_cooldown_s
 
     # ── digest / 去重（kilocode防回声 + LobeChat reviewer侧去重的前置拦截） ──
     @staticmethod
     def _digest(kind: str, title: str) -> str:
         normalized = " ".join((title or "").lower().split())
+        # 波动量归一化：失败计数"(310次)"与成功率趋势"32% vs 90%"是同一问题的时变
+        # 读数——不归一会让同一问题每轮生成新digest，去重全面失效，pending被同一组
+        # 问题的不同读数占死，budget_exceeded永久拒绝一切新声明=进化闭环瘫痪（实盘
+        # 教训：20/20 pending全是同一组问题的不同读数）。只折叠两类读数形态
+        # （"(N次)"计数 + "N% vs N%"趋势对），普通数字/百分比改动（如"阈值从32%
+        # 调到40%"）保持区分度，防止误合并真正不同的提案。
+        normalized = re.sub(r"\(\s*\d+\s*次\s*\)", "(n次)", normalized)
+        normalized = re.sub(r"\d+(?:\.\d+)?%\s+vs\s+\d+(?:\.\d+)?%", "n% vs n%", normalized)
         return hashlib.sha256(f"{kind}|{normalized}".encode()).hexdigest()[:16]
 
     @staticmethod
@@ -533,6 +608,21 @@ class EvolutionEngine:
                 digest=digest,
                 duplicate_of=applied_dup.proposal_id,
             )
+
+        # kilocode防记忆回声推广：同digest已有「人类裁决/试过并回滚」且在冷却期内
+        # → 返回既有提案，不重复建单（自主触发器对同一问题反复声明的解药；
+        # guard瞬态拒绝如budget_exceeded无reviewer，不算裁决，允许重提）
+        decided_echo = self.store.find_decided_echo(digest, time.time() - self.redeclare_cooldown_s)
+        if decided_echo:
+            return {**decided_echo.to_dict(), "duplicate": True}
+
+        # agno stale回收（声明路径惰性清扫）：超龄pending先退役再查重/查预算——
+        # 否则无审批人的自主提案会永久占满max_pending预算，一切新声明被
+        # budget_exceeded拒绝=进化闭环瘫痪（实盘教训：20/20 pending全卡死）
+        try:
+            self.store.retire_stale_pending(self.pending_ttl_s)
+        except Exception:  # 清扫失败绝不反噬声明路径
+            logger.warning("retire_stale_pending failed", exc_info=True)
 
         # 去重：同digest仍在pending → 返回既有提案，不重复建单
         pending_dup = self.store.find_by_digest(digest, (STATUS_PENDING,))
@@ -863,6 +953,9 @@ class EvolutionEngine:
             "pending": pending,
             "max_pending": self.max_pending,
             "pending_budget_remaining": max(0, self.max_pending - pending),
+            "pending_stale": self.store.count_stale_pending(self.pending_ttl_s),
+            "pending_ttl_s": self.pending_ttl_s,
+            "redeclare_cooldown_s": self.redeclare_cooldown_s,
             "ledger_events": self.store.ledger_event_counts(),
             "triggers": self.store.count_triggers(),
             "breaker": self.store.get_breaker(),
