@@ -606,12 +606,14 @@ async def _call_llm_router(system_prompt: str, user_prompt: str, router_factory=
     except Exception:  # noqa: BLE001 — 备胎注册绝不反噬摘要调用
         pass
     ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
-    router.add_provider(
-        name="ollama",
-        base_url=ollama_url,
-        models={"chat": "deepseek-r1:latest"},
-        priority=10,
-    )
+    # 本地兜底入链（priority=10）——register_local_backup单一真源+探活豁免：
+    # 不可达→不入链（链上不留幻影备胎，01:35遗留#2/08:48遗留#3销账）。
+    try:
+        from src.api.llm import register_local_backup
+
+        register_local_backup(router, ollama_url, {"chat": "deepseek-r1:latest"})
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬摘要调用
+        pass
     result = await router.chat(
         messages=[
             {"role": "system", "content": system_prompt},

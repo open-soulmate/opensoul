@@ -49,6 +49,15 @@ def _pin_settings(monkeypatch):
     monkeypatch.setattr("src.gland.route_policy.get_mode", lambda: "balance")
 
 
+@pytest.fixture(autouse=True)
+def _pin_local_probe(monkeypatch):
+    """本地兜底探活确定性钉死：默认可达（同改动前无条件注册语义，ollama链尾语义
+    由既有用例继续锁死）；不可达跳过分支由test_local_backup_probe.py +
+    test_unreachable_local_backup_not_registered专门覆盖。"""
+    monkeypatch.setattr("src.api.llm._tcp_reachable", lambda *a, **k: True)
+    llm_api._LOCAL_PROBE_CACHE.clear()
+
+
 class _RecorderRouter:
     """add_provider/key_manager最小记录器（register_variant_backup契约面）。"""
 
@@ -163,6 +172,30 @@ class TestBranchRouterWiring:
         assert providers["variant-subscription"].priority == 5
         assert providers["ollama"].priority == 10
         assert providers["variant-subscription"].models == {"chat": "m-v"}
+
+    @pytest.mark.asyncio
+    async def test_unreachable_local_backup_not_registered(self, monkeypatch):
+        """幻影备胎豁免（01:35遗留#2/08:48遗留#3销账）：ollama不可达→不入branch摘要
+        链。修复前无条件注册=链尾死ollama，全链失败白打ConnectError噪音。"""
+        monkeypatch.setattr("src.api.llm._llm_overrides", dict(_OVERRIDES))
+        monkeypatch.setattr("src.api.llm._tcp_reachable", lambda *a, **k: False)
+        llm_api._LOCAL_PROBE_CACHE.clear()
+        _pin_settings(monkeypatch)
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}], "usage": {}},
+            )
+
+        out = await branch_summary._call_llm_router(
+            "sys", "usr", router_factory=_mk_factory(handler, captured)
+        )
+        assert out == "ok"
+        providers = captured["router"].providers
+        assert set(providers) == {"openai", "variant-subscription"}  # 无幻影ollama
+        assert "ollama" not in providers
 
     @pytest.mark.asyncio
     async def test_primary_402_falls_to_variant_backup(self, monkeypatch):

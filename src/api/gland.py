@@ -21,9 +21,31 @@ router = APIRouter()
 gateway = ModelRouter()
 
 
+def _register_local_backup() -> None:
+    """Ollama本地兜底入链 — register_local_backup单一真源+探活豁免。
+
+    不可达→不入链（litellm「探活结果喂路由决策」：链上不留幻影备胎，全链失败
+    时不再白打ConnectError）。幂等+探活TTL缓存，请求路径可安全重复调用。
+    """
+    ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
+    try:
+        from src.api.llm import register_local_backup
+
+        register_local_backup(
+            gateway,
+            ollama_url,
+            {"chat": "deepseek-r1:latest", "embedding": "nomic-embed-text"},
+        )
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬bootstrap/请求路径
+        pass
+
+
 def _ensure_bootstrapped() -> None:
     """Register default providers from settings on first use."""
     if gateway.providers:
+        # 补口：bootstrap时ollama不可达被探活豁免→未入链；ollama后启动时经探活
+        # TTL重探可达即补注册——gateway单例不因启动时序永久丢备胎（幂等安全）。
+        _register_local_backup()
         return
 
     # OpenAI-compatible (covers OpenAI, custom endpoints, MiMo, etc.)
@@ -53,14 +75,9 @@ def _ensure_bootstrapped() -> None:
     except Exception:  # noqa: BLE001 — 备胎注册绝不反噬bootstrap
         pass
 
-    # Ollama (local, no key needed)
-    ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
-    gateway.add_provider(
-        name="ollama",
-        base_url=ollama_url,
-        models={"chat": "deepseek-r1:latest", "embedding": "nomic-embed-text"},
-        priority=10,
-    )
+    # Ollama (local, no key needed) — register_local_backup单一真源+探活豁免
+    # （CowAgent有序降级链priority=10本地兜底；不可达不入链，见helper docstring）。
+    _register_local_backup()
 
 
 # ── request / response schemas ──────────────────────────────────

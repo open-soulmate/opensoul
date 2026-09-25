@@ -185,8 +185,9 @@ def resolve_memory_model(
 
 def _build_router(resolved: ResolvedMemoryModel):
     """fresh ModelRouter（dream_distiller live实证教训：api/gland gateway单例跨event
-    loop复用会400——每次调用新建+显式注册providers，ollama本地兜底priority=10
-    =CowAgent有序降级链语义，与既有三处手搓块完全同构）。"""
+    loop复用会400——每次调用新建+显式注册providers，本地兜底priority=10
+    =CowAgent有序降级链语义，register_local_backup单一真源+探活豁免——与
+    api/gland/branch_summary三处同规收敛）。"""
     from src.gland.router import ModelRouter
 
     router = ModelRouter()
@@ -217,12 +218,14 @@ def _build_router(resolved: ResolvedMemoryModel):
         ollama_url = getattr(_settings, "ollama_base_url", ollama_url)
     except Exception:  # noqa: BLE001 — 兜底URL，配置读取失败不反噬
         pass
-    router.add_provider(
-        name="ollama",
-        base_url=ollama_url,
-        models={"chat": "deepseek-r1:latest"},
-        priority=10,
-    )
+    # 本地兜底入链（priority=10）——register_local_backup单一真源+探活豁免：
+    # 不可达→不入链（链上不留幻影备胎，01:35遗留#2/08:48遗留#3销账）。
+    try:
+        from src.api.llm import register_local_backup
+
+        register_local_backup(router, ollama_url, {"chat": "deepseek-r1:latest"})
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬记忆调用
+        pass
     return router
 
 

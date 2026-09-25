@@ -1,6 +1,10 @@
 import json
+import logging
 import os
+import socket
+import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -9,6 +13,7 @@ from pydantic import BaseModel
 from src.config import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
 
@@ -264,8 +269,9 @@ def register_variant_backup(router, fallback_model: str) -> str | None:
     此前memory_model._build_router / api/gland._ensure_bootstrapped /
     trajectory/branch_summary._call_llm_router三处各自手搓provider注册块，第三处
     （branch_summary）漏掉变体备胎：primary额度耗尽（402）时branch摘要直接降级
-    extractive-fallback，与dream/Phase1修复前同款饿死形态。收敛后三处同规：
-    primary(p0) → 变体备胎(p5) → ollama本地兜底(p10)（CowAgent有序降级链语义）。
+    extractive-fallback，与dream/Phase1修复前同款饿死形态）。收敛后三处同规：
+    primary(p0) → 变体备胎(p5) → ollama本地兜底(p10，register_local_backup探活
+    豁免——不可达不入链)（CowAgent有序降级链语义）。
 
     router需有add_provider()与key_manager（ModelRouter及其gateway同构实例）。
     返回注册的provider名（"variant-<name>"）或None（无备胎/同端点/解析失败）。
@@ -287,6 +293,93 @@ def register_variant_backup(router, fallback_model: str) -> str | None:
     if alt.get("api_key"):
         router.key_manager.add_key(name, alt["api_key"])
     return name
+
+
+# ── 本地兜底备胎：探活入链（litellm health_check「探活结果喂路由决策」最小切片）──
+
+LOCAL_PROBE_TTL = 30.0  # 探活结果缓存秒数（health_state_cache语义：定期探活非逐调用探活）
+_LOCAL_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
+
+
+def _tcp_reachable(base_url: str, timeout: float = 0.35) -> bool:
+    """TCP connect探活：端口可建连=服务在（Ollama等本地OpenAI兼容端点最低共同面）。
+
+    litellm health_check.py「全provider探活，结果喂路由决策」的最小切片——探活
+    结果只影响链构建（可达才入链），不影响运行期failover/cooldown既有语义。
+    fail-safe：任何异常→False（探活失败按不可达处理，宁可少一个备胎也不放幻影）。
+    """
+    try:
+        url = base_url if "://" in base_url else "http://" + base_url
+        u = urlparse(url)
+        host = u.hostname or "localhost"
+        port = u.port or (443 if u.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:  # noqa: BLE001 — 探活绝不反噬调用方
+        return False
+
+
+def _probe_cached(base_url: str, timeout: float = 0.35) -> tuple[bool, bool]:
+    """带TTL缓存的探活——fresh-per-call router（memory_model每次调用新建router）
+    防止逐调用探活开销；TTL过期后重探，ollama后启动最迟TTL秒内回到链上。
+    返回 (可达, 是否新探)——fresh供豁免日志去重（每TTL窗口记一次，防请求路径
+    逐请求刷屏）。"""
+    now = time.monotonic()
+    hit = _LOCAL_PROBE_CACHE.get(base_url)
+    if hit is not None and now - hit[0] < LOCAL_PROBE_TTL:
+        return hit[1], False
+    ok = _tcp_reachable(base_url, timeout=timeout)
+    _LOCAL_PROBE_CACHE[base_url] = (now, ok)
+    return ok, True
+
+
+def register_local_backup(
+    router,
+    base_url: str,
+    models: dict,
+    *,
+    name: str = "ollama",
+    priority: int = 10,
+    probe: bool = True,
+) -> str | None:
+    """本地兜底备胎入链（priority=10）单一真源 + 探活豁免。
+
+    此前memory_model._build_router / api/gland._ensure_bootstrapped /
+    trajectory/branch_summary._call_llm_router三处各自手搓ollama注册块且无条件
+    入链：ollama没在跑时链尾永远挂着幻影备胎，全链失败时白打一次ConnectError
+    （01:35遗留#2 / 08:48遗留#3同款；fresh-per-call router让router自身cooldown
+    机制跨调用失效，幻影每次都在）。收敛后语义：
+
+    - 探活可达→照常注册（CowAgent有序降级链语义不变：primary(p0)→变体备胎(p5)
+      →本地兜底(p10)）
+    - 不可达→不入链（链上只有真实可用候选，失败必须是真失败不是ConnectError噪音
+      ——evolution-engine-patterns mem0 §1.1「失败必须可见」的噪音面收口）
+    - 已注册→幂等返回（gateway单例请求路径可安全重复调用）
+
+    probe=False跳过探活强制注册（测试/确定性场景）。
+    返回注册的provider名或None（不可达/探活失败/异常）。
+    fail-safe：任何异常→None绝不反噬调用方。
+    """
+    try:
+        if name in getattr(router, "providers", {}):
+            return name  # 幂等：重复注册不重建ProviderConfig（不清failure计数）
+        if probe:
+            ok, fresh = _probe_cached(base_url)
+            if not ok:
+                if fresh:
+                    # warning级=qdrant「unreachable—功能降级」同款可见约定（root无
+                    # handler时lastResort只放行WARNING+，info会被吞——探活豁免必须
+                    # 可见不可静默）；仅新探时记（每TTL窗口一次，防逐请求刷屏）
+                    logger.warning(
+                        "local backup %s unreachable (%s) — skipped from fallback chain",
+                        name,
+                        base_url,
+                    )
+                return None
+        router.add_provider(name=name, base_url=base_url, models=models, priority=priority)
+        return name
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬调用方
+        return None
 
 
 def _mask(k: str, masked: bool) -> str:
