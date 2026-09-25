@@ -259,7 +259,10 @@ class TestWrapAround(ChainTestBase):
             with pytest.raises(AllProvidersFailedError):
                 await router.chat([{"role": "user", "content": "hi"}])
             assert calls["a"] == 1
-            assert calls["b"] == 1  # non-retryable + no wrap-around
+            # 语义扩展（chain_fallback候选，2026-09-25）：b=备胎link无显式model时
+            # 候选=(mb, chain_fallback ma)，mb 404模型级拒绝→滑到ma——2次调用=
+            # 2个不同模型各1次，仍非重试able（每模型恰好1次）且无wrap-around。
+            assert calls["b"] == 2
         finally:
             await router.shutdown()
 
@@ -312,7 +315,9 @@ class TestExhaustionError(ChainTestBase):
             with pytest.raises(AllProvidersFailedError) as exc_info:
                 await router.chat([{"role": "user", "content": "hi"}])
             tried = exc_info.value.tried
-            assert isinstance(tried, list) and len(tried) == 2
+            # 语义扩展（chain_fallback候选，2026-09-25）：b备胎link双候选
+            # (mb, ma)各记一次尝试 → 3条（a/ma + b/mb + b/ma），provider集合不变
+            assert isinstance(tried, list) and len(tried) == 3
             assert {t["provider"] for t in tried} == {"a", "b"}
             for t in tried:
                 assert set(t) >= {"provider", "model", "pass"}
@@ -695,5 +700,111 @@ class TestModelCandidateDegradation(ChainTestBase):
             vecs = await router.embed(["hello"], model="ea")
             assert vecs == [[0.7]]
             assert seen == [("mock-a", "ea"), ("mock-b", "eb")]
+        finally:
+            await router.shutdown()
+
+
+class TestChainFallbackCandidate(ChainTestBase):
+    """chain_fallback候选——role驱动调用（无显式model）的备胎自愈。
+
+    2026-09-25 live实锤（branch摘要路径）：chat(model=None, role="summarize")，
+    变体备胎声明占位model `partial-test`（token-plan 400 Unsupported model）→
+    修复前无显式model=单候选直接死，6链attempt全灭（openai 402×2 +
+    variant partial-test 400×2 + ollama ConnectError×2）；修复后备胎link尾随
+    chain_fallback（主link解析模型）→ partial-test 400 → mimo-v2.5-pro接住。
+    """
+
+    def test_backup_without_explicit_gets_chain_fallback(self):
+        assert _model_candidates(
+            {"chat": "partial-test"}, "partial-test", None, chain_fallback="m-v"
+        ) == ("partial-test", "m-v")
+
+    def test_primary_without_explicit_unchanged(self):
+        """主link无显式model行为不变（既有契约字节恒等）。"""
+        assert _model_candidates(
+            {"chat": "m"}, "m", None, is_primary=True, chain_fallback="m-v"
+        ) == ("m",)
+
+    def test_chain_fallback_deduped(self):
+        assert _model_candidates({"chat": "m"}, "m", None, chain_fallback="m") == ("m",)
+
+    def test_no_explicit_no_fallback_single(self):
+        assert _model_candidates({"chat": "m"}, "m", None) == ("m",)
+
+    def test_explicit_semantics_unchanged_by_fallback(self):
+        """显式model语义不因chain_fallback改变（既有显式契约字节恒等）。"""
+        assert _model_candidates({"chat": "mb"}, "mb", "ma", chain_fallback="m-v") == ("mb", "ma")
+        assert _model_candidates(
+            {"chat": "x", "summarize": "s"}, "s", "x", is_primary=True, chain_fallback="m-v"
+        ) == ("x", "s")
+
+    @pytest.mark.asyncio
+    async def test_placeholder_backup_self_heals_without_explicit(self):
+        """live失败形态全回归：primary 402 + 备胎占位400 + 无显式model → chain_fallback接住。
+
+        修复前同输入=AllProvidersFailedError（备胎单候选partial-test死于400）。
+        """
+        seen: list[tuple] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            model = json.loads(request.content)["model"]
+            seen.append((request.url.host, model))
+            if request.url.host == "mock-a":
+                return _resp(402)
+            if request.url.host == "mock-b":
+                if model == "partial-test":
+                    return _resp(400)
+                return _resp(200, "healed")
+            return _resp(500)
+
+        router = self._make_router(
+            handler,
+            [
+                ("a", "http://mock-a", {"chat": "m-v"}, 0),
+                ("b", "http://mock-b", {"chat": "partial-test"}, 1),
+            ],
+        )
+        try:
+            result = await router.chat([{"role": "user", "content": "hi"}])
+            assert result["choices"][0]["message"]["content"] == "healed"
+            assert seen == [
+                ("mock-a", "m-v"),
+                ("mock-b", "partial-test"),
+                ("mock-b", "m-v"),
+            ]
+        finally:
+            await router.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_embed_chain_fallback_without_explicit(self):
+        """embed链对称接线：备胎占位embedding模型400 → chain_fallback接住。"""
+        seen: list[tuple] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            model = json.loads(request.content)["model"]
+            seen.append((request.url.host, model))
+            if request.url.host == "mock-a":
+                return _resp(402)
+            if request.url.host == "mock-b":
+                if model == "eb-placeholder":
+                    return _resp(400)
+                return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.7]}]})
+            return _resp(500)
+
+        router = self._make_router(
+            handler,
+            [
+                ("a", "http://mock-a", {"embedding": "ea"}, 0),
+                ("b", "http://mock-b", {"embedding": "eb-placeholder"}, 1),
+            ],
+        )
+        try:
+            vecs = await router.embed(["hello"])
+            assert vecs == [[0.7]]
+            assert seen == [
+                ("mock-a", "ea"),
+                ("mock-b", "eb-placeholder"),
+                ("mock-b", "ea"),
+            ]
         finally:
             await router.shutdown()

@@ -199,26 +199,17 @@ def _build_router(resolved: ResolvedMemoryModel):
         )
         if resolved.api_key:
             router.key_manager.add_key("openai", resolved.api_key)
-    # 变体备胎入链（priority=5）：激活变体之外的另一已配置变体（标准API/订阅制
-    # 双体系两套凭据）——激活端点402余额耗尽/宕机时的真实备胎。2026-09-25 live
-    # 实证：standard 402 时 subscription(token-plan) 仍 ok，但此前备胎从未入链，
-    # dream/Phase1 全链饿死。fail-safe：配置解析失败→不注册（行为回到原样）。
+    # 变体备胎入链（priority=5，单一真源register_variant_backup）：激活变体之外
+    # 的另一已配置变体（标准API/订阅制双体系两套凭据）——激活端点402余额耗尽/
+    # 宕机时的真实备胎。2026-09-25 live实证：standard 402 时 subscription(token-
+    # plan) 仍 ok，但此前备胎从未入链，dream/Phase1 全链饿死。fail-safe：配置
+    # 解析失败→不注册（行为回到原样）。
     try:
-        from src.api.llm import alternate_variant_config
+        from src.api.llm import register_variant_backup
 
-        alt = alternate_variant_config()
+        register_variant_backup(router, resolved.model_id)
     except Exception:  # noqa: BLE001 — 备胎注册绝不反噬记忆调用
-        alt = None
-    if alt:
-        alt_name = f"variant-{alt['variant']}"
-        router.add_provider(
-            name=alt_name,
-            base_url=alt["base_url"],
-            models={"chat": alt.get("model") or resolved.model_id},
-            priority=5,
-        )
-        if alt.get("api_key"):
-            router.key_manager.add_key(alt_name, alt["api_key"])
+        pass
     ollama_url = "http://localhost:11434/v1"
     try:
         from src.config import settings as _settings

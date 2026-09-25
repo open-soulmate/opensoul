@@ -258,6 +258,37 @@ def alternate_variant_config() -> dict | None:
         return None
 
 
+def register_variant_backup(router, fallback_model: str) -> str | None:
+    """把变体备胎注册进任意ModelRouter的fallback链（priority=5）——注册块单一真源。
+
+    此前memory_model._build_router / api/gland._ensure_bootstrapped /
+    trajectory/branch_summary._call_llm_router三处各自手搓provider注册块，第三处
+    （branch_summary）漏掉变体备胎：primary额度耗尽（402）时branch摘要直接降级
+    extractive-fallback，与dream/Phase1修复前同款饿死形态。收敛后三处同规：
+    primary(p0) → 变体备胎(p5) → ollama本地兜底(p10)（CowAgent有序降级链语义）。
+
+    router需有add_provider()与key_manager（ModelRouter及其gateway同构实例）。
+    返回注册的provider名（"variant-<name>"）或None（无备胎/同端点/解析失败）。
+    fail-safe：任何异常→None绝不反噬调用方。
+    """
+    try:
+        alt = alternate_variant_config()
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬调用方
+        alt = None
+    if not alt:
+        return None
+    name = f"variant-{alt['variant']}"
+    router.add_provider(
+        name=name,
+        base_url=alt["base_url"],
+        models={"chat": alt.get("model") or fallback_model},
+        priority=5,
+    )
+    if alt.get("api_key"):
+        router.key_manager.add_key(name, alt["api_key"])
+    return name
+
+
 def _mask(k: str, masked: bool) -> str:
     return ("***" if masked and k else k) if k else ""
 

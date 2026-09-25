@@ -152,6 +152,7 @@ def _model_candidates(
     explicit: str | None,
     *,
     is_primary: bool = False,
+    chain_fallback: str | None = None,
 ) -> tuple[str, ...]:
     """Ordered per-link model candidates (CowAgent 备胎降级语义).
 
@@ -166,7 +167,12 @@ def _model_candidates(
     - 备胎link没声明显式model → 自己声明的模型优先（它声明了它服务什么），
       显式model作后备（模型目录失真/占位配置时的自愈路径——token-plan
       `partial-test`占位符400后接住显式 `mimo-v2.5-pro` 实证场景）
-    - 无显式model → 单候选（既有行为字节恒等）
+    - 无显式model → 备胎link尾随chain_fallback（主link解析出的模型）作最后候选
+      ——2026-09-25 live实锤：role驱动调用（chat(model=None, role=...)，branch
+      摘要/eval_loop等）没有显式model，占位声明`partial-test`成单候选直接死，
+      自愈路径对整类调用失效；chain_fallback补齐后同输入partial-test 400 →
+      mimo-v2.5-pro接住。主link无显式model时行为不变（字节恒等）
+    - 无显式model且无chain_fallback → 单候选（既有行为字节恒等）
 
     Candidate内模型级拒绝（400/404/422）滑到下一候选；端点级错误整link放弃。
     """
@@ -178,7 +184,7 @@ def _model_candidates(
         else:
             order = (own, explicit)
     else:
-        order = (own,)
+        order = (own,) if is_primary else (own, chain_fallback)
     for m in order:
         if m and m not in out:
             out.append(m)
@@ -431,10 +437,17 @@ class ModelRouter:
         401 and the chain moves on (fail-safe, no worse than skipping).
         """
         links: list[tuple[ProviderConfig, tuple[str, ...], str]] = []
+        primary_model: str | None = None
         for idx, provider in enumerate(candidates):
             own_model = self._resolve_model(provider, task, None, role=role)
+            if idx == 0:
+                primary_model = own_model
             call_models = _model_candidates(
-                provider.models, own_model, model, is_primary=(idx == 0)
+                provider.models,
+                own_model,
+                model,
+                is_primary=(idx == 0),
+                chain_fallback=primary_model if idx > 0 else None,
             )
             if not call_models:
                 logger.debug(
@@ -669,10 +682,17 @@ class ModelRouter:
         # own "embedding" mapping and the explicit model arg become the link's
         # ordered candidates (see _model_candidates).
         links: list[tuple[ProviderConfig, tuple[str, ...], str]] = []
+        primary_embed_model: str | None = None
         for idx, provider in enumerate(candidates):
             own_model = provider.models.get("embedding")
+            if idx == 0:
+                primary_embed_model = own_model
             call_models = _model_candidates(
-                provider.models, own_model, model, is_primary=(idx == 0)
+                provider.models,
+                own_model,
+                model,
+                is_primary=(idx == 0),
+                chain_fallback=primary_embed_model if idx > 0 else None,
             )
             if not call_models:
                 continue

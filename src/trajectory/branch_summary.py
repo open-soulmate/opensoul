@@ -571,19 +571,24 @@ _LLM_REQUIRED_SECTIONS = ("## Goal", "## Progress")
 LLM_SUMMARIZER_TIMEOUT = 60.0
 
 
-async def _call_llm_router(system_prompt: str, user_prompt: str) -> str:
+async def _call_llm_router(system_prompt: str, user_prompt: str, router_factory=None) -> str:
     """gland ModelRouter调用 — dream_distiller._call_gland_llm同款已验证模式。
 
     fresh ModelRouter实例绑定当前event loop + 显式provider注册（api/gland.py
     gateway单例跨loop复用会400——dream_distiller live实证教训）+
     extract_chat_text权威解包（result.get("content")猜测在真实provider上永远
     落空——dream live实证bug）。provider链=settings主provider（priority=0）
-    + ollama本地兜底（priority=10，CowAgent有序降级链语义）。
+    + 变体备胎（priority=5，register_variant_backup单一真源——此前本块漏注册
+    变体备胎，primary 402时branch摘要饿死降级extractive-fallback，与dream/
+    Phase1修复前同款形态）+ ollama本地兜底（priority=10，CowAgent有序降级链语义）。
+
+    router_factory：测试seam（call_memory_llm.router_factory同款先例）——返回
+    预配置好transport的ModelRouter（如httpx.MockTransport），注册逻辑照常执行。
     """
     from src.config import settings
     from src.gland.router import ModelRouter, extract_chat_text
 
-    router = ModelRouter()
+    router = router_factory() if router_factory is not None else ModelRouter()
     if settings.llm_base_url:
         router.add_provider(
             name="openai",
@@ -593,6 +598,13 @@ async def _call_llm_router(system_prompt: str, user_prompt: str) -> str:
         )
         if settings.llm_api_key:
             router.key_manager.add_key("openai", settings.llm_api_key)
+    # 变体备胎入链（priority=5，单一真源register_variant_backup）。
+    try:
+        from src.api.llm import register_variant_backup
+
+        register_variant_backup(router, settings.llm_model)
+    except Exception:  # noqa: BLE001 — 备胎注册绝不反噬摘要调用
+        pass
     ollama_url = getattr(settings, "ollama_base_url", "http://localhost:11434/v1")
     router.add_provider(
         name="ollama",
